@@ -2,4 +2,5 @@
 .env.local
 .env.*.local
 .json
-.csv
+*.csv
+*.html
