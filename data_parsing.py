@@ -1,9 +1,8 @@
-### Basic data parsing/retrieval functions that will be used constantly throughout this application. ###
+### Basic json data parsing/retrieval functions that will be used throughout this application. ###
 
 import json
+import csv
 from datetime import datetime
-
-### Extract a list of all coordinate [latitude, longitude] objects within a specified time period. ###
 
 ### Load a json file into python
 def load_json_file(filepath):
@@ -11,9 +10,8 @@ def load_json_file(filepath):
         data = json.load(f)
         return data
 
-### Extract location data (start time, end time, ID, and coordinates) in a specified date range
+### Returns a list of locations (start time, end time, place ID, and coordinates) provided a specified range of dates
 def extract_locations_by_date(json_data, start_date, end_date):
-
     visits_in_range = []
 
     for segment in json_data.get("semanticSegments", []):
@@ -42,7 +40,7 @@ def extract_locations_by_date(json_data, start_date, end_date):
                 })
     return visits_in_range
 
-### Extract location data (start time, end time, ID, and coordinates) provided a given place ID
+### Returns a list of locations (start time, end time, place ID, and coordinates) provided a given place ID
 def extract_location_by_placeID(json_data, placeID):
     
     filtered_visits = []
@@ -62,6 +60,37 @@ def extract_location_by_placeID(json_data, placeID):
 
     return filtered_visits
 
+### Returns a dictionary of all unique place IDs from a Timeline dataset with corresponding coordinates (latitude & longitude)
+def get_unique_place_ids_with_coordinates(json_data):
+   
+    place_id_map = {}
+
+    for segment in json_data.get("semanticSegments", []):
+        visit = segment.get("visit")
+        if not visit:
+            continue
+
+        candidates = []
+
+        if "topCandidate" in visit:
+            candidates.append(visit["topCandidate"])
+        candidates.extend(visit.get("candidatePlaces", []))
+
+        for place in candidates:
+            place_id = place.get("placeId")
+            latlng = place.get("placeLocation", {}).get("latLng")
+            if place_id and latlng and place_id not in place_id_map:
+                # Parse latitude and longitude
+                try:
+                    lat_str, lon_str = latlng.replace("°", "").split(",")
+                    lat = float(lat_str.strip())
+                    lon = float(lon_str.strip())
+                    place_id_map[place_id] = (lat, lon)
+                except Exception:
+                    continue  # Skip malformed coordinates
+
+    return place_id_map
+
 ### Print location data to console formatted cleanly for troubleshooting
 def print_json_to_console(json_data):
     for idx, v in enumerate(json_data, 1):
@@ -71,17 +100,25 @@ def print_json_to_console(json_data):
         print(f"Place ID   : {v['place_id']}")
         print(f"Coordinates: {v['coordinates']}")
 
-### Write location data to a .json file
-def print_json_to_file(json_data):
+### Writes locations (start time, end time, place ID, and coordinates) to a .json file
+def print_json_to_file(json_data, output_file):
     json_object = json.dumps(json_data, indent=4)
-    with open("TEST.json", "w") as outfile:
+    with open(output_file, "w") as outfile:
         outfile.write(json_object)
 
+### Writes a list of place ids (place id, latitude, longitude) to a .csv file
+def print_unique_places_to_file(place_id_map, output_file):
+    with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["Place ID", "Latitude", "Longitude"])
+
+        for place_id, (lat, lon) in place_id_map.items():
+            writer.writerow([place_id, lat, lon])
 
 
 ''' Testing
 start_date = datetime(2016, 9, 11).date()
-end_date = datetime(2016, 12, 13).date()
+end_date = datetime(2016, 9, 13).date()
 
 masterTimelineData = load_json_file("Timeline.json")
 dataSnippet = extract_locations_by_date(masterTimelineData, start_date, end_date)
@@ -92,8 +129,9 @@ placeID = "ChIJg2dGhGhkwokRalGr-h6v_Uk"
 dataSnippet2 = extract_location_by_placeID(masterTimelineData, placeID)
 print_json_to_console(dataSnippet2)
 
+dataSnippet = get_unique_place_ids_with_coordinates(masterTimelineData)
+print_unique_places_to_file(dataSnippet, "unique_places.csv")
 '''
-
 
 
 
