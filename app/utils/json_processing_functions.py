@@ -60,8 +60,8 @@ def extract_location_by_placeID(json_data, placeID):
 
     return filtered_visits
 
-### Returns a dictionary of all unique place IDs from a Timeline dataset with corresponding coordinates (latitude & longitude)
-def get_unique_place_ids_with_coordinates(json_data):
+### Prints all unique visits from a Timeline dataset with corresponding coordinates (latitude & longitude)
+def print_unique_visits_to_csv(json_data, output_file):
    
     place_id_map = {}
 
@@ -89,7 +89,13 @@ def get_unique_place_ids_with_coordinates(json_data):
                 except Exception:
                     continue  # Skip malformed coordinates
 
-    return place_id_map
+    with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["Place ID", "Latitude", "Longitude"])
+
+        for place_id, (lat, lon) in place_id_map.items():
+            writer.writerow([place_id, lat, lon])
+
 
 ### Print location data to console formatted cleanly for troubleshooting
 def print_json_to_console(json_data):
@@ -106,32 +112,6 @@ def print_json_to_file(json_data, output_file):
     with open(output_file, "w") as outfile:
         outfile.write(json_object)
 
-### Writes a list of place ids (place id, latitude, longitude) to a .csv file
-def print_unique_places_to_file(place_id_map, output_file):
-    with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(["Place ID", "Latitude", "Longitude"])
-
-        for place_id, (lat, lon) in place_id_map.items():
-            writer.writerow([place_id, lat, lon])
-
-
-''' Testing
-start_date = datetime(2016, 9, 11).date()
-end_date = datetime(2016, 9, 13).date()
-
-masterTimelineData = load_json_file("Timeline.json")
-dataSnippet = extract_locations_by_date(masterTimelineData, start_date, end_date)
-print_json_to_console(dataSnippet)
-write_json_to_console(dataSnippet)
-
-placeID = "ChIJg2dGhGhkwokRalGr-h6v_Uk"
-dataSnippet2 = extract_location_by_placeID(masterTimelineData, placeID)
-print_json_to_console(dataSnippet2)
-
-dataSnippet = get_unique_place_ids_with_coordinates(masterTimelineData)
-print_unique_places_to_file(dataSnippet, "unique_places.csv")
-'''
 
 
 
