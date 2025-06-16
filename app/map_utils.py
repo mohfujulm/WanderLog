@@ -31,7 +31,69 @@ def update_map_with_timeline_data(input_map, input_file):
     """ 
 
     input_map.get_root().html.add_child(folium.Element(popup_css))
-    marker_cluster = MarkerCluster().add_to(input_map)
+
+    # Cluster icon styling
+    cluster_css = """
+    <style>
+    .marker-cluster-small {
+        background-color: rgba(181, 226, 140, 0.7);
+    }
+    .marker-cluster-small div {
+        width: 30px;
+        height: 30px;
+        line-height: 30px;
+        border-radius: 15px;
+        border: 1px solid black;
+        color: black;
+    }
+    .marker-cluster-medium {
+        background-color: rgba(241, 211, 87, 0.7);
+    }
+    .marker-cluster-medium div {
+        width: 40px;
+        height: 40px;
+        line-height: 40px;
+        border-radius: 20px;
+        border: 1px solid black;
+        color: black;
+    }
+    .marker-cluster-large {
+        background-color: rgba(253, 156, 115, 0.7);
+    }
+    .marker-cluster-large div {
+        width: 45px;
+        height: 45px;
+        line-height: 45px;
+        border-radius: 22.5px;
+        border: 1px solid black;
+        color: black;
+    }
+    </style>
+    """
+    input_map.get_root().html.add_child(folium.Element(cluster_css))
+
+    # JavaScript factory for creating cluster icons
+    icon_create_function = """
+    function(cluster) {
+        var count = cluster.getChildCount();
+        var size = 'small';
+        if (count >= 100) {
+            size = 'large';
+        } else if (count >= 40) {
+            size = 'medium';
+        }
+        return new L.DivIcon({
+            html: '<div><span>' + count + '</span></div>',
+            className: 'marker-cluster marker-cluster-' + size,
+            iconSize: new L.Point(40, 40)
+        });
+    }
+    """
+
+    # Create cluster group with custom icons
+    marker_cluster = MarkerCluster(
+        icon_create_function=icon_create_function
+    ).add_to(input_map)
 
     for _, row in df.iterrows():
         popup_html = f"""
