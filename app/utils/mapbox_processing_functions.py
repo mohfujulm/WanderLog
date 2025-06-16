@@ -8,11 +8,11 @@ load_dotenv()
 MAPBOX_ACCESS_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN")
 
 # Function to reverse geocode latitude & longitude into a place name using Mapbox
-def reverse_geocode(lat, lon):
+def reverse_geocode_api_call_helper(lat, lon):
     # Build URL for Mapbox reverse geocoding API
     url = (
         f"https://api.mapbox.com/geocoding/v5/mapbox.places/"
-        f"{lon},{lat}.json?access_token={MAPBOX_TOKEN}&types=poi,address,place"
+        f"{lon},{lat}.json?access_token={MAPBOX_ACCESS_TOKEN}&types=poi,address,place"
     )
 
     # Make the API request
@@ -28,8 +28,9 @@ def reverse_geocode(lat, lon):
     else:
         return f"Error {response.status_code}"
 
-# Main function to process an input CSV and append new reverse-geocoded results to output
-def process_csv(input_csv, output_csv):
+# Main function to process an input CSV and append new reverse-geocoded results to a specified output csv
+def reverse_geocode_timeline_csv(input_csv, output_csv):
+    skip_counter = 0
     # Load the input file (should include: Place ID, Latitude, Longitude)
     input_df = pd.read_csv(input_csv)
 
@@ -53,11 +54,12 @@ def process_csv(input_csv, output_csv):
 
         # Skip rows already in the output file (avoid duplicate API calls)
         if (lat, lon) in existing_coords:
-            print(f"Skipping already processed: {place_id}, {lat}, {lon}")
+            #print(f"Skipping already processed: {place_id}, {lat}, {lon}")
+            skip_counter += 1
             continue
 
         # Perform reverse geocoding using Mapbox
-        place_name = reverse_geocode(lat, lon)
+        place_name = reverse_geocode_api_call_helper(lat, lon)
         print(f"Processed {lat}, {lon} → {place_name}")
 
         # Save the result in a new dictionary (will be added to DataFrame later)
@@ -70,6 +72,8 @@ def process_csv(input_csv, output_csv):
 
         # Be kind to the API: small delay between requests
         time.sleep(0.2)
+    
+    print("\nDuplicates detected.  Skipped ", skip_counter, " data points.")
 
     # If we have new results, append them to the output file
     if results:
