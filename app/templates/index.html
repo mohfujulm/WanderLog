@@ -29,16 +29,35 @@
                 border: none;
             }
             
-            /* Overlay controls */
-            .overlay-controls {
+            /* Menu container positioned in the top-right */
+            .menu-container {
                 position: absolute;
                 top: 20px;
-                left: auto;
                 right: 20px;
                 z-index: 1000;
-                display: flex;
+            }
+
+            /* Hamburger icon button */
+            .hamburger {
+                cursor: pointer;
+                font-size: 24px;
+                user-select: none;
+                padding: 8px 12px;
+                background: rgba(255, 255, 255, 0.95);
+                border-radius: 4px;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+            }
+
+            /* Overlay controls hidden by default */
+            .overlay-controls {
+                display: none;
                 flex-direction: column;
                 gap: 10px;
+            }
+
+            /* Show controls when menu is open */
+            .menu-container.open .overlay-controls {
+                display: flex;
             }
             
             /* Individual overlay buttons */
@@ -147,16 +166,19 @@
             <input type="file" id="timelineFile" accept=".json" style="display:none" onchange="updateMap()">
             
             <!-- Overlay control buttons -->
-            <div class="overlay-controls">
-                <button class="overlay-button primary" onclick="document.getElementById('timelineFile').click()">
-                    📍 Import Google Timeline Data
-                </button>
-                <button class="overlay-button" onclick="clearMap()">
-                    🗑️ Clear Markers
-                </button>
-                <button class="overlay-button" onclick="refreshMap()">
-                    🔄 Refresh Map
-                </button>
+            <div class="menu-container">
+                <div class="hamburger" onclick="toggleMenu()">☰</div>
+                <div class="overlay-controls">
+                    <button class="overlay-button primary" onclick="document.getElementById('timelineFile').click()">
+                        📍 Import Google Timeline Data
+                    </button>
+                    <button class="overlay-button" onclick="clearMap()">
+                        🗑️ Clear Markers
+                    </button>
+                    <button class="overlay-button" onclick="refreshMap()">
+                        🔄 Refresh Map
+                    </button>
+                </div>
             </div>
             
             <!-- Status message area -->
@@ -267,7 +289,12 @@
                     showStatus('Error: ' + error.message, true);
                 }
             }
-            
+
+            function toggleMenu() {
+                const menu = document.querySelector('.menu-container');
+                menu.classList.toggle('open');
+            }
+
             // Prevent accidental page refresh
             window.addEventListener('beforeunload', function(e) {
                 // Uncomment the lines below if you want to warn users before leaving
