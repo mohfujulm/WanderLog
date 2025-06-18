@@ -11,10 +11,10 @@
             
             body, html {
                 height: 100%;
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                font-family: Verdana;
                 overflow: hidden;
             }
-            
+
             /* Full-screen map container */
             #map-container {
                 position: relative;
@@ -35,6 +35,9 @@
                 top: 20px;
                 right: 20px;
                 z-index: 1000;
+                background-color: rgba(255, 255, 255, 0.95);
+                padding: 8px;
+                border-radius: 10px;
             }
 
             /* Hamburger icon button */
@@ -42,10 +45,8 @@
                 cursor: pointer;
                 font-size: 24px;
                 user-select: none;
-                padding: 8px 12px;
+                padding: 4px 6px;
                 background: rgba(255, 255, 255, 0.95);
-                border-radius: 4px;
-                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
             }
 
             /* Overlay controls hidden by default */
@@ -68,7 +69,7 @@
                 padding: 12px 18px;
                 font-size: 14px;
                 font-weight: 600;
-                border-radius: 25px;
+                border-radius: 15px;
                 cursor: pointer;
                 transition: all 0.3s ease;
                 box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
@@ -91,12 +92,11 @@
             
             /* Special styling for primary button */
             .overlay-button.primary {
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                color: white;
+                color: black;
             }
             
             .overlay-button.primary:hover {
-                background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+                background: rgb(214, 214, 214);
             }
             
             #status {
