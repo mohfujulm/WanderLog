@@ -4,7 +4,6 @@ from flask import Blueprint, render_template, jsonify, request
 import folium
 from app.map_utils import update_map_with_timeline_data
 from app.utils.json_processing_functions import print_unique_visits_to_csv
-from app.utils.mapbox_processing_functions import reverse_geocode_timeline_csv
 
 main = Blueprint('main', __name__)
 
