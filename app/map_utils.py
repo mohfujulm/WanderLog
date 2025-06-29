@@ -29,7 +29,7 @@ def update_map_with_timeline_data(input_map, input_file):
         }
         </style>
     """ 
-
+    
     input_map.get_root().html.add_child(folium.Element(popup_css))
 
     # Cluster icon styling

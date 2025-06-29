@@ -2,7 +2,35 @@
 
 import json
 import csv
+import os
+import requests
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
+
+MAPBOX_ACCESS_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN")
+
+# Function to reverse geocode latitude & longitude into a place name using Mapbox
+def reverse_geocode_api_call_helper(lat, lon):
+    # Build URL for Mapbox reverse geocoding API
+    url = (
+        f"https://api.mapbox.com/geocoding/v5/mapbox.places/"
+        f"{lon},{lat}.json?access_token={MAPBOX_ACCESS_TOKEN}&types=poi,address,place"
+    )
+
+    # Make the API request
+    response = requests.get(url)
+
+    # Parse the result if successful
+    if response.status_code == 200:
+        features = response.json().get("features", [])
+        if features:
+            return features[0].get("place_name", "Unknown")
+        else:
+            return "No result"
+    else:
+        return f"Error {response.status_code}"
 
 ### Load a json file into python
 def load_json_file(filepath):
@@ -60,51 +88,63 @@ def extract_location_by_placeID(json_data, placeID):
 
     return filtered_visits
 
-### Prints all unique visits from a Timeline dataset with corresponding coordinates (latitude & longitude)
-def print_unique_visits_to_csv(json_data, output_file):
-   
+def print_unique_visits_to_csv(json_data, output_file, source_type=''):
+    """
+    Writes unique visits from the Google Timeline JSON to a CSV, adding a new
+    'Source Type' column filled with the provided `source_type` value.
+    """
     place_id_map = {}
 
     for segment in json_data.get("semanticSegments", []):
         visit = segment.get("visit")
         if not visit:
             continue
-        
-        candidates = []
 
+        # Collect topCandidate and any fallback candidatePlaces
+        candidates = []
         if "topCandidate" in visit:
             candidates.append(visit["topCandidate"])
-
         candidates.extend(visit.get("candidatePlaces", []))
 
-        for place in candidates:
-            place_id = place.get("placeId")
-            latlng = place.get("placeLocation", {}).get("latLng")
-            start_time_str = segment.get("startTime")
-            if place_id and latlng and place_id not in place_id_map:
-                # Parse latitude and longitude
-                try:
-                    start_date = ""
-                    if start_time_str:
-                        try:
-                            start_date = datetime.fromisoformat(
-                                start_time_str.replace("Z", "")
-                            ).date().isoformat()
-                        except Exception:
-                            start_date = ""
-                    lat_str, lon_str = latlng.replace("°", "").split(",")
-                    lat = float(lat_str.strip())
-                    lon = float(lon_str.strip())
-                    place_id_map[place_id] = (lat, lon, start_date)
-                except Exception:
-                    continue  # Skip malformed coordinates
+        for candidate in candidates:
+            pid = candidate.get("placeId")
+            if not pid or pid in place_id_map:
+                continue
 
+            latlng = candidate.get("placeLocation", {}).get("latLng", "")
+            if not latlng:
+                continue
+
+            try:
+                # Parse the visit start date into ISO format
+                start_time_str = segment.get("startTime")
+                
+                if start_time_str:
+                    try:
+                        start_date = datetime.fromisoformat(
+                            start_time_str.replace("Z", "")
+                        ).date().isoformat()
+                    except Exception:
+                        start_date = ""
+
+                # Convert coordinates from "lat°, lon°" to floats
+                lat_str, lon_str = latlng.replace("°", "").split(",")
+                lat = float(lat_str.strip())
+                lon = float(lon_str.strip())
+                place_name = reverse_geocode_api_call_helper(lat, lon)
+                place_id_map[pid] = (lat, lon, start_date, place_name)
+            except Exception:
+                # Skip entries with malformed data
+                continue
+
+    # Write out the CSV with the new Source Type column
     with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(["Place ID", "Latitude", "Longitude", "Start Date"])
-        for place_id, (lat, lon, start_date) in place_id_map.items():
-            writer.writerow([place_id, lat, lon, start_date])
-
+        # Add 'Source Type' to the header
+        writer.writerow(["Place ID", "Latitude", "Longitude", "Start Date", "Source Type", "Place Name"])
+        # Populate every row with the provided source_type
+        for pid, (lat, lon, start_date, place_name) in place_id_map.items():
+            writer.writerow([pid, lat, lon, start_date, source_type, place_name])
 
 ### Print location data to console formatted cleanly for troubleshooting
 def print_json_to_console(json_data):

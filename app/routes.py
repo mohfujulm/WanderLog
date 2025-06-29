@@ -33,8 +33,8 @@ def serve_map():
         return render_template('map_not_found.html')    # If not found, render a fallback page    
 
 # Route to handle map updates via POSTed JSON file
-@main.route('/api/update', methods=['POST'])
-def api_update():
+@main.route('/api/update_timeline', methods=['POST'])
+def api_update_timeline():
     try:
         # Check if a file was uploaded in the request
         if 'file' not in request.files:
@@ -48,13 +48,12 @@ def api_update():
             return jsonify(status='error', message='Failed to parse JSON.'), 400
 
         # Extract all unique locations visited into 'timeline_unique_visits_preprocssed.csv" in, data/ folder
-        csv_path_preprocessed = os.path.join('data', 'timeline_unique_visits_preprocessed.csv')     #creating the target file path
-        print_unique_visits_to_csv(timeline_json, csv_path_preprocessed)
-
+        #csv_path_preprocessed = os.path.join('data', 'timeline_unique_visits_preprocessed.csv')     #creating the target file path
+    
         # Reverse geocode all unique locations to get addresses via Mapbox API call into 'timeline_unique_visits.csv" in, data/ folder
         # This is what's actually going to be rendered into map markers
         csv_path = os.path.join('data', 'master_timeline_data.csv')       #creating the target file path
-        reverse_geocode_timeline_csv(csv_path_preprocessed, csv_path)
+        print_unique_visits_to_csv(timeline_json, csv_path, 'google_timeline')
 
         # Ensure the CSV file was created successfully
         if not os.path.exists(csv_path):

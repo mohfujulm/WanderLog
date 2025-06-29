@@ -252,7 +252,7 @@
                 formData.append('file', fileInput.files[0]);
 
                 try {
-                const response = await fetch('/api/update', {
+                const response = await fetch('/api/update_timeline', {
                     method: 'POST',
                     body: formData    // ← don’t set Content-Type, browser will do it
                 });
