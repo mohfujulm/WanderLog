@@ -116,6 +116,9 @@ def update_map_with_timeline_data(input_map, input_file):
                 <strong>Place Name:</strong> {row['Place Name']}
             </p>
             <p style="margin: 5px 0; font-size: 12px;">
+                <strong>Date Visited:</strong> {row['Start Date']}
+            </p>
+            <p style="margin: 5px 0; font-size: 12px;">
                 <strong>Coordinates:</strong><br>
                 Lat: {row['Latitude']:.4f}<br>
                 Lng: {row['Longitude']:.4f}
