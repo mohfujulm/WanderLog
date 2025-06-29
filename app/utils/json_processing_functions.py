@@ -69,32 +69,41 @@ def print_unique_visits_to_csv(json_data, output_file):
         visit = segment.get("visit")
         if not visit:
             continue
-
+        
         candidates = []
 
         if "topCandidate" in visit:
             candidates.append(visit["topCandidate"])
+
         candidates.extend(visit.get("candidatePlaces", []))
 
         for place in candidates:
             place_id = place.get("placeId")
             latlng = place.get("placeLocation", {}).get("latLng")
+            start_time_str = segment.get("startTime")
             if place_id and latlng and place_id not in place_id_map:
                 # Parse latitude and longitude
                 try:
+                    start_date = ""
+                    if start_time_str:
+                        try:
+                            start_date = datetime.fromisoformat(
+                                start_time_str.replace("Z", "")
+                            ).date().isoformat()
+                        except Exception:
+                            start_date = ""
                     lat_str, lon_str = latlng.replace("°", "").split(",")
                     lat = float(lat_str.strip())
                     lon = float(lon_str.strip())
-                    place_id_map[place_id] = (lat, lon)
+                    place_id_map[place_id] = (lat, lon, start_date)
                 except Exception:
                     continue  # Skip malformed coordinates
 
     with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(["Place ID", "Latitude", "Longitude"])
-
-        for place_id, (lat, lon) in place_id_map.items():
-            writer.writerow([place_id, lat, lon])
+        writer.writerow(["Place ID", "Latitude", "Longitude", "Start Date"])
+        for place_id, (lat, lon, start_date) in place_id_map.items():
+            writer.writerow([place_id, lat, lon, start_date])
 
 
 ### Print location data to console formatted cleanly for troubleshooting
@@ -112,7 +121,11 @@ def print_json_to_file(json_data, output_file):
     with open(output_file, "w") as outfile:
         outfile.write(json_object)
 
+#start_date = datetime.strptime('2015-01-01', '%Y-%m-%d').date()
+#end_date   = datetime.strptime('2025-01-31', '%Y-%m-%d').date()
 
-
-
+#testdata = load_json_file('data\Timeline - copy.json')
+#print_unique_visits_to_csv(testdata, 'TEST.csv')
+#extractedData = extract_locations_by_date(testdata, start_date, end_date)
+#print_json_to_console(extractedData)
 

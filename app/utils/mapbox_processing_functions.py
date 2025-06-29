@@ -39,7 +39,7 @@ def reverse_geocode_timeline_csv(input_csv, output_csv):
         output_df = pd.read_csv(output_csv)
     else:
         # Create an empty output DataFrame with the correct columns
-        output_df = pd.DataFrame(columns=["Place ID", "Latitude", "Longitude", "Place Name"])
+        output_df = pd.DataFrame(columns=["Place ID", "Latitude", "Longitude", "Start Date", "Place Name"])
 
     # Create a set of coordinates already processed (for quick lookup)
     existing_coords = set(zip(output_df["Latitude"], output_df["Longitude"]))
@@ -51,6 +51,7 @@ def reverse_geocode_timeline_csv(input_csv, output_csv):
     for _, row in input_df.iterrows():
         lat, lon = row["Latitude"], row["Longitude"]
         place_id = row["Place ID"]
+        start_date = row["Start Date"]
 
         # Skip rows already in the output file (avoid duplicate API calls)
         if (lat, lon) in existing_coords:
@@ -67,6 +68,7 @@ def reverse_geocode_timeline_csv(input_csv, output_csv):
             "Place ID": place_id,
             "Latitude": lat,
             "Longitude": lon,
+            "Start Date": start_date,
             "Place Name": place_name
         })
 
@@ -83,3 +85,5 @@ def reverse_geocode_timeline_csv(input_csv, output_csv):
         print(f"\n✅ Updated CSV written to: {output_csv}")
     else:
         print("\n✅ No new rows to process.")
+
+#reverse_geocode_timeline_csv('TEST.csv', 'TEST_Processed.csv')
