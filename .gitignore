@@ -4,3 +4,5 @@
 *.json
 *.csv
 map.html
+__pycache__/
+*.pyc
