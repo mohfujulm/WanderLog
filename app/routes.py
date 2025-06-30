@@ -2,7 +2,9 @@ import os
 import json
 from flask import Blueprint, render_template, jsonify, request
 import folium
+import pandas as pd
 from app.map_utils import update_map_with_timeline_data
+from . import data_cache
 from app.utils.json_processing_functions import print_unique_visits_to_csv
 from app.utils.mapbox_processing_functions import reverse_geocode_timeline_csv
 
@@ -62,8 +64,12 @@ def api_update_timeline():
               message=f"CSV file '{csv_path}' not found after processing."
             ), 500
 
-        # Update the Folium map with data from the CSV
-        update_map_with_timeline_data(m, csv_path)
+        # Load the CSV into a DataFrame and update the cache
+        df = pd.read_csv(csv_path)
+        data_cache.timeline_df = df
+
+        # Update the Folium map with the new data
+        update_map_with_timeline_data(m, df=df)
 
         #  Return success message
         return jsonify(

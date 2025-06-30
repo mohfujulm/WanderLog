@@ -3,11 +3,21 @@ import pandas as pd
 import folium
 from folium.plugins import MarkerCluster
 
-def update_map_with_timeline_data(input_map, input_file):
-    """Reads location data from CSV and adds markers to a folium map."""
-    print(f"Loading data from: {input_file}")
-    df = pd.read_csv(input_file)
-    print(f"Loaded {len(df)} locations from CSV")
+from . import data_cache
+
+def update_map_with_timeline_data(input_map, input_file=None, df=None):
+    """Add markers to ``input_map`` using timeline data."""
+
+    if df is None:
+        if data_cache.timeline_df is not None:
+            df = data_cache.timeline_df
+            print(f"Using cached timeline data ({len(df)} rows)")
+        elif input_file and os.path.exists(input_file):
+            print(f"Loading data from: {input_file}")
+            df = pd.read_csv(input_file)
+        else:
+            print("No timeline data available to render on map")
+            return
 
     popup_css = """
         <style>
