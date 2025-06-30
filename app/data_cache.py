@@ -22,3 +22,18 @@ def load_timeline_data():
         print(f"CSV file {CSV_PATH} not found. Continuing without cached data.")
         timeline_df = None
 
+def save_timeline_data():
+    """Persist ``timeline_df`` to ``CSV_PATH`` if data is available."""
+    global timeline_df
+
+    if timeline_df is None:
+        print("No timeline data to save.")
+        return
+
+    try:
+        os.makedirs(os.path.dirname(CSV_PATH), exist_ok=True)
+        timeline_df.to_csv(CSV_PATH, index=False)
+        print(f"Saved {len(timeline_df)} rows to {CSV_PATH}")
+    except Exception as exc:
+        print(f"Failed to save {CSV_PATH}: {exc}")
+
