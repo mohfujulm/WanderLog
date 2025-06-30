@@ -52,7 +52,10 @@ def api_update_timeline():
     
         # Reverse geocode all unique locations to get addresses via Mapbox API call into 'timeline_unique_visits.csv" in, data/ folder
         # This is what's actually going to be rendered into map markers
-        csv_path = os.path.join('data', 'master_timeline_data.csv')       #creating the target file path
+        csv_path = os.path.join('data', 'master_timeline_data.csv')  # creating the target file path
+
+        # Ensure the data directory exists before attempting to write the CSV
+        os.makedirs('data', exist_ok=True)
         print_unique_visits_to_csv(timeline_json, csv_path, 'google_timeline')
 
         # Ensure the CSV file was created successfully
