@@ -8,7 +8,7 @@ import pandas as pd
 from flask import Blueprint, jsonify, render_template, request
 
 from app.map_utils import update_map_with_timeline_data
-from app.utils.json_processing_functions import print_unique_visits_to_csv
+from app.utils.json_processing_functions import unique_visits_to_df
 from . import data_cache
 
 main = Blueprint("main", __name__)
@@ -58,34 +58,25 @@ def api_update_timeline():
         except Exception:
             return jsonify(status='error', message='Failed to parse JSON.'), 400
 
-        # Reverse geocode all unique locations to get addresses via Mapbox and
-        # produce the CSV used for rendering markers on the map.
-        csv_path = os.path.join('data', 'master_timeline_data.csv')
+        #Process the timeline.json file uploaded by the user into a pandas df.
+        imported_df = unique_visits_to_df(timeline_json, "google_timeline")
+        database_df = data_cache.timeline_df
+        #combine the imported data and resulting processed dataframe with the existing database info
+        combined = pd.concat([imported_df, database_df])
+        combined = combined.drop_duplicates()
+        #update global database memory with appended information
+        data_cache.timeline_df = combined
 
-        # Ensure the data directory exists before attempting to write the CSV
-        os.makedirs('data', exist_ok=True)
-        print_unique_visits_to_csv(timeline_json, csv_path, 'google_timeline')
-
-        # Ensure the CSV file was created successfully
-        if not os.path.exists(csv_path):
-            return jsonify(
-              status='error',
-              message=f"CSV file '{csv_path}' not found after processing."
-            ), 500
-
-        # Load the CSV into a DataFrame and update the cache
-        df = pd.read_csv(csv_path)
-        data_cache.timeline_df = df
         # Persist the updated timeline if required
         data_cache.save_timeline_data()
 
         # Update the Folium map with the new data
-        update_map_with_timeline_data(m, df=df)
+        update_map_with_timeline_data(m, df=data_cache.timeline_df)
 
         #  Return success message
         return jsonify(
           status='success',
-          message=f"Map updated with data from {csv_path}!"
+          message=f"Map updated with data from {timeline_file}!"
         )
 
     except Exception as e:
