@@ -69,6 +69,8 @@ def api_update_timeline():
         # Load the CSV into a DataFrame and update the cache
         df = pd.read_csv(csv_path)
         data_cache.timeline_df = df
+        # Persist the updated timeline if required
+        data_cache.save_timeline_data()
 
         # Update the Folium map with the new data
         update_map_with_timeline_data(m, df=df)
