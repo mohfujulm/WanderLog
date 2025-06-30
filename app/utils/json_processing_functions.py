@@ -6,6 +6,7 @@ import os
 import requests
 from datetime import datetime
 from dotenv import load_dotenv
+import pandas as pd
 
 load_dotenv()
 
@@ -88,11 +89,8 @@ def extract_location_by_placeID(json_data, placeID):
 
     return filtered_visits
 
-def print_unique_visits_to_csv(json_data, output_file, source_type=''):
-    """
-    Writes unique visits from the Google Timeline JSON to a CSV, adding a new
-    'Source Type' column filled with the provided `source_type` value.
-    """
+def unique_visits_to_df(json_data, source_type=''):
+    """Return a DataFrame of unique visits from the Google Timeline JSON."""
     place_id_map = {}
 
     for segment in json_data.get("semanticSegments", []):
@@ -100,7 +98,6 @@ def print_unique_visits_to_csv(json_data, output_file, source_type=''):
         if not visit:
             continue
 
-        # Collect topCandidate and any fallback candidatePlaces
         candidates = []
         if "topCandidate" in visit:
             candidates.append(visit["topCandidate"])
@@ -116,9 +113,7 @@ def print_unique_visits_to_csv(json_data, output_file, source_type=''):
                 continue
 
             try:
-                # Parse the visit start date into ISO format
                 start_time_str = segment.get("startTime")
-                
                 if start_time_str:
                     try:
                         start_date = datetime.fromisoformat(
@@ -126,25 +121,37 @@ def print_unique_visits_to_csv(json_data, output_file, source_type=''):
                         ).date().isoformat()
                     except Exception:
                         start_date = ""
+                else:
+                    start_date = ""
 
-                # Convert coordinates from "lat°, lon°" to floats
                 lat_str, lon_str = latlng.replace("°", "").split(",")
                 lat = float(lat_str.strip())
                 lon = float(lon_str.strip())
                 place_name = reverse_geocode_api_call_helper(lat, lon)
                 place_id_map[pid] = (lat, lon, start_date, place_name)
             except Exception:
-                # Skip entries with malformed data
                 continue
 
-    # Write out the CSV with the new Source Type column
-    with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
-        writer = csv.writer(csvfile)
-        # Add 'Source Type' to the header
-        writer.writerow(["Place ID", "Latitude", "Longitude", "Start Date", "Source Type", "Place Name"])
-        # Populate every row with the provided source_type
-        for pid, (lat, lon, start_date, place_name) in place_id_map.items():
-            writer.writerow([pid, lat, lon, start_date, source_type, place_name])
+    records = [
+        {
+            "Place ID": pid,
+            "Latitude": vals[0],
+            "Longitude": vals[1],
+            "Start Date": vals[2],
+            "Source Type": source_type,
+            "Place Name": vals[3],
+        }
+        for pid, vals in place_id_map.items()
+    ]
+
+    return pd.DataFrame(records)
+
+def print_unique_visits_to_csv(json_data, output_file=None, source_type=''):
+    """Generate a CSV of unique visits using :func:`unique_visits_to_df`."""
+    df = unique_visits_to_df(json_data, source_type)
+    if output_file:
+        df.to_csv(output_file, index=False)
+    return df
 
 ### Print location data to console formatted cleanly for troubleshooting
 def print_json_to_console(json_data):
