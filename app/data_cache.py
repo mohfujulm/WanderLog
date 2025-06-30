@@ -2,7 +2,7 @@ import os
 import pandas as pd
 
 # Path to the master timeline CSV
-CSV_PATH = os.path.join('data', 'master_timeline_db.csv')
+CSV_PATH = os.path.join('data', 'master_timeline_data.csv')
 
 # Cached pandas DataFrame
 timeline_df = None
