@@ -1,46 +1,63 @@
-### Basic json data parsing/retrieval functions that will be used throughout this application. ###
+"""Helper functions for parsing Google Timeline JSON data.
+
+The functions in this module are used to read Timeline JSON files, extract
+visits, and enrich those visits with human readable addresses via the Mapbox
+API.  A valid ``MAPBOX_ACCESS_TOKEN`` is expected to be provided in the
+environment (usually loaded from a ``.env`` file).
+"""
 
 import json
-import csv
 import os
-import requests
 from datetime import datetime
-from dotenv import load_dotenv
+
 import pandas as pd
+import requests
+from dotenv import load_dotenv
 
 load_dotenv()
 
 MAPBOX_ACCESS_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN")
 
-# Function to reverse geocode latitude & longitude into a place name using Mapbox
-def reverse_geocode_api_call_helper(lat, lon):
-    # Build URL for Mapbox reverse geocoding API
+def reverse_geocode_api_call_helper(lat: float, lon: float) -> str:
+    """Return a human readable place name for the given coordinates.
+
+    Parameters
+    ----------
+    lat: float
+        Latitude of the location.
+    lon: float
+        Longitude of the location.
+
+    Returns
+    -------
+    str
+        The place name resolved by the Mapbox API or an error string if the
+        lookup fails.
+    """
+
     url = (
-        f"https://api.mapbox.com/geocoding/v5/mapbox.places/"
+        "https://api.mapbox.com/geocoding/v5/mapbox.places/"
         f"{lon},{lat}.json?access_token={MAPBOX_ACCESS_TOKEN}&types=poi,address,place"
     )
 
-    # Make the API request
     response = requests.get(url)
 
-    # Parse the result if successful
     if response.status_code == 200:
         features = response.json().get("features", [])
         if features:
             return features[0].get("place_name", "Unknown")
-        else:
-            return "No result"
-    else:
-        return f"Error {response.status_code}"
+        return "No result"
+    return f"Error {response.status_code}"
 
-### Load a json file into python
-def load_json_file(filepath):
-    with open(filepath, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-        return data
+def load_json_file(filepath: str) -> dict:
+    """Load a JSON file from ``filepath`` and return the parsed data."""
 
-### Returns a list of locations (start time, end time, place ID, and coordinates) provided a specified range of dates
-def extract_locations_by_date(json_data, start_date, end_date):
+    with open(filepath, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def extract_locations_by_date(json_data: dict, start_date: datetime.date, end_date: datetime.date) -> list:
+    """Return visits occurring within ``start_date`` and ``end_date``."""
+
     visits_in_range = []
 
     for segment in json_data.get("semanticSegments", []):
@@ -70,27 +87,33 @@ def extract_locations_by_date(json_data, start_date, end_date):
     return visits_in_range
 
 ### Returns a list of locations (start time, end time, place ID, and coordinates) provided a given place ID
-def extract_location_by_placeID(json_data, placeID):
-    
+def extract_locations_by_place_id(json_data: dict, place_id: str) -> list:
+    """Return all visits that match the provided ``place_id``."""
+
     filtered_visits = []
 
     for segment in json_data.get("semanticSegments", []):
         visit = segment.get("visit")
         if visit and "topCandidate" in visit:
             top = visit["topCandidate"]
-            place_id = top.get("placeId", "")
-            if place_id == placeID:
+            current_place_id = top.get("placeId", "")
+            if current_place_id == place_id:
                 filtered_visits.append({
                     "start": segment.get("startTime"),
                     "end": segment.get("endTime"),
-                    "place_id": place_id,
+                    "place_id": current_place_id,
                     "coordinates": top.get("placeLocation", {}).get("latLng", "Unknown")
                 })
 
     return filtered_visits
 
-def unique_visits_to_df(json_data, source_type=''):
-    """Return a DataFrame of unique visits from the Google Timeline JSON."""
+def unique_visits_to_df(json_data: dict, source_type: str = "") -> pd.DataFrame:
+    """Return a :class:`pandas.DataFrame` of unique visits.
+
+    Each unique place ID is reverse geocoded to a human readable name.  The
+    ``source_type`` parameter can be used to annotate the resulting records with
+    the origin of the data (e.g. ``"google_timeline"``).
+    """
     place_id_map = {}
 
     for segment in json_data.get("semanticSegments", []):
@@ -146,26 +169,43 @@ def unique_visits_to_df(json_data, source_type=''):
 
     return pd.DataFrame(records)
 
-def print_unique_visits_to_csv(json_data, output_file=None, source_type=''):
-    """Generate a CSV of unique visits using :func:`unique_visits_to_df`."""
+def print_unique_visits_to_csv(
+    json_data: dict, output_file: str | None = None, source_type: str = ""
+) -> pd.DataFrame:
+    """Write :func:`unique_visits_to_df` output to ``output_file``.
+
+    Parameters
+    ----------
+    json_data: dict
+        Parsed Google Timeline JSON data.
+    output_file: str | None
+        Optional path to write the CSV file to.
+    source_type: str, optional
+        Value used to annotate the resulting DataFrame.
+    """
+
     df = unique_visits_to_df(json_data, source_type)
     if output_file:
         df.to_csv(output_file, index=False)
     return df
 
 ### Print location data to console formatted cleanly for troubleshooting
-def print_json_to_console(json_data):
-    for idx, v in enumerate(json_data, 1):
+def print_json_to_console(json_data: list) -> None:
+    """Pretty print a list of visit dictionaries to the console."""
+
+    for idx, visit in enumerate(json_data, 1):
         print(f"\nVisit #{idx}")
-        print(f"Start Time : {v['start']}")
-        print(f"End Time   : {v['end']}")
-        print(f"Place ID   : {v['place_id']}")
-        print(f"Coordinates: {v['coordinates']}")
+        print(f"Start Time : {visit['start']}")
+        print(f"End Time   : {visit['end']}")
+        print(f"Place ID   : {visit['place_id']}")
+        print(f"Coordinates: {visit['coordinates']}")
 
 ### Writes locations (start time, end time, place ID, and coordinates) to a .json file
-def print_json_to_file(json_data, output_file):
+def print_json_to_file(json_data: list, output_file: str) -> None:
+    """Write ``json_data`` to ``output_file`` formatted as JSON."""
+
     json_object = json.dumps(json_data, indent=4)
-    with open(output_file, "w") as outfile:
+    with open(output_file, "w", encoding="utf-8") as outfile:
         outfile.write(json_object)
 
 #start_date = datetime.strptime('2015-01-01', '%Y-%m-%d').date()
