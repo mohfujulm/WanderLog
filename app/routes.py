@@ -1,29 +1,19 @@
 """Flask routes for the WanderLog application."""
 
 import json
-import os
 
-import folium
 import pandas as pd
 from flask import Blueprint, jsonify, render_template, request
 
-from app.map_utils import update_map_with_timeline_data
+from app.map_utils import create_base_map, update_map_with_timeline_data
 from app.utils.json_processing_functions import unique_visits_to_df
 from . import data_cache
 
 main = Blueprint("main", __name__)
 
-MAPBOX_ACCESS_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN")
-
 # Create initial Folium map object with default settings. This in-memory
 # map is updated whenever new timeline data is uploaded.
-m = folium.Map(
-    location=[40.65997395108914, -73.71300111746832],
-    zoom_start=5,
-    min_zoom=3,
-    tiles=f"https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{{z}}/{{x}}/{{y}}?access_token={MAPBOX_ACCESS_TOKEN}",
-    attr='Mapbox'
-)
+m = create_base_map()
 
 @main.route('/')
 def index():
@@ -71,7 +61,8 @@ def api_update_timeline():
         data_cache.save_timeline_data()
 
         # Update the Folium map with the new data
-        update_map_with_timeline_data(m, df=data_cache.timeline_df)
+        global m
+        m = update_map_with_timeline_data(df=data_cache.timeline_df)
 
         #  Return success message
         return jsonify(
@@ -88,13 +79,7 @@ def api_clear():
     """Clear all markers and reset the map state."""
 
     global m
-    m = folium.Map(
-        location=[40.65997395108914, -73.71300111746832],
-        zoom_start=5,
-        min_zoom=3,
-        tiles=f"https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{{z}}/{{x}}/{{y}}?access_token={MAPBOX_ACCESS_TOKEN}",
-        attr='Mapbox'
-    )
+    m = create_base_map()
     m.save('map.html')
     return jsonify({'status': 'success', 'message': 'Map cleared successfully.'})
 
@@ -123,6 +108,7 @@ def api_render_map():
     if source_types:
         df = df[df.get('Source Type').isin(source_types)]
 
-    update_map_with_timeline_data(m, df=df)
+    global m
+    m = update_map_with_timeline_data(df=df)
 
     return jsonify({'status': 'success', 'message': 'Map refreshed.'})

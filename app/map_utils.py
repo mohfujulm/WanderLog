@@ -1,27 +1,31 @@
 import os
 import pandas as pd
 import folium
-from folium.plugins import MarkerCluster
+from folium.plugins import FastMarkerCluster
 
 from . import data_cache
 
-def update_map_with_timeline_data(
-    input_map, input_file=None, df=None, source_type=None
-):
-    """Add markers to ``input_map`` using timeline data.
 
-    Parameters
-    ----------
-    input_map : folium.Map
-        Map instance to update.
-    input_file : str, optional
-        CSV file containing timeline data.
-    df : pandas.DataFrame, optional
-        DataFrame of timeline data to render.
-    source_type : str, optional
-        If provided, only rows matching this ``Source Type`` value are used.
+def create_base_map():
+    """Return a new empty Folium map."""
+    mapbox_token = os.getenv("MAPBOX_ACCESS_TOKEN")
+    return folium.Map(
+        location=[40.65997395108914, -73.71300111746832],
+        zoom_start=5,
+        min_zoom=3,
+        tiles=(
+            f"https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{{z}}/{{x}}/{{y}}?access_token={mapbox_token}"
+        ),
+        attr="Mapbox",
+    )
+
+
+def update_map_with_timeline_data(input_file=None, df=None, source_type=None):
+    """Create and save a map with markers from timeline data.
+
+    The map is recreated on each call to avoid stacking old markers and uses
+    ``FastMarkerCluster`` for faster client side rendering.
     """
-
     if df is None:
         if data_cache.timeline_df is not None:
             df = data_cache.timeline_df
@@ -31,12 +35,23 @@ def update_map_with_timeline_data(
             df = pd.read_csv(input_file)
         else:
             print("No timeline data available to render on map")
-            return
-    
+            m = create_base_map()
+            m.save("map.html")
+            return m
+
     if source_type:
         before = len(df)
         df = df[df.get("Source Type") == source_type]
-        print(f"Filtered timeline data from {before} to {len(df)} rows by source '{source_type}'")
+        print(
+            f"Filtered timeline data from {before} to {len(df)} rows by source '{source_type}'"
+        )
+
+    m = create_base_map()
+
+    if df.empty:
+        m.save("map.html")
+        print("Map saved successfully (no points).")
+        return m
 
     popup_css = """
         <style>
@@ -57,131 +72,40 @@ def update_map_with_timeline_data(
             box-shadow: none !important;
         }
         </style>
-    """ 
-    
-    input_map.get_root().html.add_child(folium.Element(popup_css))
-
-    # Cluster icon styling
-    cluster_css = """
-    <style>
-    .marker-cluster-small {
-        background-color: rgba(181, 226, 140, 0.7);
-    }
-    .marker-cluster-small div {
-        width: 30px;
-        height: 30px;
-        line-height: 30px;
-        border-radius: 15px;
-        border: 1px solid black;
-        color: black;
-    }
-    .marker-cluster-medium {
-        background-color: rgba(241, 211, 87, 0.7);
-    }
-    .marker-cluster-medium div {
-        width: 40px;
-        height: 40px;
-        line-height: 40px;
-        border-radius: 20px;
-        border: 1px solid black;
-        color: black;
-    }
-    .marker-cluster-large {
-        background-color: rgba(253, 156, 115, 0.7);
-    }
-    .marker-cluster-large div {
-        width: 45px;
-        height: 45px;
-        line-height: 45px;
-        border-radius: 22.5px;
-        border: 1px solid black;
-        color: black;
-    }
-    </style>
     """
-    input_map.get_root().html.add_child(folium.Element(cluster_css))
+    m.get_root().html.add_child(folium.Element(popup_css))
 
-    # JavaScript factory for creating cluster icons
-    icon_create_function = """
-    function(cluster) {
-        var count = cluster.getChildCount();
-        var size = 'small';
-        if (count >= 100) {
-            size = 'large';
-        } else if (count >= 40) {
-            size = 'medium';
-        }
-        return new L.DivIcon({
-            html: '<div><span>' + count + '</span></div>',
-            className: 'marker-cluster marker-cluster-' + size,
-            iconSize: new L.Point(40, 40)
-        });
-    }
+    icon_path = os.path.join("app", "static", "assets", "marker.png")
+    custom_icon_exists = os.path.exists(icon_path)
+    icon_def = ""
+    if custom_icon_exists:
+        icon_def = (
+            "var customIcon = L.icon({"\
+            "iconUrl: '/static/assets/marker.png',"\
+            "iconSize: [40,40],"\
+            "iconAnchor: [20,40],"\
+            "popupAnchor: [0,-40]"\
+            "});"
+        )
+
+    callback = f"""
+    function (row) {{
+        {icon_def}
+        var marker = L.marker(new L.LatLng(row[0], row[1]){', {icon: customIcon}' if custom_icon_exists else ''});
+        var popup = `<div style="font-family: Arial, sans-serif; width: 220px; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 15px; box-shadow: 0 8px 20px rgba(0,0,0,0.3); border: 2px solid rgba(255,255,255,0.2); position: relative;">
+            <h3 style="margin: 0 0 10px 0; color: #fff; font-size: 16px;">📍 Location Details</h3>
+            <p style="margin: 5px 0; font-size: 12px;"><strong>Place Name:</strong> ` + row[2] + `</p>
+            <p style="margin: 5px 0; font-size: 12px;"><strong>Date Visited:</strong> ` + row[3] + `</p>
+            <div style="position: absolute; bottom: -10px; left: 50%; transform: translateX(-50%); width: 0; height: 0; border-left: 10px solid transparent; border-right: 10px solid transparent; border-top: 10px solid #764ba2;"></div>
+        </div>`;
+        marker.bindPopup(popup);
+        return marker;
+    }}
     """
 
-    # Create cluster group with custom icons
-    marker_cluster = MarkerCluster(
-        icon_create_function=icon_create_function
-    ).add_to(input_map)
+    points = df[["Latitude", "Longitude", "Place Name", "Start Date"]].values.tolist()
+    FastMarkerCluster(points, callback=callback).add_to(m)
 
-    for _, row in df.iterrows():
-        popup_html = f"""
-        {popup_css}
-        <div style="
-            font-family: Arial, sans-serif;
-            width: 220px;
-            padding: 15px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-radius: 15px;
-            box-shadow: 0 8px 20px rgba(0,0,0,0.3);
-            border: 2px solid rgba(255,255,255,0.2);
-            position: relative;
-        ">
-            <h3 style="margin: 0 0 10px 0; color: #fff; font-size: 16px;">
-                📍 Location Details
-            </h3>
-            <p style="margin: 5px 0; font-size: 12px;">
-                <strong>Place Name:</strong> {row['Place Name']}
-            </p>
-            <p style="margin: 5px 0; font-size: 12px;">
-                <strong>Date Visited:</strong> {row['Start Date']}
-            </p>
-            <p style="margin: 5px 0; font-size: 12px;">
-                <strong>Coordinates:</strong><br>
-                Lat: {row['Latitude']:.4f}<br>
-                Lng: {row['Longitude']:.4f}
-            </p>
-            
-            <!-- Custom arrow pointing down -->
-            <div style="
-                position: absolute;
-                bottom: -10px;
-                left: 50%;
-                transform: translateX(-50%);
-                width: 0;
-                height: 0;
-                border-left: 10px solid transparent;
-                border-right: 10px solid transparent;
-                border-top: 10px solid #764ba2;
-            "></div>
-        </div>
-        """
-        custom_icon = None
-
-        if os.path.exists('app/static/assets/marker.png'):
-            custom_icon = folium.CustomIcon(
-                icon_image='app/static/assets/marker.png',
-                icon_size=(40, 40),
-                icon_anchor=(20, 40),
-                popup_anchor=(0, -40)
-            )
-
-        folium.Marker(
-            location=[row['Latitude'], row['Longitude']],
-            popup=folium.Popup(popup_html, max_width=250),
-            icon=custom_icon
-        ).add_to(marker_cluster)
-
-    input_map.save('map.html')
+    m.save("map.html")
     print("Map saved successfully!")
+    return m
