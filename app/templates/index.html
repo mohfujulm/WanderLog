@@ -89,6 +89,19 @@
                 transform: translateY(0);
                 box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
             }
+
+            .checkbox-group {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+            }
+
+            .checkbox-group label {
+                display: flex;
+                align-items: center;
+                gap: 4px;
+                font-size: 14px;
+            }
             
             /* Special styling for primary button */
             .overlay-button.primary {
@@ -175,10 +188,7 @@
                     <button class="overlay-button" onclick="clearMap()">
                         🗑️ Clear Markers
                     </button>
-                    <select id="sourceTypeFilter" class="overlay-button">
-                        <option value="">All Sources</option>
-                        <option value="google_timeline">Google Timeline</option>
-                    </select>
+                    <div id="sourceTypeFilters" class="checkbox-group"></div>
                     <button class="overlay-button" onclick="refreshMap()">
                         🔄 Refresh Map
                     </button>
@@ -296,13 +306,13 @@
 
             async function refreshMap() {
                 showLoading();
-                const sourceType = document.getElementById('sourceTypeFilter').value;
+                const checked = Array.from(document.querySelectorAll('#sourceTypeFilters input:checked')).map(cb => cb.value);
 
                 try {
                     const response = await fetch('/api/render_map', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ source_type: sourceType })
+                        body: JSON.stringify({ source_types: checked })
                     });
                     const result = await response.json();
                     hideLoading();
@@ -315,6 +325,27 @@
                     showStatus('Error: ' + error.message, true);
                 }
             }
+
+            document.addEventListener('DOMContentLoaded', async () => {
+                try {
+                    const response = await fetch('/api/source_types');
+                    const types = await response.json();
+                    const container = document.getElementById('sourceTypeFilters');
+                    types.forEach(type => {
+                        const label = document.createElement('label');
+                        const cb = document.createElement('input');
+                        cb.type = 'checkbox';
+                        cb.value = type;
+                        cb.checked = true;
+                        cb.addEventListener('change', refreshMap);
+                        label.appendChild(cb);
+                        label.appendChild(document.createTextNode(' ' + type));
+                        container.appendChild(label);
+                    });
+                } catch (err) {
+                    console.error('Failed to load source types', err);
+                }
+            });
 
             function toggleMenu() {
                 const menu = document.querySelector('.menu-container');

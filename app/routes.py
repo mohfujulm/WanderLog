@@ -98,19 +98,31 @@ def api_clear():
     m.save('map.html')
     return jsonify({'status': 'success', 'message': 'Map cleared successfully.'})
 
+
+@main.route('/api/source_types', methods=['GET'])
+def api_source_types():
+    """Return a list of available Source Type values."""
+
+    df = data_cache.timeline_df
+    if df is None or df.empty:
+        return jsonify([])
+
+    types = sorted(df.get('Source Type').dropna().unique().tolist())
+    return jsonify(types)
+
 @main.route('/api/render_map', methods=['POST'])
 def api_render_map():
-    """Refresh the map with optional filtering by source type."""
+    """Refresh the map with optional filtering by one or more source types."""
 
     df = data_cache.timeline_df
     if df is None or df.empty:
         return jsonify(status='error', message='No timeline data loaded.'), 400
 
     data = request.get_json(silent=True) or {}
-    source_type = data.get('source_type')
-    if source_type:
-        df = df[df.get('Source Type') == source_type]
+    source_types = data.get('source_types') or []
+    if source_types:
+        df = df[df.get('Source Type').isin(source_types)]
 
-    update_map_with_timeline_data(m, df=df, source_type=source_type)
+    update_map_with_timeline_data(m, df=df)
 
     return jsonify({'status': 'success', 'message': 'Map refreshed.'})
