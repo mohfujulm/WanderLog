@@ -37,3 +37,16 @@ def save_timeline_data():
     except Exception as exc:
         print(f"Failed to save {CSV_PATH}: {exc}")
 
+
+def clear_timeline_data():
+    """Remove cached timeline data and delete the CSV file if present."""
+    global timeline_df
+
+    timeline_df = None
+    if os.path.exists(CSV_PATH):
+        try:
+            os.remove(CSV_PATH)
+            print(f"Removed {CSV_PATH}")
+        except Exception as exc:
+            print(f"Failed to remove {CSV_PATH}: {exc}")
+
