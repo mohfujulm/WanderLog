@@ -1,6 +1,11 @@
 <html>
     <head>
         <title>Wanderlog Full-Screen Map</title>
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+        <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
         <style>
             /* CSS STYLES - Full-screen map with overlay buttons */
             * {
@@ -22,11 +27,10 @@
                 height: 100vh;
             }
             
-            /* Map iframe takes full screen */
+            /* Map container takes full screen */
             #map {
                 width: 100%;
                 height: 100%;
-                border: none;
             }
             
             /* Menu container positioned in the top-right */
@@ -172,8 +176,8 @@
     <body>
         <!-- Full-screen map container -->
         <div id="map-container">
-            <!-- Map iframe -->
-            <iframe id="map" src="{{ url_for('main.serve_map') }}"></iframe>
+            <!-- Map element rendered by Leaflet -->
+            <div id="map"></div>
             
             <!-- Hidden file input for importing Google Timeline JSON -->
             <input type="file" id="timelineFile" accept=".json" style="display:none" onchange="updateMap()">
@@ -241,13 +245,46 @@
                 setTimeout(() => status.style.display = 'none', 4000);
             }
             
+            let map;
+            let markerCluster;
+
             /**
-             * Refresh the map iframe by reloading it
+             * Initialize Leaflet map and fetch markers
              */
-            function refreshMapFrame() {
-                const mapFrame = document.getElementById('map');
-                // Add timestamp to URL to force refresh
-                mapFrame.src = '/map?' + new Date().getTime();
+            function initMap() {
+                map = L.map('map').setView([40.65997395108914, -73.71300111746832], 5);
+
+                L.tileLayer('https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token={{ mapbox_access_token }}', {
+                    maxZoom: 18,
+                    attribution: 'Mapbox'
+                }).addTo(map);
+
+                markerCluster = L.markerClusterGroup();
+                map.addLayer(markerCluster);
+
+                loadMarkers();
+            }
+
+            /**
+             * Fetch marker data from server and update the map
+             */
+            async function loadMarkers() {
+                const checked = Array.from(document.querySelectorAll('#sourceTypeFilters input:checked')).map(cb => cb.value);
+                const params = new URLSearchParams();
+                checked.forEach(t => params.append('source_types', t));
+
+                const response = await fetch('/api/markers?' + params.toString());
+                const markers = await response.json();
+
+                markerCluster.clearLayers();
+                markers.forEach(m => {
+                    const marker = L.marker([m.Latitude, m.Longitude]);
+                    marker.bindPopup(
+                        `<div><strong>Place Name:</strong> ${m['Place Name']}<br>` +
+                        `<strong>Date Visited:</strong> ${m['Start Date']}</div>`
+                    );
+                    markerCluster.addLayer(marker);
+                });
             }
             
             /**
@@ -274,7 +311,7 @@
                 hideLoading();
                 showStatus(result.message, result.status === 'error');
                 if (result.status === 'success') {
-                    setTimeout(refreshMapFrame, 1000);
+                    setTimeout(loadMarkers, 500);
                 }
                 } catch (err) {
                 hideLoading();
@@ -296,7 +333,7 @@
                     hideLoading();
                     showStatus(result.message, result.status === 'error');
                     if (result.status === 'success') {
-                        setTimeout(refreshMapFrame, 500);
+                        setTimeout(loadMarkers, 300);
                     }
                 } catch (error) {
                     hideLoading();
@@ -306,27 +343,13 @@
 
             async function refreshMap() {
                 showLoading();
-                const checked = Array.from(document.querySelectorAll('#sourceTypeFilters input:checked')).map(cb => cb.value);
-
-                try {
-                    const response = await fetch('/api/render_map', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ source_types: checked })
-                    });
-                    const result = await response.json();
-                    hideLoading();
-                    showStatus(result.message, result.status === 'error');
-                    if (result.status === 'success') {
-                        setTimeout(refreshMapFrame, 500);
-                    }
-                } catch (error) {
-                    hideLoading();
-                    showStatus('Error: ' + error.message, true);
-                }
+                await loadMarkers();
+                hideLoading();
+                showStatus('Map refreshed.', false);
             }
 
             document.addEventListener('DOMContentLoaded', async () => {
+                initMap();
                 try {
                     const response = await fetch('/api/source_types');
                     const types = await response.json();

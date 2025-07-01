@@ -3,11 +3,8 @@
 import json
 import os
 
-import folium
 import pandas as pd
 from flask import Blueprint, jsonify, render_template, request
-
-from app.map_utils import update_map_with_timeline_data
 from app.utils.json_processing_functions import unique_visits_to_df
 from . import data_cache
 
@@ -15,21 +12,11 @@ main = Blueprint("main", __name__)
 
 MAPBOX_ACCESS_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN")
 
-# Create initial Folium map object with default settings. This in-memory
-# map is updated whenever new timeline data is uploaded.
-m = folium.Map(
-    location=[40.65997395108914, -73.71300111746832],
-    zoom_start=5,
-    min_zoom=3,
-    tiles=f"https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{{z}}/{{x}}/{{y}}?access_token={MAPBOX_ACCESS_TOKEN}",
-    attr='Mapbox'
-)
-
 @main.route('/')
 def index():
     """Render the landing page."""
 
-    return render_template("index.html")
+    return render_template("index.html", mapbox_access_token=MAPBOX_ACCESS_TOKEN)
 
 # Route to serve the current saved map HTML
 @main.route('/map')
@@ -61,17 +48,17 @@ def api_update_timeline():
         #Process the timeline.json file uploaded by the user into a pandas df.
         imported_df = unique_visits_to_df(timeline_json, "google_timeline")
         database_df = data_cache.timeline_df
-        #combine the imported data and resulting processed dataframe with the existing database info
-        combined = pd.concat([imported_df, database_df])
+        # combine the imported data with the existing database info
+        if database_df is not None:
+            combined = pd.concat([imported_df, database_df])
+        else:
+            combined = imported_df
         combined = combined.drop_duplicates()
         #update global database memory with appended information
         data_cache.timeline_df = combined
 
         # Persist the updated timeline if required
         data_cache.save_timeline_data()
-
-        # Update the Folium map with the new data
-        update_map_with_timeline_data(m, df=data_cache.timeline_df)
 
         #  Return success message
         return jsonify(
@@ -85,17 +72,9 @@ def api_update_timeline():
 
 @main.route('/api/clear', methods=['POST'])
 def api_clear():
-    """Clear all markers and reset the map state."""
+    """Clear all markers and reset the stored timeline data."""
 
-    global m
-    m = folium.Map(
-        location=[40.65997395108914, -73.71300111746832],
-        zoom_start=5,
-        min_zoom=3,
-        tiles=f"https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{{z}}/{{x}}/{{y}}?access_token={MAPBOX_ACCESS_TOKEN}",
-        attr='Mapbox'
-    )
-    m.save('map.html')
+    data_cache.clear_timeline_data()
     return jsonify({'status': 'success', 'message': 'Map cleared successfully.'})
 
 
@@ -112,17 +91,25 @@ def api_source_types():
 
 @main.route('/api/render_map', methods=['POST'])
 def api_render_map():
-    """Refresh the map with optional filtering by one or more source types."""
+    """Endpoint maintained for backwards compatibility."""
+
+    if data_cache.timeline_df is None or data_cache.timeline_df.empty:
+        return jsonify(status='error', message='No timeline data loaded.'), 400
+
+    return jsonify({'status': 'success', 'message': 'Map refreshed.'})
+
+
+@main.route('/api/markers', methods=['GET'])
+def api_markers():
+    """Return marker data optionally filtered by ``source_types`` query args."""
 
     df = data_cache.timeline_df
     if df is None or df.empty:
-        return jsonify(status='error', message='No timeline data loaded.'), 400
+        return jsonify([])
 
-    data = request.get_json(silent=True) or {}
-    source_types = data.get('source_types') or []
+    source_types = request.args.getlist('source_types')
     if source_types:
         df = df[df.get('Source Type').isin(source_types)]
 
-    update_map_with_timeline_data(m, df=df)
-
-    return jsonify({'status': 'success', 'message': 'Map refreshed.'})
+    markers = df[['Latitude', 'Longitude', 'Place Name', 'Start Date']].to_dict(orient='records')
+    return jsonify(markers)
