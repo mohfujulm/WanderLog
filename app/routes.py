@@ -97,3 +97,21 @@ def api_clear():
     )
     m.save('map.html')
     return jsonify({'status': 'success', 'message': 'Map cleared successfully.'})
+
+
+@main.route('/api/render_map', methods=['POST'])
+def api_render_map():
+    """Refresh the map with optional filtering by source type."""
+
+    df = data_cache.timeline_df
+    if df is None or df.empty:
+        return jsonify(status='error', message='No timeline data loaded.'), 400
+
+    data = request.get_json(silent=True) or {}
+    source_type = data.get('source_type')
+    if source_type:
+        df = df[df.get('Source Type') == source_type]
+
+    update_map_with_timeline_data(m, df=df, source_type=source_type)
+
+    return jsonify({'status': 'success', 'message': 'Map refreshed.'})

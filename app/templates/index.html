@@ -175,6 +175,10 @@
                     <button class="overlay-button" onclick="clearMap()">
                         🗑️ Clear Markers
                     </button>
+                    <select id="sourceTypeFilter" class="overlay-button">
+                        <option value="">All Sources</option>
+                        <option value="google_timeline">Google Timeline</option>
+                    </select>
                     <button class="overlay-button" onclick="refreshMap()">
                         🔄 Refresh Map
                     </button>
@@ -277,6 +281,31 @@
                 try {
                     const response = await fetch('/api/clear', { 
                         method: 'POST'
+                    });
+                    const result = await response.json();
+                    hideLoading();
+                    showStatus(result.message, result.status === 'error');
+                    if (result.status === 'success') {
+                        setTimeout(refreshMapFrame, 500);
+                    }
+                } catch (error) {
+                    hideLoading();
+                    showStatus('Error: ' + error.message, true);
+                }
+            }
+
+            /**
+             * Refresh map with the selected source type filter
+             */
+            async function refreshMap() {
+                showLoading();
+                const sourceType = document.getElementById('sourceTypeFilter').value;
+
+                try {
+                    const response = await fetch('/api/render_map', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ source_type: sourceType })
                     });
                     const result = await response.json();
                     hideLoading();
