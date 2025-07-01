@@ -5,8 +5,22 @@ from folium.plugins import MarkerCluster
 
 from . import data_cache
 
-def update_map_with_timeline_data(input_map, input_file=None, df=None):
-    """Add markers to ``input_map`` using timeline data."""
+def update_map_with_timeline_data(
+    input_map, input_file=None, df=None, source_type=None
+):
+    """Add markers to ``input_map`` using timeline data.
+
+    Parameters
+    ----------
+    input_map : folium.Map
+        Map instance to update.
+    input_file : str, optional
+        CSV file containing timeline data.
+    df : pandas.DataFrame, optional
+        DataFrame of timeline data to render.
+    source_type : str, optional
+        If provided, only rows matching this ``Source Type`` value are used.
+    """
 
     if df is None:
         if data_cache.timeline_df is not None:
@@ -18,6 +32,11 @@ def update_map_with_timeline_data(input_map, input_file=None, df=None):
         else:
             print("No timeline data available to render on map")
             return
+    
+    if source_type:
+        before = len(df)
+        df = df[df.get("Source Type") == source_type]
+        print(f"Filtered timeline data from {before} to {len(df)} rows by source '{source_type}'")
 
     popup_css = """
         <style>
