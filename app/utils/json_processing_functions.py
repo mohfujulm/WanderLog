@@ -13,6 +13,7 @@ from datetime import datetime
 import pandas as pd
 import requests
 from dotenv import load_dotenv
+from .. import data_cache
 
 load_dotenv()
 
@@ -108,13 +109,12 @@ def extract_locations_by_place_id(json_data: dict, place_id: str) -> list:
     return filtered_visits
 
 def unique_visits_to_df(json_data: dict, source_type: str = "") -> pd.DataFrame:
-    """Return a :class:`pandas.DataFrame` of unique visits.
-
-    Each unique place ID is reverse geocoded to a human readable name.  The
-    ``source_type`` parameter can be used to annotate the resulting records with
-    the origin of the data (e.g. ``"google_timeline"``).
-    """
+    """Return a :class:`pandas.DataFrame` of unique visits."""
+    existing_df = data_cache.timeline_df
+    # --- Create a set of existing placeIds for fast lookups
+    existing_place_ids = set(existing_df['Place ID']) if not existing_df.empty else set()
     place_id_map = {}
+    counter = 0
 
     for segment in json_data.get("semanticSegments", []):
         visit = segment.get("visit")
@@ -128,7 +128,17 @@ def unique_visits_to_df(json_data: dict, source_type: str = "") -> pd.DataFrame:
 
         for candidate in candidates:
             pid = candidate.get("placeId")
-            if not pid or pid in place_id_map:
+            if not pid:
+                #print("No place ID found")
+                counter += 1
+                continue
+            if pid in existing_place_ids:
+                #print(f"Place ID {pid} already in Timeline Database. Skipping entry.")
+                counter += 1
+                continue
+            if pid in place_id_map:
+                #print("Duplicate detected within this run. Skipping entry.")
+                counter += 1
                 continue
 
             latlng = candidate.get("placeLocation", {}).get("latLng", "")
@@ -154,6 +164,9 @@ def unique_visits_to_df(json_data: dict, source_type: str = "") -> pd.DataFrame:
                 place_id_map[pid] = (lat, lon, start_date, place_name)
             except Exception:
                 continue
+    
+    print('Skipped processing of ', counter, ' entries (duplicates or invalid values).')
+    # (You'll want to convert place_id_map to a DataFrame before returning...)
 
     records = [
         {

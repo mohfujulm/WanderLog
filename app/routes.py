@@ -60,11 +60,11 @@ def api_update_timeline():
 
 @main.route('/api/clear', methods=['POST'])
 def api_clear():
-    """Clear all markers and reset the map state."""
+    """Clear all timeline data and reset the map state."""
 
     data_cache.timeline_df = pd.DataFrame()
     data_cache.save_timeline_data()
-    return jsonify({'status': 'success', 'message': 'Map cleared successfully.'})
+    return jsonify({'status': 'success', 'message': 'All timeline data cleared successfully.'})
 
 
 @main.route('/api/source_types', methods=['GET'])
