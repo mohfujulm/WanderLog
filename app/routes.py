@@ -3,11 +3,10 @@
 import json
 import os
 
-import folium
 import pandas as pd
 from flask import Blueprint, jsonify, render_template, request
 
-from app.map_utils import update_map_with_timeline_data
+from app.map_utils import dataframe_to_markers
 from app.utils.json_processing_functions import unique_visits_to_df
 from . import data_cache
 
@@ -15,32 +14,11 @@ main = Blueprint("main", __name__)
 
 MAPBOX_ACCESS_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN")
 
-# Create initial Folium map object with default settings. This in-memory
-# map is updated whenever new timeline data is uploaded.
-m = folium.Map(
-    location=[40.65997395108914, -73.71300111746832],
-    zoom_start=5,
-    min_zoom=3,
-    tiles=f"https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{{z}}/{{x}}/{{y}}?access_token={MAPBOX_ACCESS_TOKEN}",
-    attr='Mapbox'
-)
-
 @main.route('/')
 def index():
     """Render the landing page."""
 
-    return render_template("index.html")
-
-# Route to serve the current saved map HTML
-@main.route('/map')
-def serve_map():
-    """Return the saved ``map.html`` file or a fallback page."""
-    try:
-        with open('map.html', 'r', encoding='utf-8') as f:
-            return f.read()
-    except FileNotFoundError:
-        # If the map hasn't been created yet show a simple message.
-        return render_template('map_not_found.html')
+    return render_template("index.html", mapbox_token=MAPBOX_ACCESS_TOKEN)
 
 @main.route('/api/update_timeline', methods=['POST'])
 def api_update_timeline():
@@ -70,13 +48,10 @@ def api_update_timeline():
         # Persist the updated timeline if required
         data_cache.save_timeline_data()
 
-        # Update the Folium map with the new data
-        update_map_with_timeline_data(m, df=data_cache.timeline_df)
-
         #  Return success message
         return jsonify(
           status='success',
-          message=f"Map updated with data from {timeline_file}!"
+          message=f"Timeline updated with data from {timeline_file.filename}!"
         )
 
     except Exception as e:
@@ -87,15 +62,8 @@ def api_update_timeline():
 def api_clear():
     """Clear all markers and reset the map state."""
 
-    global m
-    m = folium.Map(
-        location=[40.65997395108914, -73.71300111746832],
-        zoom_start=5,
-        min_zoom=3,
-        tiles=f"https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{{z}}/{{x}}/{{y}}?access_token={MAPBOX_ACCESS_TOKEN}",
-        attr='Mapbox'
-    )
-    m.save('map.html')
+    data_cache.timeline_df = pd.DataFrame()
+    data_cache.save_timeline_data()
     return jsonify({'status': 'success', 'message': 'Map cleared successfully.'})
 
 
@@ -110,19 +78,22 @@ def api_source_types():
     types = sorted(df.get('Source Type').dropna().unique().tolist())
     return jsonify(types)
 
-@main.route('/api/render_map', methods=['POST'])
-def api_render_map():
-    """Refresh the map with optional filtering by one or more source types."""
+
+@main.route('/api/map_data', methods=['GET', 'POST'])
+def api_map_data():
+    """Return marker data for the current timeline."""
 
     df = data_cache.timeline_df
     if df is None or df.empty:
-        return jsonify(status='error', message='No timeline data loaded.'), 400
+        return jsonify([])
 
-    data = request.get_json(silent=True) or {}
-    source_types = data.get('source_types') or []
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        source_types = data.get('source_types') or []
+    else:
+        source_types = request.args.getlist('source_types')
+
     if source_types:
         df = df[df.get('Source Type').isin(source_types)]
 
-    update_map_with_timeline_data(m, df=df)
-
-    return jsonify({'status': 'success', 'message': 'Map refreshed.'})
+    return jsonify(dataframe_to_markers(df))

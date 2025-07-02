@@ -183,5 +183,25 @@ def update_map_with_timeline_data(
             icon=custom_icon
         ).add_to(marker_cluster)
 
-    input_map.save('map.html')
-    print("Map saved successfully!")
+    # The map is kept in memory; the calling code can render it as needed
+
+
+def dataframe_to_markers(df: pd.DataFrame) -> list[dict]:
+    """Return a simplified marker list from the timeline dataframe."""
+
+    if df is None or df.empty:
+        return []
+
+    markers = []
+    for _, row in df.iterrows():
+        markers.append(
+            {
+                "lat": row["Latitude"],
+                "lng": row["Longitude"],
+                "place": row.get("Place Name", ""),
+                "date": row.get("Start Date", ""),
+                "source_type": row.get("Source Type", ""),
+            }
+        )
+
+    return markers
