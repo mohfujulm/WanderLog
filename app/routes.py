@@ -81,19 +81,31 @@ def api_source_types():
 
 @main.route('/api/map_data', methods=['GET', 'POST'])
 def api_map_data():
-    """Return marker data for the current timeline."""
+    """Return marker data for the current timeline.
 
+    The frontend calls this endpoint to retrieve simplified marker
+    dictionaries.  Optional filtering by ``Source Type`` values is
+    supported via POST or query parameters.
+    """
+
+    # Grab the cached timeline DataFrame held in memory
     df = data_cache.timeline_df
+
+    # If no data has been loaded yet return an empty array
     if df is None or df.empty:
         return jsonify([])
 
     if request.method == 'POST':
+        # For POST requests, read JSON body and grab any source type filters
         data = request.get_json(silent=True) or {}
         source_types = data.get('source_types') or []
     else:
+        # GET requests provide the filters as query string values
         source_types = request.args.getlist('source_types')
 
+    # Apply filtering when specific source types are requested
     if source_types:
         df = df[df.get('Source Type').isin(source_types)]
 
+    # Convert the filtered DataFrame into simple marker dictionaries
     return jsonify(dataframe_to_markers(df))

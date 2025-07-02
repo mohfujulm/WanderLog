@@ -189,19 +189,22 @@ def update_map_with_timeline_data(
 def dataframe_to_markers(df: pd.DataFrame) -> list[dict]:
     """Return a simplified marker list from the timeline dataframe."""
 
+    # Return early if no timeline data is available
     if df is None or df.empty:
         return []
 
     markers = []
+    # Iterate over each row and build a small dict for the frontend
     for _, row in df.iterrows():
         markers.append(
             {
-                "lat": row["Latitude"],
-                "lng": row["Longitude"],
-                "place": row.get("Place Name", ""),
-                "date": row.get("Start Date", ""),
-                "source_type": row.get("Source Type", ""),
+                "lat": row["Latitude"],           # Latitude for the map marker
+                "lng": row["Longitude"],          # Longitude for the map marker
+                "place": row.get("Place Name", ""),  # Human readable place name
+                "date": row.get("Start Date", ""),   # Date when the place was visited
+                "source_type": row.get("Source Type", ""),  # Data source category
             }
         )
 
+    # The frontend expects a list of marker dictionaries
     return markers
