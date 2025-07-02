@@ -69,33 +69,46 @@ function showStatus(message, isError=false) {
 }
 
 function initMap() {
+    // Create a Leaflet map centered on a default view
     map = L.map('map').setView([40.65997395108914, -73.71300111746832], 5);
+    // Add Mapbox tiles using the token passed from the backend
     L.tileLayer(`https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`, {
         maxZoom: 18,
         attribution: 'Mapbox'
     }).addTo(map);
+    // Cluster group keeps the map responsive when many markers are shown
     markerCluster = L.markerClusterGroup();
     map.addLayer(markerCluster);
+    // Load existing markers once the map is ready
     loadMarkers();
 }
 
 async function loadMarkers() {
+    // Show a loading overlay while fetching marker data
     showLoading();
+    // Remove any markers currently displayed
     markerCluster.clearLayers();
-    const checked = Array.from(document.querySelectorAll('#sourceTypeFilters input:checked')).map(cb => cb.value);
+    // Collect the values of all checked source type filters
+    const checked = Array.from(
+        document.querySelectorAll('#sourceTypeFilters input:checked')
+    ).map(cb => cb.value);
     try {
+        // Request the marker list from the server, filtering by source type
         const response = await fetch('/api/map_data', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ source_types: checked })
         });
+        // Parse the JSON response
         const markers = await response.json();
+        // Add a Leaflet marker for each item returned
         markers.forEach(m => {
             const popup = `<div><strong>Place Name:</strong> ${m.place}<br>` +
                           `<strong>Date Visited:</strong> ${m.date}<br>` +
                           `<strong>Coordinates:</strong> ${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</div>`;
             L.marker([m.lat, m.lng]).bindPopup(popup).addTo(markerCluster);
         });
+        // Done loading
         hideLoading();
     } catch(err) {
         hideLoading();
