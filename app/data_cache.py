@@ -15,6 +15,7 @@ def load_timeline_data():
         try:
             timeline_df = pd.read_csv(CSV_PATH)
             print(f"Loaded {len(timeline_df)} rows from {CSV_PATH}")
+            #print(timeline_df)
         except Exception as exc:
             print(f"Failed to load {CSV_PATH}: {exc}")
             timeline_df = None

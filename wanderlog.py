@@ -145,9 +145,7 @@ def update_map_with_timeline_data(input_map, input_file):
             icon=custom_icon                               # Custom icon (if available)
         ).add_to(marker_cluster)
 
-    # STEP 8: Save the updated map to HTML file
-    input_map.save('map.html')
-    print("Map saved successfully!")
+    # STEP 8: The map is kept in memory and can be rendered directly
 
 # ============================================================================
 # FLASK ROUTES - These handle web requests (URLs that users visit)
@@ -500,12 +498,7 @@ def serve_map():
     This function serves the map HTML file.
     When the iframe requests /map, this function runs and returns the map content.
     """
-    try:
-        # Try to read and return the map HTML file
-        with open('map.html', 'r', encoding='utf-8') as f:
-            return f.read()
-    except FileNotFoundError:
-        # If map doesn't exist yet, show a message
+    if m is None:
         return '''
         <div style="
             display: flex;
@@ -531,6 +524,8 @@ def serve_map():
             </div>
         </div>
         '''
+
+    return m.get_root().render()
 
 @app.route('/api/update', methods=['POST'])
 def api_update():
@@ -594,9 +589,6 @@ def api_clear():
             attr='Mapbox'
         )
         
-        # Save the empty map
-        m.save('map.html')
-        
         success_msg = "Map cleared successfully!"
         print(f"SUCCESS: {success_msg}")
         
@@ -621,10 +613,8 @@ if __name__ == '__main__':
     print("🚀 STARTING WANDERLOG FULL-SCREEN MAP SERVER")
     print("=" * 60)
     
-    # Create initial empty map file
-    print("📍 Creating initial map...")
-    m.save('map.html')
-    print("✅ Initial map created: map.html")
+    # Create initial empty map in memory
+    print("📍 Creating initial map in memory...")
     
     # Check for required files
     if os.path.exists("test_output.csv"):

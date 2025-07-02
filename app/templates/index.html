@@ -1,363 +1,181 @@
+<!DOCTYPE html>
 <html>
-    <head>
-        <title>Wanderlog Full-Screen Map</title>
-        <style>
-            /* CSS STYLES - Full-screen map with overlay buttons */
-            * {
-                margin: 0;
-                padding: 0;
-                box-sizing: border-box;
-            }
-            
-            body, html {
-                height: 100%;
-                font-family: Verdana;
-                overflow: hidden;
-            }
-
-            /* Full-screen map container */
-            #map-container {
-                position: relative;
-                width: 100vw;
-                height: 100vh;
-            }
-            
-            /* Map iframe takes full screen */
-            #map {
-                width: 100%;
-                height: 100%;
-                border: none;
-            }
-            
-            /* Menu container positioned in the top-right */
-            .menu-container {
-                position: absolute;
-                top: 20px;
-                right: 20px;
-                z-index: 1000;
-                background-color: rgba(255, 255, 255, 0.95);
-                padding: 8px;
-                border-radius: 10px;
-            }
-
-            /* Hamburger icon button */
-            .hamburger {
-                cursor: pointer;
-                font-size: 24px;
-                user-select: none;
-                padding: 4px 6px;
-                background: rgba(255, 255, 255, 0.95);
-            }
-
-            /* Overlay controls hidden by default */
-            .overlay-controls {
-                display: none;
-                flex-direction: column;
-                gap: 10px;
-            }
-
-            /* Show controls when menu is open */
-            .menu-container.open .overlay-controls {
-                display: flex;
-            }
-            
-            /* Individual overlay buttons */
-            .overlay-button {
-                background: rgba(255, 255, 255, 0.95);
-                color: #333;
-                border: none;
-                padding: 12px 18px;
-                font-size: 14px;
-                font-weight: 600;
-                border-radius: 15px;
-                cursor: pointer;
-                transition: all 0.3s ease;
-                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
-                backdrop-filter: blur(10px);
-                border: 1px solid rgba(255, 255, 255, 0.2);
-                min-width: 180px;
-                text-align: center;
-            }
-            
-            .overlay-button:hover {
-                background: rgba(255, 255, 255, 1);
-                transform: translateY(-2px);
-                box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
-            }
-            
-            .overlay-button:active {
-                transform: translateY(0);
-                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-            }
-
-            .checkbox-group {
-                display: flex;
-                flex-direction: column;
-                gap: 4px;
-            }
-
-            .checkbox-group label {
-                display: flex;
-                align-items: center;
-                gap: 4px;
-                font-size: 14px;
-            }
-            
-            /* Special styling for primary button */
-            .overlay-button.primary {
-                color: black;
-            }
-            
-            .overlay-button.primary:hover {
-                background: rgb(214, 214, 214);
-            }
-            
-            #status {
-                position: absolute;
-                bottom: 20px;
-                left: 50%;
-                transform: translateX(-50%);
-                background: rgba(255,255,255,0.9);
-                padding: 8px 12px;
-                border-radius: 4px;
-                display: none;
-                font-size: 14px;
-                z-index: 1000;
-            }
-            
-            #status.success {
-                border: 1px solid #4CAF50;
-                color: #4CAF50;
-            }
-            
-            #status.error {
-                border: 1px solid #F44336;
-                color: #F44336;
-            }
-            
-            .loading-overlay {
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: rgba(255,255,255,0.8);
-                display: none;
-                align-items: center;
-                justify-content: center;
-                z-index: 2000;
-            }
-            
-            .loading-spinner {
-                text-align: center;
-                font-size: 18px;
-            }
-            
-            .spinner {
-                border: 4px solid #f3f3f3;
-                border-top: 4px solid #0078D7;
-                border-radius: 50%;
-                width: 40px;
-                height: 40px;
-                animation: spin 1s linear infinite;
-                margin: 0 auto 10px;
-            }
-            
-            @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
-            }
-        </style>
-    </head>
-    <body>
-        <!-- Full-screen map container -->
-        <div id="map-container">
-            <!-- Map iframe -->
-            <iframe id="map" src="{{ url_for('main.serve_map') }}"></iframe>
-            
-            <!-- Hidden file input for importing Google Timeline JSON -->
-            <input type="file" id="timelineFile" accept=".json" style="display:none" onchange="updateMap()">
-            
-            <!-- Overlay control buttons -->
-            <div class="menu-container">
-                <div class="hamburger" onclick="toggleMenu()">☰</div>
-                <div class="overlay-controls">
-                    <button class="overlay-button primary" onclick="document.getElementById('timelineFile').click()">
-                        📍 Import Google Timeline Data
-                    </button>
-                    <button class="overlay-button" onclick="clearMap()">
-                        🗑️ Clear Markers
-                    </button>
-                    <div id="sourceTypeFilters" class="checkbox-group"></div>
-                    <button class="overlay-button" onclick="refreshMap()">
-                        🔄 Refresh Map
-                    </button>
-                </div>
-            </div>
-            
-            <!-- Status message area -->
-            <div id="status"></div>
-            
-            <!-- Loading overlay -->
-            <div class="loading-overlay" id="loading">
-                <div class="loading-spinner">
-                    <div class="spinner"></div>
-                    <div>Loading...</div>
-                </div>
-            </div>
+<head>
+    <title>Wanderlog Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body, html { height: 100%; font-family: Verdana; overflow: hidden; }
+        #map-container { position: relative; width: 100vw; height: 100vh; }
+        #map { width: 100%; height: 100%; }
+        .menu-container { position: absolute; top: 20px; right: 20px; z-index: 1000; background-color: rgba(255,255,255,0.95); padding: 8px; border-radius: 10px; }
+        .hamburger { cursor: pointer; font-size: 24px; user-select: none; padding: 4px 6px; background: rgba(255,255,255,0.95); }
+        .overlay-controls { display: none; flex-direction: column; gap: 10px; }
+        .menu-container.open .overlay-controls { display: flex; }
+        .overlay-button { background: rgba(255,255,255,0.95); color: #333; border: none; padding: 12px 18px; font-size: 14px; font-weight: 600; border-radius: 15px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(0,0,0,0.15); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2); min-width: 180px; text-align: center; }
+        .overlay-button:hover { background: rgba(255,255,255,1); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
+        .overlay-button:active { transform: translateY(0); box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        .checkbox-group { display: flex; flex-direction: column; gap: 4px; }
+        .checkbox-group label { display: flex; align-items: center; gap: 4px; font-size: 14px; }
+        .overlay-button.primary { color: black; }
+        .overlay-button.primary:hover { background: rgb(214,214,214); }
+        #status { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.9); padding: 8px 12px; border-radius: 4px; display: none; font-size: 14px; z-index: 1000; }
+        #status.success { border: 1px solid #4CAF50; color: #4CAF50; }
+        #status.error { border: 1px solid #F44336; color: #F44336; }
+        .loading-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); display: none; align-items: center; justify-content: center; z-index: 2000; }
+        .loading-spinner { text-align: center; font-size: 18px; }
+        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #0078D7; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 10px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+<div id="map-container">
+    <div id="map"></div>
+    <input type="file" id="timelineFile" accept=".json" style="display:none" onchange="updateMap()">
+    <div class="menu-container">
+        <div class="hamburger" onclick="toggleMenu()">☰</div>
+        <div class="overlay-controls">
+            <button class="overlay-button primary" onclick="document.getElementById('timelineFile').click()">📍 Import Google Timeline Data</button>
+            <button class="overlay-button" onclick="clearMap()">🗑️ Clear ALL Timeline Data</button>
+            <div id="sourceTypeFilters" class="checkbox-group"></div>
+            <button class="overlay-button" onclick="refreshMap()">🔄 Refresh Map</button>
         </div>
-        
-        <script>
-            // ================================================================
-            // JAVASCRIPT FUNCTIONS - These run in the user's browser
-            // ================================================================
-            
-            /**
-             * Show loading overlay
-             */
-            function showLoading() {
-                document.getElementById('loading').style.display = 'flex';
-            }
-            
-            /**
-             * Hide loading overlay
-             */
-            function hideLoading() {
-                document.getElementById('loading').style.display = 'none';
-            }
-            
-            /**
-             * Show status messages to the user
-             * @param {string} message - The message to display
-             * @param {boolean} isError - Whether this is an error message
-             */
-            function showStatus(message, isError = false) {
-                const status = document.getElementById('status');
-                status.textContent = message;
-                status.className = isError ? 'error' : 'success';
-                status.style.display = 'block';
-                
-                // Hide the message after 4 seconds
-                setTimeout(() => status.style.display = 'none', 4000);
-            }
-            
-            /**
-             * Refresh the map iframe by reloading it
-             */
-            function refreshMapFrame() {
-                const mapFrame = document.getElementById('map');
-                // Add timestamp to URL to force refresh
-                mapFrame.src = '/map?' + new Date().getTime();
-            }
-            
-            /**
-             * Update map with timeline data
-             * This sends the selected JSON file to our Flask server
-             */
-            async function updateMap() {
-                const fileInput = document.getElementById('timelineFile');
-                if (!fileInput.files.length) {
-                showStatus('No file selected!', true);
-                return;
-                }
+    </div>
+    <div id="status"></div>
+    <div class="loading-overlay" id="loading">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <div>Loading...</div>
+        </div>
+    </div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+const MAPBOX_TOKEN = "{{ mapbox_token }}";
+let map;
+let markerCluster;
 
-                showLoading();
-                const formData = new FormData();
-                formData.append('file', fileInput.files[0]);
+function showLoading() { document.getElementById('loading').style.display = 'flex'; }
+function hideLoading() { document.getElementById('loading').style.display = 'none'; }
+function showStatus(message, isError=false) {
+    const status = document.getElementById('status');
+    status.textContent = message;
+    status.className = isError ? 'error' : 'success';
+    status.style.display = 'block';
+    setTimeout(() => status.style.display = 'none', 4000);
+}
 
-                try {
-                const response = await fetch('/api/update_timeline', {
-                    method: 'POST',
-                    body: formData    // ← don’t set Content-Type, browser will do it
-                });
-                const result = await response.json();
-                hideLoading();
-                showStatus(result.message, result.status === 'error');
-                if (result.status === 'success') {
-                    setTimeout(refreshMapFrame, 1000);
-                }
-                } catch (err) {
-                hideLoading();
-                showStatus('Error: ' + err.message, true);
-                }
-            }
-            
-            /**
-             * Clear all markers from the map
-             */
-            async function clearMap() {
-                showLoading();
-                
-                try {
-                    const response = await fetch('/api/clear', { 
-                        method: 'POST'
-                    });
-                    const result = await response.json();
-                    hideLoading();
-                    showStatus(result.message, result.status === 'error');
-                    if (result.status === 'success') {
-                        setTimeout(refreshMapFrame, 500);
-                    }
-                } catch (error) {
-                    hideLoading();
-                    showStatus('Error: ' + error.message, true);
-                }
-            }
+function initMap() {
+    // Create a Leaflet map centered on a default view
+    map = L.map('map').setView([40.65997395108914, -73.71300111746832], 5);
+    // Add Mapbox tiles using the token passed from the backend
+    L.tileLayer(`https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`, {
+        maxZoom: 18,
+        attribution: 'Mapbox'
+    }).addTo(map);
+    // Cluster group keeps the map responsive when many markers are shown
+    markerCluster = L.markerClusterGroup();
+    map.addLayer(markerCluster);
+    // Load existing markers once the map is ready
+    loadMarkers();
+}
 
-            async function refreshMap() {
-                showLoading();
-                const checked = Array.from(document.querySelectorAll('#sourceTypeFilters input:checked')).map(cb => cb.value);
+async function loadMarkers() {
+    // Show a loading overlay while fetching marker data
+    showLoading();
+    // Remove any markers currently displayed
+    markerCluster.clearLayers();
+    // Collect the values of all checked source type filters
+    const checked = Array.from(
+        document.querySelectorAll('#sourceTypeFilters input:checked')
+    ).map(cb => cb.value);
+    try {
+        // Request the marker list from the server, filtering by source type
+        const response = await fetch('/api/map_data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source_types: checked })
+        });
+        // Parse the JSON response
+        const markers = await response.json();
+        // Add a Leaflet marker for each item returned
+        markers.forEach(m => {
+            const popup = `<div><strong>Place Name:</strong> ${m.place}<br>` +
+                          `<strong>Date Visited:</strong> ${m.date}<br>` +
+                          `<strong>Coordinates:</strong> ${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</div>`;
+            L.marker([m.lat, m.lng]).bindPopup(popup).addTo(markerCluster);
+        });
+        // Done loading
+        hideLoading();
+    } catch(err) {
+        hideLoading();
+        console.error(err);
+    }
+}
 
-                try {
-                    const response = await fetch('/api/render_map', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ source_types: checked })
-                    });
-                    const result = await response.json();
-                    hideLoading();
-                    showStatus(result.message, result.status === 'error');
-                    if (result.status === 'success') {
-                        setTimeout(refreshMapFrame, 500);
-                    }
-                } catch (error) {
-                    hideLoading();
-                    showStatus('Error: ' + error.message, true);
-                }
-            }
+async function updateMap() {
+    const fileInput = document.getElementById('timelineFile');
+    if (!fileInput.files.length) { showStatus('No file selected!', true); return; }
+    showLoading();
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    try {
+        const response = await fetch('/api/update_timeline', { method: 'POST', body: formData });
+        const result = await response.json();
+        hideLoading();
+        showStatus(result.message, result.status === 'error');
+        if (result.status === 'success') { loadMarkers(); }
+    } catch(err) {
+        hideLoading();
+        showStatus('Error: ' + err.message, true);
+    }
+}
 
-            document.addEventListener('DOMContentLoaded', async () => {
-                try {
-                    const response = await fetch('/api/source_types');
-                    const types = await response.json();
-                    const container = document.getElementById('sourceTypeFilters');
-                    types.forEach(type => {
-                        const label = document.createElement('label');
-                        const cb = document.createElement('input');
-                        cb.type = 'checkbox';
-                        cb.value = type;
-                        cb.checked = true;
-                        cb.addEventListener('change', refreshMap);
-                        label.appendChild(cb);
-                        label.appendChild(document.createTextNode(' ' + type));
-                        container.appendChild(label);
-                    });
-                } catch (err) {
-                    console.error('Failed to load source types', err);
-                }
-            });
+async function clearMap() {
+    showLoading();
+    try {
+        const response = await fetch('/api/clear', { method: 'POST' });
+        const result = await response.json();
+        hideLoading();
+        showStatus(result.message, result.status === 'error');
+        if (result.status === 'success') { loadMarkers(); }
+    } catch(error) {
+        hideLoading();
+        showStatus('Error: ' + error.message, true);
+    }
+}
 
-            function toggleMenu() {
-                const menu = document.querySelector('.menu-container');
-                menu.classList.toggle('open');
-            }
+function refreshMap() { loadMarkers(); }
 
-            // Prevent accidental page refresh
-            window.addEventListener('beforeunload', function(e) {
-                // Uncomment the lines below if you want to warn users before leaving
-                // e.preventDefault();
-                // e.returnValue = '';
-            });
-        </script>
-    </body>
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        const response = await fetch('/api/source_types');
+        const types = await response.json();
+        const container = document.getElementById('sourceTypeFilters');
+        types.forEach(type => {
+            const label = document.createElement('label');
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.value = type;
+            cb.checked = true;
+            cb.addEventListener('change', loadMarkers);
+            label.appendChild(cb);
+            label.appendChild(document.createTextNode(' ' + type));
+            container.appendChild(label);
+        });
+    } catch(err) {
+        console.error('Failed to load source types', err);
+    }
+    initMap();
+});
+
+function toggleMenu() {
+    const menu = document.querySelector('.menu-container');
+    menu.classList.toggle('open');
+}
+</script>
+</body>
 </html>
