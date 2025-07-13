@@ -98,13 +98,20 @@ def api_map_data():
     if request.method == 'POST':
         # For POST requests, read JSON body and grab any source type filters
         data = request.get_json(silent=True) or {}
-        source_types = data.get('source_types') or []
+        source_types = data.get('source_types')
+        source_types_provided = 'source_types' in data
     else:
         # GET requests provide the filters as query string values
-        source_types = request.args.getlist('source_types')
+        if 'source_types' in request.args:
+            source_types = request.args.getlist('source_types')
+            source_types_provided = True
+        else:
+            source_types = None
+            source_types_provided = False
 
     # Apply filtering when specific source types are requested
-    if source_types:
+    if source_types_provided:
+        source_types = source_types or []
         df = df[df.get('Source Type').isin(source_types)]
 
     # Convert the filtered DataFrame into simple marker dictionaries
