@@ -39,6 +39,7 @@
         <div class="overlay-controls">
             <button class="overlay-button primary" onclick="document.getElementById('timelineFile').click()">📍 Import Google Timeline Data</button>
             <button class="overlay-button" onclick="clearMap()">🗑️ Clear ALL Timeline Data</button>
+            <button class="overlay-button" onclick="addManualPoint()">➕ Add Data Point</button>
             <div id="sourceTypeFilters" class="checkbox-group"></div>
             <button class="overlay-button" onclick="refreshMap()">🔄 Refresh Map</button>
         </div>
@@ -145,6 +146,40 @@ async function clearMap() {
     } catch(error) {
         hideLoading();
         showStatus('Error: ' + error.message, true);
+    }
+}
+
+async function addManualPoint() {
+    const place = prompt('Place Name:');
+    if (place === null) return;
+    const date = prompt('Date (YYYY-MM-DD):', '');
+    if (date === null) return;
+    const lat = parseFloat(prompt('Latitude:'));
+    if (Number.isNaN(lat)) { showStatus('Invalid latitude', true); return; }
+    const lon = parseFloat(prompt('Longitude:'));
+    if (Number.isNaN(lon)) { showStatus('Invalid longitude', true); return; }
+    const source = prompt('Source Type:', 'manual') || 'manual';
+
+    showLoading();
+    try {
+        const response = await fetch('/api/add_point', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                place_name: place,
+                start_date: date,
+                latitude: lat,
+                longitude: lon,
+                source_type: source
+            })
+        });
+        const result = await response.json();
+        hideLoading();
+        showStatus(result.message, result.status === 'error');
+        if (result.status === 'success') { loadMarkers(); }
+    } catch(err) {
+        hideLoading();
+        showStatus('Error: ' + err.message, true);
     }
 }
 
