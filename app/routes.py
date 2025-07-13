@@ -67,6 +67,43 @@ def api_clear():
     return jsonify({'status': 'success', 'message': 'All timeline data cleared successfully.'})
 
 
+@main.route('/api/add_point', methods=['POST'])
+def api_add_point():
+    """Add a single location entry provided in the request body."""
+
+    data = request.get_json(silent=True) or {}
+
+    try:
+        lat = float(data.get('latitude'))
+        lon = float(data.get('longitude'))
+    except (TypeError, ValueError):
+        return jsonify(status='error', message='Invalid latitude/longitude'), 400
+
+    place_name = data.get('place_name', 'Unknown')
+    start_date = data.get('start_date', '')
+    source_type = data.get('source_type', 'manual')
+
+    new_row = pd.DataFrame([
+        {
+            'Place ID': str(os.urandom(16).hex()),
+            'Latitude': lat,
+            'Longitude': lon,
+            'Start Date': start_date,
+            'Source Type': source_type,
+            'Place Name': place_name,
+        }
+    ])
+
+    if data_cache.timeline_df is None or data_cache.timeline_df.empty:
+        data_cache.timeline_df = new_row
+    else:
+        data_cache.timeline_df = pd.concat([data_cache.timeline_df, new_row], ignore_index=True)
+
+    data_cache.save_timeline_data()
+
+    return jsonify(status='success', message='Data point added successfully.')
+
+
 @main.route('/api/source_types', methods=['GET'])
 def api_source_types():
     """Return a list of available Source Type values."""
@@ -98,13 +135,20 @@ def api_map_data():
     if request.method == 'POST':
         # For POST requests, read JSON body and grab any source type filters
         data = request.get_json(silent=True) or {}
-        source_types = data.get('source_types') or []
+        source_types = data.get('source_types')
+        source_types_provided = 'source_types' in data
     else:
         # GET requests provide the filters as query string values
-        source_types = request.args.getlist('source_types')
+        if 'source_types' in request.args:
+            source_types = request.args.getlist('source_types')
+            source_types_provided = True
+        else:
+            source_types = None
+            source_types_provided = False
 
     # Apply filtering when specific source types are requested
-    if source_types:
+    if source_types_provided:
+        source_types = source_types or []
         df = df[df.get('Source Type').isin(source_types)]
 
     # Convert the filtered DataFrame into simple marker dictionaries
