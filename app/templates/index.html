@@ -86,10 +86,6 @@
                     <label for="manualLongitude">Longitude</label>
                     <input type="number" id="manualLongitude" name="longitude" step="any" required>
                 </div>
-                <div class="form-group">
-                    <label for="manualSource">Source Type</label>
-                    <input type="text" id="manualSource" name="source_type" value="manual" required>
-                </div>
                 <div class="modal-actions">
                     <button type="button" class="modal-button secondary" id="manualPointCancel">Cancel</button>
                     <button type="submit" class="modal-button primary">Save</button>
@@ -307,10 +303,6 @@ function closeManualPointModal() {
 
     if (manualPointForm) {
         manualPointForm.reset();
-        const sourceField = manualPointForm.elements['source_type'];
-        if (sourceField) {
-            sourceField.value = sourceField.defaultValue || 'manual';
-        }
     }
 
     document.removeEventListener('keydown', manualPointKeydownHandler);
@@ -329,7 +321,6 @@ async function handleManualPointSubmit(event) {
     const date = manualPointForm.elements['start_date'].value;
     const latValue = manualPointForm.elements['latitude'].value.trim();
     const lonValue = manualPointForm.elements['longitude'].value.trim();
-    const sourceValue = manualPointForm.elements['source_type'].value.trim();
 
     if (!place) {
         showStatus('Place name is required.', true);
@@ -369,12 +360,6 @@ async function handleManualPointSubmit(event) {
         return;
     }
 
-    if (!sourceValue) {
-        showStatus('Source type is required.', true);
-        manualPointForm.elements['source_type'].focus();
-        return;
-    }
-
     showLoading();
     try {
         const response = await fetch('/api/add_point', {
@@ -385,7 +370,7 @@ async function handleManualPointSubmit(event) {
                 start_date: date,
                 latitude: lat,
                 longitude: lon,
-                source_type: sourceValue
+                source_type: 'manual'
             })
         });
         const result = await response.json();
