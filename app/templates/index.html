@@ -28,6 +28,21 @@
         .loading-spinner { text-align: center; font-size: 18px; }
         .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #0078D7; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 10px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .modal-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.45); display: none; align-items: center; justify-content: center; z-index: 3000; padding: 20px; }
+        .modal-overlay.open { display: flex; }
+        .modal-content { background: #fff; border-radius: 12px; width: min(420px, 100%); box-shadow: 0 12px 32px rgba(0,0,0,0.25); padding: 24px; display: flex; flex-direction: column; gap: 16px; outline: none; }
+        .modal-content h2 { font-size: 20px; margin-bottom: 4px; }
+        .modal-content form { display: flex; flex-direction: column; gap: 14px; }
+        .form-group { display: flex; flex-direction: column; gap: 6px; }
+        .form-group label { font-weight: 600; font-size: 14px; color: #333; }
+        .form-group input, .form-group select { padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px; width: 100%; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px; }
+        .modal-button { border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px; cursor: pointer; transition: background 0.2s ease, transform 0.2s ease; font-weight: 600; }
+        .modal-button.secondary { background: #e0e0e0; color: #333; }
+        .modal-button.secondary:hover { background: #d5d5d5; }
+        .modal-button.primary { background: #0078d4; color: #fff; }
+        .modal-button.primary:hover { background: #0062ad; transform: translateY(-1px); }
+        .modal-button:focus { outline: 2px solid #0078d4; outline-offset: 2px; }
     </style>
 </head>
 <body>
@@ -51,6 +66,37 @@
             <div>Loading...</div>
         </div>
     </div>
+    <div id="manualPointModal" class="modal-overlay" aria-hidden="true" hidden>
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="manualPointTitle" tabindex="-1">
+            <h2 id="manualPointTitle">Add Data Point</h2>
+            <form id="manualPointForm">
+                <div class="form-group">
+                    <label for="manualPlace">Place Name</label>
+                    <input type="text" id="manualPlace" name="place_name" autocomplete="off" required>
+                </div>
+                <div class="form-group">
+                    <label for="manualDate">Date</label>
+                    <input type="date" id="manualDate" name="start_date" required>
+                </div>
+                <div class="form-group">
+                    <label for="manualLatitude">Latitude</label>
+                    <input type="number" id="manualLatitude" name="latitude" step="any" required>
+                </div>
+                <div class="form-group">
+                    <label for="manualLongitude">Longitude</label>
+                    <input type="number" id="manualLongitude" name="longitude" step="any" required>
+                </div>
+                <div class="form-group">
+                    <label for="manualSource">Source Type</label>
+                    <input type="text" id="manualSource" name="source_type" value="manual" required>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="modal-button secondary" id="manualPointCancel">Cancel</button>
+                    <button type="submit" class="modal-button primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
@@ -58,6 +104,13 @@
 const MAPBOX_TOKEN = "{{ mapbox_token }}";
 let map;
 let markerCluster;
+let manualPointModal;
+let manualPointModalContent;
+let manualPointForm;
+let manualPointCancelButton;
+let manualPointFocusableElements = [];
+let previouslyFocusedElement = null;
+let manualPointModalInitialized = false;
 
 function showLoading() { document.getElementById('loading').style.display = 'flex'; }
 function hideLoading() { document.getElementById('loading').style.display = 'none'; }
@@ -149,16 +202,178 @@ async function clearMap() {
     }
 }
 
-async function addManualPoint() {
-    const place = prompt('Place Name:');
-    if (place === null) return;
-    const date = prompt('Date (YYYY-MM-DD):', '');
-    if (date === null) return;
-    const lat = parseFloat(prompt('Latitude:'));
-    if (Number.isNaN(lat)) { showStatus('Invalid latitude', true); return; }
-    const lon = parseFloat(prompt('Longitude:'));
-    if (Number.isNaN(lon)) { showStatus('Invalid longitude', true); return; }
-    const source = prompt('Source Type:', 'manual') || 'manual';
+function setupManualPointModal() {
+    if (manualPointModalInitialized) { return; }
+    manualPointModal = document.getElementById('manualPointModal');
+    if (!manualPointModal) { return; }
+    manualPointModalContent = manualPointModal.querySelector('.modal-content');
+    manualPointForm = document.getElementById('manualPointForm');
+    manualPointCancelButton = document.getElementById('manualPointCancel');
+
+    if (manualPointForm) {
+        manualPointForm.addEventListener('submit', handleManualPointSubmit);
+    }
+
+    if (manualPointCancelButton) {
+        manualPointCancelButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            closeManualPointModal();
+        });
+    }
+
+    if (manualPointModal) {
+        manualPointModal.addEventListener('click', (event) => {
+            if (event.target === manualPointModal) {
+                closeManualPointModal();
+            }
+        });
+    }
+
+    manualPointModalInitialized = true;
+}
+
+function setManualPointFocusableElements() {
+    if (!manualPointModal) {
+        manualPointFocusableElements = [];
+        return;
+    }
+    manualPointFocusableElements = Array.from(
+        manualPointModal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+    ).filter(el => !el.disabled);
+}
+
+function manualPointKeydownHandler(event) {
+    if (!manualPointModal || !manualPointModal.classList.contains('open')) { return; }
+
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        closeManualPointModal();
+        return;
+    }
+
+    if (event.key !== 'Tab') { return; }
+
+    setManualPointFocusableElements();
+    if (manualPointFocusableElements.length === 0) {
+        event.preventDefault();
+        if (manualPointModalContent) { manualPointModalContent.focus(); }
+        return;
+    }
+
+    const firstFocusable = manualPointFocusableElements[0];
+    const lastFocusable = manualPointFocusableElements[manualPointFocusableElements.length - 1];
+    const activeElement = document.activeElement;
+
+    if (event.shiftKey) {
+        if (activeElement === firstFocusable || !manualPointModal.contains(activeElement)) {
+            event.preventDefault();
+            lastFocusable.focus();
+        }
+    } else if (activeElement === lastFocusable) {
+        event.preventDefault();
+        firstFocusable.focus();
+    }
+}
+
+function openManualPointModal() {
+    if (!manualPointModal) { setupManualPointModal(); }
+    if (!manualPointModal) { return; }
+
+    previouslyFocusedElement = document.activeElement;
+    manualPointModal.classList.add('open');
+    manualPointModal.removeAttribute('hidden');
+    manualPointModal.setAttribute('aria-hidden', 'false');
+
+    setManualPointFocusableElements();
+    const placeField = manualPointForm ? manualPointForm.elements['place_name'] : null;
+    if (placeField) {
+        placeField.focus();
+    } else if (manualPointFocusableElements.length) {
+        manualPointFocusableElements[0].focus();
+    } else if (manualPointModalContent) {
+        manualPointModalContent.focus();
+    }
+
+    document.addEventListener('keydown', manualPointKeydownHandler);
+}
+
+function closeManualPointModal() {
+    if (!manualPointModal) { return; }
+
+    manualPointModal.classList.remove('open');
+    manualPointModal.setAttribute('aria-hidden', 'true');
+    manualPointModal.setAttribute('hidden', '');
+    manualPointFocusableElements = [];
+
+    if (manualPointForm) {
+        manualPointForm.reset();
+        const sourceField = manualPointForm.elements['source_type'];
+        if (sourceField) {
+            sourceField.value = sourceField.defaultValue || 'manual';
+        }
+    }
+
+    document.removeEventListener('keydown', manualPointKeydownHandler);
+
+    if (previouslyFocusedElement && typeof previouslyFocusedElement.focus === 'function') {
+        previouslyFocusedElement.focus();
+    }
+    previouslyFocusedElement = null;
+}
+
+async function handleManualPointSubmit(event) {
+    event.preventDefault();
+    if (!manualPointForm) { return; }
+
+    const place = manualPointForm.elements['place_name'].value.trim();
+    const date = manualPointForm.elements['start_date'].value;
+    const latValue = manualPointForm.elements['latitude'].value.trim();
+    const lonValue = manualPointForm.elements['longitude'].value.trim();
+    const sourceValue = manualPointForm.elements['source_type'].value.trim();
+
+    if (!place) {
+        showStatus('Place name is required.', true);
+        manualPointForm.elements['place_name'].focus();
+        return;
+    }
+
+    if (!date) {
+        showStatus('Date is required.', true);
+        manualPointForm.elements['start_date'].focus();
+        return;
+    }
+
+    if (!latValue) {
+        showStatus('Latitude is required.', true);
+        manualPointForm.elements['latitude'].focus();
+        return;
+    }
+
+    const lat = Number(latValue);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
+        showStatus('Latitude must be a valid number between -90 and 90.', true);
+        manualPointForm.elements['latitude'].focus();
+        return;
+    }
+
+    if (!lonValue) {
+        showStatus('Longitude is required.', true);
+        manualPointForm.elements['longitude'].focus();
+        return;
+    }
+
+    const lon = Number(lonValue);
+    if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
+        showStatus('Longitude must be a valid number between -180 and 180.', true);
+        manualPointForm.elements['longitude'].focus();
+        return;
+    }
+
+    if (!sourceValue) {
+        showStatus('Source type is required.', true);
+        manualPointForm.elements['source_type'].focus();
+        return;
+    }
 
     showLoading();
     try {
@@ -170,22 +385,30 @@ async function addManualPoint() {
                 start_date: date,
                 latitude: lat,
                 longitude: lon,
-                source_type: source
+                source_type: sourceValue
             })
         });
         const result = await response.json();
         hideLoading();
         showStatus(result.message, result.status === 'error');
-        if (result.status === 'success') { loadMarkers(); }
+        if (result.status === 'success') {
+            closeManualPointModal();
+            loadMarkers();
+        }
     } catch(err) {
         hideLoading();
         showStatus('Error: ' + err.message, true);
     }
 }
 
+function addManualPoint() {
+    openManualPointModal();
+}
+
 function refreshMap() { loadMarkers(); }
 
 document.addEventListener('DOMContentLoaded', async () => {
+    setupManualPointModal();
     try {
         const response = await fetch('/api/source_types');
         const types = await response.json();
