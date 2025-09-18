@@ -10,11 +10,18 @@
         body, html { height: 100%; font-family: Verdana; overflow: hidden; }
         #map-container { position: relative; width: 100vw; height: 100vh; }
         #map { width: 100%; height: 100%; }
-        .menu-container { position: absolute; top: 20px; right: 20px; z-index: 1000; background-color: rgba(255,255,255,0.95); padding: 8px; border-radius: 10px; }
-        .hamburger { cursor: pointer; font-size: 24px; user-select: none; padding: 4px 6px; background: rgba(255,255,255,0.95); }
-        .overlay-controls { display: none; flex-direction: column; gap: 10px; }
-        .menu-container.open .overlay-controls { display: flex; }
-        .overlay-button { background: rgba(255,255,255,0.95); color: #333; border: none; padding: 12px 18px; font-size: 14px; font-weight: 600; border-radius: 15px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(0,0,0,0.15); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2); min-width: 180px; text-align: center; }
+        .menu-container { position: absolute; top: 0; right: 0; height: 100%; width: min(340px, 90vw); z-index: 1000; background-color: rgba(255,255,255,0.96); padding: 24px 24px 24px 16px; border-radius: 24px 0 0 24px; box-shadow: -8px 0 24px rgba(0,0,0,0.18); display: flex; flex-direction: column; gap: 16px; transform: translateX(calc(100% - 80px)); transition: transform 0.35s ease, box-shadow 0.35s ease, padding 0.35s ease; backdrop-filter: blur(14px); overflow: hidden; }
+        .menu-container.open { transform: translateX(0); box-shadow: -12px 0 32px rgba(0,0,0,0.25); padding-left: 24px; }
+        .menu-toggle { align-self: flex-start; cursor: pointer; user-select: none; padding: 18px 12px; background: rgba(255,255,255,0.95); border-radius: 18px; box-shadow: 0 6px 18px rgba(0,0,0,0.12); transition: background 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease; border: none; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-transform: uppercase; letter-spacing: 0.12em; color: #333; writing-mode: vertical-rl; text-orientation: mixed; font-weight: 600; }
+        .menu-toggle:hover { background: rgba(255,255,255,1); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
+        .menu-toggle:focus { outline: 2px solid rgba(0,120,212,0.6); outline-offset: 2px; }
+        .menu-toggle .menu-toggle-icon { font-size: 20px; line-height: 1; }
+        .menu-toggle .menu-toggle-text { font-size: 12px; }
+        .menu-container.open .menu-toggle { align-self: flex-end; margin-left: auto; writing-mode: horizontal-tb; flex-direction: row; padding: 10px 16px; border-radius: 14px; gap: 8px; letter-spacing: 0.08em; box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
+        .menu-container.open .menu-toggle .menu-toggle-text { font-size: 14px; }
+        .overlay-controls { display: flex; flex-direction: column; gap: 12px; opacity: 0; transform: translateX(16px); transition: opacity 0.25s ease 0.1s, transform 0.25s ease 0.1s; overflow-y: auto; max-height: calc(100% - 80px); padding-right: 4px; pointer-events: none; }
+        .menu-container.open .overlay-controls { opacity: 1; transform: translateX(0); pointer-events: auto; }
+        .overlay-button { background: rgba(255,255,255,0.95); color: #333; border: none; padding: 12px 18px; font-size: 14px; font-weight: 600; border-radius: 15px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(0,0,0,0.15); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2); min-width: 180px; text-align: center; width: 100%; }
         .overlay-button:hover { background: rgba(255,255,255,1); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
         .overlay-button:active { transform: translateY(0); box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
         .checkbox-group { display: flex; flex-direction: column; gap: 4px; }
@@ -49,9 +56,12 @@
 <div id="map-container">
     <div id="map"></div>
     <input type="file" id="timelineFile" accept=".json" style="display:none" onchange="updateMap()">
-    <div class="menu-container">
-        <div class="hamburger" onclick="toggleMenu()">☰</div>
-        <div class="overlay-controls">
+    <div class="menu-container" role="complementary" aria-label="Map controls panel">
+        <button class="menu-toggle" type="button" onclick="toggleMenu()" aria-label="Open menu" aria-expanded="false" aria-controls="menuControls">
+            <span class="menu-toggle-icon" aria-hidden="true">☰</span>
+            <span class="menu-toggle-text">Menu</span>
+        </button>
+        <div class="overlay-controls" id="menuControls" aria-hidden="true" inert>
             <button class="overlay-button primary" onclick="document.getElementById('timelineFile').click()">📍 Import Google Timeline Data</button>
             <button class="overlay-button" onclick="clearMap()">🗑️ Clear ALL Timeline Data</button>
             <button class="overlay-button" onclick="addManualPoint()">➕ Add Data Point</button>
@@ -413,11 +423,67 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.error('Failed to load source types', err);
     }
     initMap();
+    const menu = document.querySelector('.menu-container');
+    if (menu) { applyMenuState(menu, menu.classList.contains('open')); }
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') { return; }
+        if (manualPointModal && manualPointModal.classList.contains('open')) { return; }
+        const menu = document.querySelector('.menu-container');
+        if (menu && menu.classList.contains('open')) {
+            event.preventDefault();
+            toggleMenu();
+            const trigger = menu.querySelector('.menu-toggle');
+            if (trigger) { trigger.focus(); }
+        }
+    });
 });
 
 function toggleMenu() {
     const menu = document.querySelector('.menu-container');
-    menu.classList.toggle('open');
+    if (!menu) { return; }
+    const isOpen = menu.classList.toggle('open');
+    applyMenuState(menu, isOpen);
+}
+
+function applyMenuState(menu, isOpen) {
+    const trigger = menu.querySelector('.menu-toggle');
+    const icon = trigger ? trigger.querySelector('.menu-toggle-icon') : null;
+    const label = trigger ? trigger.querySelector('.menu-toggle-text') : null;
+    const controls = menu.querySelector('.overlay-controls');
+
+    if (trigger) {
+        trigger.setAttribute('aria-expanded', String(isOpen));
+        trigger.setAttribute('aria-label', isOpen ? 'Close menu' : 'Open menu');
+    }
+    if (icon) { icon.textContent = isOpen ? '✕' : '☰'; }
+    if (label) { label.textContent = isOpen ? 'Close' : 'Menu'; }
+    if (controls) {
+        controls.setAttribute('aria-hidden', String(!isOpen));
+        if (isOpen) { controls.removeAttribute('inert'); }
+        else { controls.setAttribute('inert', ''); }
+        const focusableSelectors = 'button, [href], input, select, textarea, [tabindex]';
+        const focusableElements = controls.querySelectorAll(focusableSelectors);
+        focusableElements.forEach((element) => {
+            if (isOpen) {
+                if (element.dataset.menuPrevTabindex !== undefined) {
+                    const previous = element.dataset.menuPrevTabindex;
+                    if (previous === '') {
+                        element.removeAttribute('tabindex');
+                    } else {
+                        element.setAttribute('tabindex', previous);
+                    }
+                    delete element.dataset.menuPrevTabindex;
+                } else if (element.getAttribute('tabindex') === '-1') {
+                    element.removeAttribute('tabindex');
+                }
+            } else {
+                if (element.dataset.menuPrevTabindex === undefined) {
+                    element.dataset.menuPrevTabindex = element.hasAttribute('tabindex') ? element.getAttribute('tabindex') || '' : '';
+                }
+                element.setAttribute('tabindex', '-1');
+            }
+        });
+    }
 }
 </script>
 </body>
