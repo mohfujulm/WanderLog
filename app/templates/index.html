@@ -21,13 +21,31 @@
         .menu-container.open .menu-toggle .menu-toggle-text { font-size: 14px; }
         .overlay-controls { display: flex; flex-direction: column; gap: 12px; opacity: 0; transform: translateX(16px); transition: opacity 0.25s ease 0.1s, transform 0.25s ease 0.1s; overflow-y: auto; max-height: calc(100% - 80px); padding-right: 4px; pointer-events: none; }
         .menu-container.open .overlay-controls { opacity: 1; transform: translateX(0); pointer-events: auto; }
-        .overlay-button { background: rgba(255,255,255,0.95); color: #333; border: none; padding: 12px 18px; font-size: 14px; font-weight: 600; border-radius: 15px; cursor: pointer; transition: all 0.3s ease; box-shadow: 0 4px 15px rgba(0,0,0,0.15); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2); min-width: 180px; text-align: center; width: 100%; }
-        .overlay-button:hover { background: rgba(255,255,255,1); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
-        .overlay-button:active { transform: translateY(0); box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        .overlay-button {   background: rgba(255,255,255,0.95); 
+                            color: #333; 
+                            border: none; 
+                            padding: 12px 18px; 
+                            font-size: 14px; font-weight: 600; 
+                            border-radius: 15px; 
+                            cursor: pointer; 
+                            transition: all 0.3s ease; 
+                            box-shadow: 3px 4px 0px 0px rgba(0, 0, 0, 0.15); 
+                            backdrop-filter: blur(10px); 
+                            border: 1px solid rgba(255,255,255,0.2); 
+                            min-width: 180px; 
+                            text-align: center; 
+                            width: 100%; }
+
+        .overlay-button:hover {     background: rgba(255,255,255,1); 
+                                    transform: translateY(-2px); 
+                                    box-shadow: 4px 5px 0px 0px rgba(0, 0, 0, 0.15); }
+
+        .overlay-button:active {    transform: translateY(0); 
+                                    box-shadow: 4px 5px 0px 0px rgba(0, 0, 0, 0.15); }
+
         .checkbox-group { display: flex; flex-direction: column; gap: 4px; }
         .checkbox-group label { display: flex; align-items: center; gap: 4px; font-size: 14px; }
-        .overlay-button.primary { color: black; }
-        .overlay-button.primary:hover { background: rgb(214,214,214); }
+
         #status { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.9); padding: 8px 12px; border-radius: 4px; display: none; font-size: 14px; z-index: 1000; }
         #status.success { border: 1px solid #4CAF50; color: #4CAF50; }
         #status.error { border: 1px solid #F44336; color: #F44336; }
@@ -62,7 +80,7 @@
             <span class="menu-toggle-text">Menu</span>
         </button>
         <div class="overlay-controls" id="menuControls" aria-hidden="true" inert>
-            <button class="overlay-button primary" onclick="document.getElementById('timelineFile').click()">📍 Import Google Timeline Data</button>
+            <button class="overlay-button" onclick="document.getElementById('timelineFile').click()">📍 Import Google Timeline Data</button>
             <button class="overlay-button" onclick="clearMap()">🗑️ Clear ALL Timeline Data</button>
             <button class="overlay-button" onclick="addManualPoint()">➕ Add Data Point</button>
             <div id="sourceTypeFilters" class="checkbox-group"></div>
