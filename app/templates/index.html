@@ -173,6 +173,21 @@ let manualPointFocusableElements = [];
 let previouslyFocusedElement = null;
 let manualPointModalInitialized = false;
 
+const SOURCE_TYPE_LABELS = {
+    google_timeline: 'Google Timeline',
+    manual: 'Manual Entry',
+};
+
+function getSourceTypeLabel(type) {
+    if (!type) { return ''; }
+    if (Object.prototype.hasOwnProperty.call(SOURCE_TYPE_LABELS, type)) {
+        return SOURCE_TYPE_LABELS[type];
+    }
+    return type
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 function showLoading() { document.getElementById('loading').style.display = 'flex'; }
 function hideLoading() { document.getElementById('loading').style.display = 'none'; }
 function showStatus(message, isError=false) {
@@ -471,7 +486,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             cb.checked = true;
             cb.addEventListener('change', loadMarkers);
             label.appendChild(cb);
-            label.appendChild(document.createTextNode(' ' + type));
+            label.appendChild(document.createTextNode(' ' + getSourceTypeLabel(type)));
             container.appendChild(label);
         });
     } catch(err) {
