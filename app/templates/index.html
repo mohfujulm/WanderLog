@@ -82,7 +82,9 @@
                                     box-shadow: 5px 7px 0px 0px rgba(0, 0, 0, 0.15); }
 
         .checkbox-group { display: flex; flex-direction: column; gap: 4px; }
-        .checkbox-group label { display: flex; align-items: center; gap: 4px; font-size: 14px; }
+        .checkbox-group label { display: flex; align-items: center; gap: 8px; font-size: 14px; justify-content: space-between; }
+        .checkbox-group label span { flex: 1; min-width: 0; }
+        .checkbox-group label input { flex-shrink: 0; }
 
         #status { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.9); padding: 8px 12px; border-radius: 4px; display: none; font-size: 14px; z-index: 1000; }
         #status.success { border: 1px solid #4CAF50; color: #4CAF50; }
@@ -490,8 +492,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             cb.value = type;
             cb.checked = true;
             cb.addEventListener('change', loadMarkers);
+            const text = document.createElement('span');
+            text.textContent = getSourceTypeLabel(type);
+            label.appendChild(text);
             label.appendChild(cb);
-            label.appendChild(document.createTextNode(' ' + getSourceTypeLabel(type)));
             container.appendChild(label);
         });
     } catch(err) {
