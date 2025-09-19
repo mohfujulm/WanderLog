@@ -4,13 +4,13 @@
     <title>Wanderlog Map</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Oxygen:wght@300;400;700&family=Raleway:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@100;200;300&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-
+      
         :root { --app-font-family: 'Raleway', 'Verdana', sans-serif; }
 
         body, html {    height: 100%; 
@@ -114,14 +114,14 @@
                             padding-right: 4px; 
                             pointer-events: none; }
 
+
         .menu-container.open .overlay-controls { opacity: 1; transform: translateX(0); pointer-events: auto; }
 
         .overlay-button {   background: rgba(255,255,255,0.95); 
                             color: #333; 
                             border: none; 
                             padding: 12px 18px; 
-                            font-size: 14px; 
-                            font-weight: 500; 
+                            font-size: 14px; font-weight: 600; 
                             border-radius: 15px; 
                             cursor: pointer; 
                             transition: all 0.3s ease; 
@@ -129,7 +129,7 @@
                             backdrop-filter: blur(10px); 
                             border: 1px solid rgba(255,255,255,0.2); 
                             min-width: 180px; 
-                            text-align: right; 
+                            text-align: center; 
                             width: 100%; }
 
         .overlay-section-title { align-self: stretch;
@@ -143,10 +143,10 @@
 
         .overlay-button:hover {     background: rgba(255,255,255,1); 
                                     transform: translateY(-2px); 
-                                    box-shadow: 5px 6px 0px 0px rgba(0, 0, 0, 0.15); }
+                                    box-shadow: 4px 5px 0px 0px rgba(0, 0, 0, 0.15); }
 
         .overlay-button:active {    transform: translateY(0); 
-                                    box-shadow: 5px 7px 0px 0px rgba(0, 0, 0, 0.15); }
+                                    box-shadow: 4px 5px 0px 0px rgba(0, 0, 0, 0.15); }
 
         .checkbox-group {               display: flex; 
                                         flex-direction: column; 
@@ -284,7 +284,6 @@
             <button class="overlay-button" onclick="refreshMap()">Refresh Map</button>
             <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
             <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
-            
         </div>
     </div>
     <div id="status"></div>
