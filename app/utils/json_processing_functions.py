@@ -176,6 +176,7 @@ def unique_visits_to_df(json_data: dict, source_type: str = "") -> pd.DataFrame:
             "Start Date": vals[2],
             "Source Type": source_type,
             "Place Name": vals[3],
+            "Archived": False,
         }
         for pid, vals in place_id_map.items()
     ]

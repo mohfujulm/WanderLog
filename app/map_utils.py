@@ -196,8 +196,12 @@ def dataframe_to_markers(df: pd.DataFrame) -> list[dict]:
     markers = []
     # Iterate over each row and build a small dict for the frontend
     for _, row in df.iterrows():
+        if bool(row.get("Archived", False)):
+            continue
+
         markers.append(
             {
+                "id": row.get("Place ID", ""),      # Unique identifier used for actions
                 "lat": row["Latitude"],           # Latitude for the map marker
                 "lng": row["Longitude"],          # Longitude for the map marker
                 "place": row.get("Place Name", ""),  # Human readable place name
