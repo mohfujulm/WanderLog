@@ -306,6 +306,84 @@
         .modal-button.primary { background: #0078d4; color: #fff; }
         .modal-button.primary:hover { background: #0062ad; transform: translateY(-1px); }
         .modal-button:focus { outline: 2px solid #0078d4; outline-offset: 2px; }
+
+        .marker-popup {
+            font-family: var(--app-font-family);
+            min-width: 220px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            color: #222;
+        }
+
+        .marker-popup-row {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .marker-popup-label {
+            font-weight: 600;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            font-size: 11px;
+        }
+
+        .marker-popup-value {
+            color: #1a1a1a;
+            word-break: break-word;
+        }
+
+        .marker-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        .marker-action {
+            flex: 1 1 0;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background 0.2s ease, transform 0.2s ease;
+            font-weight: 600;
+        }
+
+        .marker-action:focus {
+            outline: 2px solid rgba(0,120,212,0.45);
+            outline-offset: 2px;
+        }
+
+        .marker-action:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .marker-action-archive {
+            background: #eef2ff;
+            color: #314192;
+        }
+
+        .marker-action-archive:hover:not(:disabled) {
+            background: #dce4ff;
+            transform: translateY(-1px);
+        }
+
+        .marker-action-delete {
+            background: #fdecea;
+            color: #b3261e;
+        }
+
+        .marker-action-delete:hover:not(:disabled) {
+            background: #fbd6d2;
+            transform: translateY(-1px);
+        }
     </style>
 </head>
 <body>
@@ -406,6 +484,56 @@ const MARKER_ICON_PATHS = {
 
 const markerIconCache = new Map();
 
+const HTML_ESCAPE_LOOKUP = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+};
+const HTML_ESCAPE_REGEX = /[&<>"']/g;
+
+function escapeHtml(value) {
+    if (value === null || value === undefined) { return ''; }
+    return String(value).replace(HTML_ESCAPE_REGEX, (match) => HTML_ESCAPE_LOOKUP[match] || match);
+}
+
+function escapeHtmlAttribute(value) {
+    return escapeHtml(value).replace(/`/g, '&#96;');
+}
+
+function createPopupContent(markerData) {
+    if (!markerData) { return ''; }
+
+    const markerId = markerData.id || '';
+    const safeId = escapeHtmlAttribute(markerId);
+    const place = escapeHtml(markerData.place || 'Unknown');
+    const sourceLabel = getSourceTypeLabel(markerData.source_type);
+    const sourceRow = sourceLabel
+        ? `<div class="marker-popup-row"><span class="marker-popup-label">Source</span><span class="marker-popup-value">${escapeHtml(sourceLabel)}</span></div>`
+        : '';
+    const date = escapeHtml(markerData.date || 'Unknown');
+    const latNumber = Number(markerData.lat);
+    const lngNumber = Number(markerData.lng);
+    const latText = Number.isFinite(latNumber) ? latNumber.toFixed(4) : String(markerData.lat ?? '');
+    const lngText = Number.isFinite(lngNumber) ? lngNumber.toFixed(4) : String(markerData.lng ?? '');
+    const coordinates = `${escapeHtml(latText)}, ${escapeHtml(lngText)}`;
+    const hasId = Boolean(markerId);
+    const actions = hasId
+        ? `<div class="marker-actions"><button type="button" class="marker-action marker-action-archive">Archive</button><button type="button" class="marker-action marker-action-delete">Delete</button></div>`
+        : '';
+
+    return [
+        `<div class="marker-popup"${hasId ? ` data-marker-id="${safeId}"` : ''}>`,
+        `<div class="marker-popup-row"><span class="marker-popup-label">Place Name</span><span class="marker-popup-value">${place}</span></div>`,
+        sourceRow,
+        `<div class="marker-popup-row"><span class="marker-popup-label">Date Visited</span><span class="marker-popup-value">${date}</span></div>`,
+        `<div class="marker-popup-row"><span class="marker-popup-label">Coordinates</span><span class="marker-popup-value">${coordinates}</span></div>`,
+        actions,
+        `</div>`,
+    ].filter(Boolean).join('');
+}
+
 function getSourceTypeLabel(type) {
     if (!type) { return ''; }
     if (Object.prototype.hasOwnProperty.call(SOURCE_TYPE_LABELS, type)) {
@@ -495,21 +623,41 @@ async function loadMarkers() {
         const markers = await response.json();
         // Add a Leaflet marker for each item returned
         markers.forEach(m => {
-            const sourceLabel = getSourceTypeLabel(m.source_type);
-            const popup = [
-                `<div><strong>Place Name:</strong> ${m.place}<br>`,
-                sourceLabel ? `<strong>Source:</strong> ${sourceLabel}<br>` : '',
-                `<strong>Date Visited:</strong> ${m.date}<br>`,
-                `<strong>Coordinates:</strong> ${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</div>`
-            ].join('');
+            const lat = Number(m.lat);
+            const lng = Number(m.lng);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                return;
+            }
 
-            const marker = L.marker([m.lat, m.lng], {
+            const marker = L.marker([lat, lng], {
                 icon: getMarkerIcon(m.source_type),
                 title: m.place || '',
                 riseOnHover: true,
             });
 
-            marker.bindPopup(popup).addTo(markerCluster);
+            const popupContent = createPopupContent(m);
+            marker.bindPopup(popupContent).addTo(markerCluster);
+
+            marker.on('popupopen', () => {
+                const popupElement = marker.getPopup() ? marker.getPopup().getElement() : null;
+                if (!popupElement) { return; }
+
+                const archiveButton = popupElement.querySelector('.marker-action-archive');
+                if (archiveButton) {
+                    archiveButton.onclick = (event) => {
+                        event.preventDefault();
+                        archiveMarker(m.id, marker, archiveButton);
+                    };
+                }
+
+                const deleteButton = popupElement.querySelector('.marker-action-delete');
+                if (deleteButton) {
+                    deleteButton.onclick = (event) => {
+                        event.preventDefault();
+                        deleteMarker(m.id, marker, deleteButton);
+                    };
+                }
+            });
         });
         // Done loading
         hideLoading();
@@ -744,6 +892,72 @@ function addManualPoint() {
 }
 
 function refreshMap() { loadMarkers(); }
+
+async function archiveMarker(markerId, markerInstance, triggerButton) {
+    if (!markerId) {
+        showStatus('This data point cannot be archived.', true);
+        return;
+    }
+
+    if (triggerButton) { triggerButton.disabled = true; }
+    showLoading();
+
+    try {
+        const response = await fetch(`/api/markers/${encodeURIComponent(markerId)}/archive`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ archived: true }),
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || result.status === 'error') {
+            const message = (result && result.message) ? result.message : 'Failed to archive data point.';
+            throw new Error(message);
+        }
+
+        showStatus(result.message || 'Data point archived successfully.');
+        if (markerInstance && typeof markerInstance.closePopup === 'function') {
+            markerInstance.closePopup();
+        }
+        await loadMarkers();
+    } catch (error) {
+        showStatus(error.message || 'Failed to archive data point.', true);
+    } finally {
+        hideLoading();
+        if (triggerButton) { triggerButton.disabled = false; }
+    }
+}
+
+async function deleteMarker(markerId, markerInstance, triggerButton) {
+    if (!markerId) {
+        showStatus('This data point cannot be deleted.', true);
+        return;
+    }
+
+    if (triggerButton) { triggerButton.disabled = true; }
+    showLoading();
+
+    try {
+        const response = await fetch(`/api/markers/${encodeURIComponent(markerId)}`, { method: 'DELETE' });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || result.status === 'error') {
+            const message = (result && result.message) ? result.message : 'Failed to delete data point.';
+            throw new Error(message);
+        }
+
+        showStatus(result.message || 'Data point deleted successfully.');
+        if (markerInstance && typeof markerInstance.closePopup === 'function') {
+            markerInstance.closePopup();
+        }
+        await loadMarkers();
+    } catch (error) {
+        showStatus(error.message || 'Failed to delete data point.', true);
+    } finally {
+        hideLoading();
+        if (triggerButton) { triggerButton.disabled = false; }
+    }
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
     setupManualPointModal();

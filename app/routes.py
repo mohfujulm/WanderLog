@@ -38,12 +38,19 @@ def api_update_timeline():
 
         #Process the timeline.json file uploaded by the user into a pandas df.
         imported_df = unique_visits_to_df(timeline_json, "google_timeline")
+        if not imported_df.empty and "Archived" not in imported_df.columns:
+            imported_df["Archived"] = False
         database_df = data_cache.timeline_df
         #combine the imported data and resulting processed dataframe with the existing database info
-        combined = pd.concat([imported_df, database_df])
+        dataframes = [imported_df]
+        if database_df is not None and not database_df.empty:
+            dataframes.append(database_df)
+
+        combined = pd.concat(dataframes)
         combined = combined.drop_duplicates()
         #update global database memory with appended information
         data_cache.timeline_df = combined
+        data_cache.ensure_archived_column()
 
         # Persist the updated timeline if required
         data_cache.save_timeline_data()
@@ -91,6 +98,7 @@ def api_add_point():
             'Start Date': start_date,
             'Source Type': source_type,
             'Place Name': place_name,
+            'Archived': False,
         }
     ])
 
@@ -99,9 +107,53 @@ def api_add_point():
     else:
         data_cache.timeline_df = pd.concat([data_cache.timeline_df, new_row], ignore_index=True)
 
+    data_cache.ensure_archived_column()
     data_cache.save_timeline_data()
 
     return jsonify(status='success', message='Data point added successfully.')
+
+
+@main.route('/api/markers/<place_id>/archive', methods=['POST'])
+def api_archive_marker(place_id: str):
+    """Archive (or unarchive) a marker by ``place_id``."""
+
+    df = data_cache.timeline_df
+    if df is None or df.empty or 'Place ID' not in df.columns:
+        return jsonify(status='error', message='Data point not found.'), 404
+
+    mask = df['Place ID'] == place_id
+    if not mask.any():
+        return jsonify(status='error', message='Data point not found.'), 404
+
+    payload = request.get_json(silent=True) or {}
+    archived_flag = payload.get('archived', True)
+    archived_value = bool(archived_flag)
+
+    df.loc[mask, 'Archived'] = archived_value
+    data_cache.timeline_df = df
+    data_cache.ensure_archived_column()
+    data_cache.save_timeline_data()
+
+    action = 'archived' if archived_value else 'unarchived'
+    return jsonify(status='success', message=f'Data point {action} successfully.')
+
+
+@main.route('/api/markers/<place_id>', methods=['DELETE'])
+def api_delete_marker(place_id: str):
+    """Delete a marker by ``place_id``."""
+
+    df = data_cache.timeline_df
+    if df is None or df.empty or 'Place ID' not in df.columns:
+        return jsonify(status='error', message='Data point not found.'), 404
+
+    mask = df['Place ID'] == place_id
+    if not mask.any():
+        return jsonify(status='error', message='Data point not found.'), 404
+
+    data_cache.timeline_df = df.loc[~mask].reset_index(drop=True)
+    data_cache.save_timeline_data()
+
+    return jsonify(status='success', message='Data point deleted successfully.')
 
 
 @main.route('/api/source_types', methods=['GET'])
@@ -111,6 +163,9 @@ def api_source_types():
     df = data_cache.timeline_df
     if df is None or df.empty:
         return jsonify([])
+
+    if 'Archived' in df.columns:
+        df = df[df['Archived'] != True]
 
     types = sorted(df.get('Source Type').dropna().unique().tolist())
     return jsonify(types)
@@ -155,6 +210,10 @@ def api_map_data():
     if source_types_provided:
         source_types = source_types or []
         df = df[df.get('Source Type').isin(source_types)]
+
+    # Exclude archived entries
+    if 'Archived' in df.columns:
+        df = df[df['Archived'] != True]
 
     # Apply optional date filtering
     df = filter_dataframe_by_date_range(df, start_date=start_date, end_date=end_date)
