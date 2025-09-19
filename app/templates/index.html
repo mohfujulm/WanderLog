@@ -307,6 +307,56 @@
         .modal-button.primary:hover { background: #0062ad; transform: translateY(-1px); }
         .modal-button:focus { outline: 2px solid #0078d4; outline-offset: 2px; }
 
+        .archived-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-height: 320px;
+            overflow-y: auto;
+        }
+
+        .archived-empty {
+            font-size: 12px;
+            color: #555;
+            text-align: center;
+        }
+
+        .archived-item {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            background: #f9fafb;
+        }
+
+        .archived-item-details {
+            display: flex;
+            flex-direction: column;
+            font-size: 12px;
+            gap: 4px;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .archived-item-place {
+            font-weight: 500;
+            color: #222;
+            word-break: break-word;
+        }
+
+        .archived-item-meta {
+            font-size: 12px;
+            color: #555;
+        }
+
+        .archived-item-action {
+            align-self: center;
+            white-space: nowrap;
+        }
+
         .marker-popup {
             font-family: var(--app-font-family);
             min-width: 220px;
@@ -402,6 +452,7 @@
             <button class="overlay-button" onclick="addManualPoint()">Add a Location Manually</button>
             <button class="overlay-button" onclick="clearMap()">Clear Map</button>
             <button class="overlay-button" onclick="refreshMap()">Refresh Map</button>
+            <button class="overlay-button" onclick="viewArchivedPoints()">View Archived Points</button>
             <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
             <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
             <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
@@ -454,6 +505,17 @@
             </form>
         </div>
     </div>
+    <div id="archivedPointsModal" class="modal-overlay" aria-hidden="true" hidden>
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="archivedPointsTitle" tabindex="-1">
+            <h2 id="archivedPointsTitle">Archived Data Points</h2>
+            <div id="archivedPointsList" class="archived-list" role="list">
+                <p class="archived-empty">No archived data points.</p>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="modal-button secondary" id="archivedPointsClose">Close</button>
+            </div>
+        </div>
+    </div>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
@@ -463,13 +525,10 @@ const MENU_ICON_PATH = "{{ url_for('static', filename='assets/menu-icon.svg') }}
 const CLOSE_ICON_PATH = "{{ url_for('static', filename='assets/close-icon.svg') }}";
 let map;
 let markerCluster;
-let manualPointModal;
-let manualPointModalContent;
 let manualPointForm;
-let manualPointCancelButton;
-let manualPointFocusableElements = [];
-let previouslyFocusedElement = null;
-let manualPointModalInitialized = false;
+let manualPointModalController = null;
+let archivedPointsModalController = null;
+let archivedPointsList = null;
 
 const SOURCE_TYPE_LABELS = {
     google_timeline: 'Google Timeline',
@@ -699,123 +758,167 @@ async function clearMap() {
     }
 }
 
-function setupManualPointModal() {
-    if (manualPointModalInitialized) { return; }
-    manualPointModal = document.getElementById('manualPointModal');
-    if (!manualPointModal) { return; }
-    manualPointModalContent = manualPointModal.querySelector('.modal-content');
+function createModalController(modalId, { getInitialFocus, onClose } = {}) {
+    const modal = document.getElementById(modalId);
+    if (!modal) { return null; }
+    const modalContent = modal.querySelector('.modal-content');
+    let focusableElements = [];
+    let previouslyFocused = null;
+
+    function setFocusableElements() {
+        focusableElements = Array.from(
+            modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+        ).filter((el) => !el.disabled && modal.contains(el));
+    }
+
+    function focusInitialElement() {
+        const target = typeof getInitialFocus === 'function' ? getInitialFocus() : null;
+        if (target && typeof target.focus === 'function') {
+            target.focus();
+            return;
+        }
+
+        if (focusableElements.length > 0) {
+            focusableElements[0].focus();
+            return;
+        }
+
+        if (modalContent && typeof modalContent.focus === 'function') {
+            modalContent.focus();
+        }
+    }
+
+    function handleKeydown(event) {
+        if (!modal.classList.contains('open')) { return; }
+
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            close();
+            return;
+        }
+
+        if (event.key !== 'Tab') { return; }
+
+        setFocusableElements();
+        if (focusableElements.length === 0) {
+            event.preventDefault();
+            if (modalContent && typeof modalContent.focus === 'function') {
+                modalContent.focus();
+            }
+            return;
+        }
+
+        const first = focusableElements[0];
+        const last = focusableElements[focusableElements.length - 1];
+        const active = document.activeElement;
+
+        if (event.shiftKey) {
+            if (active === first || !modal.contains(active)) {
+                event.preventDefault();
+                last.focus();
+            }
+        } else if (active === last) {
+            event.preventDefault();
+            first.focus();
+        }
+    }
+
+    function open() {
+        previouslyFocused = document.activeElement;
+        modal.classList.add('open');
+        modal.removeAttribute('hidden');
+        modal.setAttribute('aria-hidden', 'false');
+        setFocusableElements();
+        focusInitialElement();
+        document.addEventListener('keydown', handleKeydown);
+    }
+
+    function close() {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        modal.setAttribute('hidden', '');
+        document.removeEventListener('keydown', handleKeydown);
+        focusableElements = [];
+        if (typeof onClose === 'function') {
+            onClose();
+        }
+        if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+            previouslyFocused.focus();
+        }
+        previouslyFocused = null;
+    }
+
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            close();
+        }
+    });
+
+    return {
+        open,
+        close,
+        refreshFocusableElements: setFocusableElements,
+    };
+}
+
+function ensureManualPointModal() {
+    if (manualPointModalController) { return manualPointModalController; }
+
     manualPointForm = document.getElementById('manualPointForm');
-    manualPointCancelButton = document.getElementById('manualPointCancel');
+    const controller = createModalController('manualPointModal', {
+        getInitialFocus: () => {
+            const form = manualPointForm || document.getElementById('manualPointForm');
+            return form ? form.elements['place_name'] : null;
+        },
+        onClose: () => {
+            const form = manualPointForm || document.getElementById('manualPointForm');
+            if (form) { form.reset(); }
+        },
+    });
+
+    if (!controller) { return null; }
+    manualPointModalController = controller;
+
+    const cancelButton = document.getElementById('manualPointCancel');
+    if (cancelButton) {
+        cancelButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            manualPointModalController.close();
+        });
+    }
 
     if (manualPointForm) {
         manualPointForm.addEventListener('submit', handleManualPointSubmit);
     }
 
-    if (manualPointCancelButton) {
-        manualPointCancelButton.addEventListener('click', (event) => {
+    return manualPointModalController;
+}
+
+function ensureArchivedPointsModal() {
+    if (archivedPointsModalController) { return archivedPointsModalController; }
+
+    archivedPointsList = document.getElementById('archivedPointsList');
+    const controller = createModalController('archivedPointsModal', {
+        getInitialFocus: () => document.getElementById('archivedPointsClose'),
+    });
+
+    if (!controller) { return null; }
+    archivedPointsModalController = controller;
+
+    const closeButton = document.getElementById('archivedPointsClose');
+    if (closeButton) {
+        closeButton.addEventListener('click', (event) => {
             event.preventDefault();
-            closeManualPointModal();
+            archivedPointsModalController.close();
         });
     }
 
-    if (manualPointModal) {
-        manualPointModal.addEventListener('click', (event) => {
-            if (event.target === manualPointModal) {
-                closeManualPointModal();
-            }
-        });
-    }
-
-    manualPointModalInitialized = true;
-}
-
-function setManualPointFocusableElements() {
-    if (!manualPointModal) {
-        manualPointFocusableElements = [];
-        return;
-    }
-    manualPointFocusableElements = Array.from(
-        manualPointModal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
-    ).filter(el => !el.disabled);
-}
-
-function manualPointKeydownHandler(event) {
-    if (!manualPointModal || !manualPointModal.classList.contains('open')) { return; }
-
-    if (event.key === 'Escape') {
-        event.preventDefault();
-        closeManualPointModal();
-        return;
-    }
-
-    if (event.key !== 'Tab') { return; }
-
-    setManualPointFocusableElements();
-    if (manualPointFocusableElements.length === 0) {
-        event.preventDefault();
-        if (manualPointModalContent) { manualPointModalContent.focus(); }
-        return;
-    }
-
-    const firstFocusable = manualPointFocusableElements[0];
-    const lastFocusable = manualPointFocusableElements[manualPointFocusableElements.length - 1];
-    const activeElement = document.activeElement;
-
-    if (event.shiftKey) {
-        if (activeElement === firstFocusable || !manualPointModal.contains(activeElement)) {
-            event.preventDefault();
-            lastFocusable.focus();
-        }
-    } else if (activeElement === lastFocusable) {
-        event.preventDefault();
-        firstFocusable.focus();
-    }
-}
-
-function openManualPointModal() {
-    if (!manualPointModal) { setupManualPointModal(); }
-    if (!manualPointModal) { return; }
-
-    previouslyFocusedElement = document.activeElement;
-    manualPointModal.classList.add('open');
-    manualPointModal.removeAttribute('hidden');
-    manualPointModal.setAttribute('aria-hidden', 'false');
-
-    setManualPointFocusableElements();
-    const placeField = manualPointForm ? manualPointForm.elements['place_name'] : null;
-    if (placeField) {
-        placeField.focus();
-    } else if (manualPointFocusableElements.length) {
-        manualPointFocusableElements[0].focus();
-    } else if (manualPointModalContent) {
-        manualPointModalContent.focus();
-    }
-
-    document.addEventListener('keydown', manualPointKeydownHandler);
-}
-
-function closeManualPointModal() {
-    if (!manualPointModal) { return; }
-
-    manualPointModal.classList.remove('open');
-    manualPointModal.setAttribute('aria-hidden', 'true');
-    manualPointModal.setAttribute('hidden', '');
-    manualPointFocusableElements = [];
-
-    if (manualPointForm) {
-        manualPointForm.reset();
-    }
-
-    document.removeEventListener('keydown', manualPointKeydownHandler);
-
-    if (previouslyFocusedElement && typeof previouslyFocusedElement.focus === 'function') {
-        previouslyFocusedElement.focus();
-    }
-    previouslyFocusedElement = null;
+    return archivedPointsModalController;
 }
 
 async function handleManualPointSubmit(event) {
     event.preventDefault();
+    manualPointForm = manualPointForm || document.getElementById('manualPointForm');
     if (!manualPointForm) { return; }
 
     const place = manualPointForm.elements['place_name'].value.trim();
@@ -878,7 +981,9 @@ async function handleManualPointSubmit(event) {
         hideLoading();
         showStatus(result.message, result.status === 'error');
         if (result.status === 'success') {
-            closeManualPointModal();
+            if (manualPointModalController) {
+                manualPointModalController.close();
+            }
             loadMarkers();
         }
     } catch(err) {
@@ -888,7 +993,92 @@ async function handleManualPointSubmit(event) {
 }
 
 function addManualPoint() {
-    openManualPointModal();
+    const controller = ensureManualPointModal();
+    if (controller) {
+        controller.open();
+    }
+}
+
+function viewArchivedPoints() {
+    const controller = ensureArchivedPointsModal();
+    if (!controller) { return; }
+    controller.open();
+    loadArchivedPointsList();
+}
+
+async function loadArchivedPointsList() {
+    archivedPointsList = archivedPointsList || document.getElementById('archivedPointsList');
+    if (!archivedPointsList) { return; }
+
+    archivedPointsList.innerHTML = '<p class="archived-empty">Loading archived data points...</p>';
+
+    try {
+        const response = await fetch('/api/archived_markers');
+        if (!response.ok) {
+            throw new Error('Failed to load archived data points.');
+        }
+        const markers = await response.json();
+
+        if (!Array.isArray(markers) || markers.length === 0) {
+            archivedPointsList.innerHTML = '<p class="archived-empty">No archived data points.</p>';
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+        markers.forEach((marker) => {
+            const item = document.createElement('div');
+            item.className = 'archived-item';
+            if (marker.id) {
+                item.dataset.markerId = marker.id;
+            }
+            item.setAttribute('role', 'listitem');
+
+            const details = document.createElement('div');
+            details.className = 'archived-item-details';
+
+            const title = document.createElement('div');
+            title.className = 'archived-item-place';
+            title.textContent = marker.place || 'Unknown';
+            details.appendChild(title);
+
+            const meta = document.createElement('div');
+            meta.className = 'archived-item-meta';
+            const metaParts = [];
+            if (marker.date) {
+                metaParts.push(marker.date);
+            }
+            const latNumber = Number(marker.lat);
+            const lngNumber = Number(marker.lng);
+            if (Number.isFinite(latNumber) && Number.isFinite(lngNumber)) {
+                metaParts.push(`${latNumber.toFixed(4)}, ${lngNumber.toFixed(4)}`);
+            }
+            meta.textContent = metaParts.join(' • ');
+            details.appendChild(meta);
+
+            const actionButton = document.createElement('button');
+            actionButton.type = 'button';
+            actionButton.className = 'modal-button primary archived-item-action';
+            actionButton.textContent = 'Unarchive';
+            actionButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                unarchiveMarker(marker.id, actionButton);
+            });
+
+            item.appendChild(details);
+            item.appendChild(actionButton);
+            fragment.appendChild(item);
+        });
+
+        archivedPointsList.innerHTML = '';
+        archivedPointsList.appendChild(fragment);
+    } catch (error) {
+        console.error('Failed to load archived data points', error);
+        archivedPointsList.innerHTML = '<p class="archived-empty">Failed to load archived data points.</p>';
+    } finally {
+        if (archivedPointsModalController) {
+            archivedPointsModalController.refreshFocusableElements();
+        }
+    }
 }
 
 function refreshMap() { loadMarkers(); }
@@ -920,8 +1110,45 @@ async function archiveMarker(markerId, markerInstance, triggerButton) {
             markerInstance.closePopup();
         }
         await loadMarkers();
+        const archivedModal = document.getElementById('archivedPointsModal');
+        if (archivedModal && archivedModal.classList.contains('open')) {
+            await loadArchivedPointsList();
+        }
     } catch (error) {
         showStatus(error.message || 'Failed to archive data point.', true);
+    } finally {
+        hideLoading();
+        if (triggerButton) { triggerButton.disabled = false; }
+    }
+}
+
+async function unarchiveMarker(markerId, triggerButton) {
+    if (!markerId) {
+        showStatus('This data point cannot be unarchived.', true);
+        return;
+    }
+
+    if (triggerButton) { triggerButton.disabled = true; }
+    showLoading();
+
+    try {
+        const response = await fetch(`/api/markers/${encodeURIComponent(markerId)}/archive`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ archived: false }),
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || result.status === 'error') {
+            const message = (result && result.message) ? result.message : 'Failed to unarchive data point.';
+            throw new Error(message);
+        }
+
+        showStatus(result.message || 'Data point unarchived successfully.');
+        await loadMarkers();
+        await loadArchivedPointsList();
+    } catch (error) {
+        showStatus(error.message || 'Failed to unarchive data point.', true);
     } finally {
         hideLoading();
         if (triggerButton) { triggerButton.disabled = false; }
@@ -960,7 +1187,8 @@ async function deleteMarker(markerId, markerInstance, triggerButton) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
-    setupManualPointModal();
+    ensureManualPointModal();
+    ensureArchivedPointsModal();
     try {
         const response = await fetch('/api/source_types');
         const types = await response.json();
@@ -999,7 +1227,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (menu) { applyMenuState(menu, menu.classList.contains('open')); }
     document.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape') { return; }
-        if (manualPointModal && manualPointModal.classList.contains('open')) { return; }
+        const manualModalElement = document.getElementById('manualPointModal');
+        if (manualModalElement && manualModalElement.classList.contains('open')) { return; }
+        const archivedModalElement = document.getElementById('archivedPointsModal');
+        if (archivedModalElement && archivedModalElement.classList.contains('open')) { return; }
         const menu = document.querySelector('.menu-container');
         if (menu && menu.classList.contains('open')) {
             event.preventDefault();
