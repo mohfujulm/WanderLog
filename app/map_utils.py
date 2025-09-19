@@ -186,8 +186,20 @@ def update_map_with_timeline_data(
     # The map is kept in memory; the calling code can render it as needed
 
 
-def dataframe_to_markers(df: pd.DataFrame) -> list[dict]:
-    """Return a simplified marker list from the timeline dataframe."""
+def dataframe_to_markers(
+    df: pd.DataFrame,
+    include_archived: bool = False,
+) -> list[dict]:
+    """Return a simplified marker list from the timeline dataframe.
+
+    Parameters
+    ----------
+    df:
+        Source DataFrame containing timeline data.
+    include_archived:
+        When ``True`` archived rows are retained in the output; otherwise they
+        are omitted.
+    """
 
     # Return early if no timeline data is available
     if df is None or df.empty:
@@ -196,15 +208,66 @@ def dataframe_to_markers(df: pd.DataFrame) -> list[dict]:
     markers = []
     # Iterate over each row and build a small dict for the frontend
     for _, row in df.iterrows():
+        archived_value = bool(row.get("Archived", False))
+        if archived_value and not include_archived:
+            continue
+
         markers.append(
             {
+                "id": row.get("Place ID", ""),      # Unique identifier used for actions
                 "lat": row["Latitude"],           # Latitude for the map marker
                 "lng": row["Longitude"],          # Longitude for the map marker
                 "place": row.get("Place Name", ""),  # Human readable place name
                 "date": row.get("Start Date", ""),   # Date when the place was visited
                 "source_type": row.get("Source Type", ""),  # Data source category
+                "archived": archived_value,
             }
         )
 
     # The frontend expects a list of marker dictionaries
     return markers
+
+
+def filter_dataframe_by_date_range(
+    df: pd.DataFrame,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> pd.DataFrame:
+    """Return rows that fall within the provided ``start_date``/``end_date`` range.
+
+    Parameters
+    ----------
+    df:
+        Timeline data to filter.
+    start_date, end_date:
+        Optional ISO formatted date strings (``YYYY-MM-DD``).  When omitted,
+        the corresponding bound is ignored.
+    """
+
+    if df is None or df.empty:
+        return df
+
+    if "Start Date" not in df.columns:
+        return df
+
+    # Normalise empty strings to ``None`` so ``pd.to_datetime`` handles them.
+    start_date = start_date or None
+    end_date = end_date or None
+
+    if start_date is None and end_date is None:
+        return df
+
+    dates = pd.to_datetime(df["Start Date"], errors="coerce")
+    mask = pd.Series(True, index=df.index)
+
+    if start_date is not None:
+        start = pd.to_datetime(start_date, errors="coerce")
+        if pd.notna(start):
+            mask &= dates >= start
+
+    if end_date is not None:
+        end = pd.to_datetime(end_date, errors="coerce")
+        if pd.notna(end):
+            mask &= dates <= end
+
+    return df.loc[mask]

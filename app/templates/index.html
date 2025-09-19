@@ -2,7 +2,6 @@
 <html>
 <head>
     <title>Wanderlog Map</title>
-    <title>Wanderlog Map</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Raleway:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet" />
@@ -24,8 +23,12 @@
                             width: 100vw; 
                             height: 100vh; }
 
-        #map {  width: 100%; 
+        #map {  width: 100%;
                 height: 100%; }
+
+        .leaflet-marker-icon.marker-pin-icon {
+            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.25));
+        }
 
         .menu-container {   position: absolute; 
                             top: 0; 
@@ -150,9 +153,10 @@
         .overlay-button:active {    transform: translateY(0); 
                                     box-shadow: 4px 5px 0px 0px rgba(0, 0, 0, 0.15); }
 
-        .checkbox-group {               display: flex; 
-                                        flex-direction: column; 
-                                        gap: 4px; }
+        .checkbox-group {               display: flex;
+                                        flex-direction: column;
+                                        gap: 4px;
+                                        align-self: stretch; }
 
         .checkbox-group label {         display: flex; 
                                         align-items: center; 
@@ -160,11 +164,47 @@
                                         font-size: 14px; 
                                         justify-content: space-between; }
 
-        .checkbox-group label span {    flex: 1; 
-                                        min-width: 0; 
-                                        text-align: right;}
+        .checkbox-group label span {    flex: 1;
+                                        min-width: 0;
+                                        text-align: right; }
 
         .checkbox-group label input { flex-shrink: 0; }
+
+        .date-filter-group {            display: flex;
+                                        flex-direction: column;
+                                        gap: 8px;
+                                        align-self: stretch; }
+
+        .date-filter-group label {      display: flex;
+                                        align-items: center;
+                                        gap: 8px;
+                                        font-size: 14px;
+                                        justify-content: space-between; }
+
+        .date-filter-group label span { flex: 1;
+                                        text-align: right; }
+
+        .date-filter-group input {      border: 1px solid #ccc;
+                                        border-radius: 8px;
+                                        padding: 6px 10px;
+                                        font-size: 14px;
+                                        font-family: inherit; }
+
+        .date-filter-actions {          display: flex;
+                                        justify-content: flex-end; }
+
+        .date-filter-clear {            background: none;
+                                        border: none;
+                                        color: #0078d4;
+                                        font-size: 13px;
+                                        font-weight: 600;
+                                        cursor: pointer;
+                                        padding: 0; }
+
+        .date-filter-clear:hover {      text-decoration: underline; }
+
+        .date-filter-clear:focus {      outline: 2px solid rgba(0,120,212,0.6);
+                                        outline-offset: 2px; }
 
         #status {   position: absolute; 
                     bottom: 20px; 
@@ -266,6 +306,134 @@
         .modal-button.primary { background: #0078d4; color: #fff; }
         .modal-button.primary:hover { background: #0062ad; transform: translateY(-1px); }
         .modal-button:focus { outline: 2px solid #0078d4; outline-offset: 2px; }
+
+        .archived-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-height: 320px;
+            overflow-y: auto;
+        }
+
+        .archived-empty {
+            font-size: 12px;
+            color: #555;
+            text-align: center;
+        }
+
+        .archived-item {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            background: #f9fafb;
+        }
+
+        .archived-item-details {
+            display: flex;
+            flex-direction: column;
+            font-size: 12px;
+            gap: 4px;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .archived-item-place {
+            font-weight: 500;
+            color: #222;
+            word-break: break-word;
+        }
+
+        .archived-item-meta {
+            font-size: 12px;
+            color: #555;
+        }
+
+        .archived-item-action {
+            align-self: center;
+            white-space: nowrap;
+        }
+
+        .marker-popup {
+            font-family: var(--app-font-family);
+            min-width: 220px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            color: #222;
+        }
+
+        .marker-popup-row {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            font-size: 13px;
+            line-height: 1.4;
+        }
+
+        .marker-popup-label {
+            font-weight: 600;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            font-size: 11px;
+        }
+
+        .marker-popup-value {
+            color: #1a1a1a;
+            word-break: break-word;
+        }
+
+        .marker-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 4px;
+        }
+
+        .marker-action {
+            flex: 1 1 0;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background 0.2s ease, transform 0.2s ease;
+            font-weight: 600;
+        }
+
+        .marker-action:focus {
+            outline: 2px solid rgba(0,120,212,0.45);
+            outline-offset: 2px;
+        }
+
+        .marker-action:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .marker-action-archive {
+            background: #eef2ff;
+            color: #314192;
+        }
+
+        .marker-action-archive:hover:not(:disabled) {
+            background: #dce4ff;
+            transform: translateY(-1px);
+        }
+
+        .marker-action-delete {
+            background: #fdecea;
+            color: #b3261e;
+        }
+
+        .marker-action-delete:hover:not(:disabled) {
+            background: #fbd6d2;
+            transform: translateY(-1px);
+        }
     </style>
 </head>
 <body>
@@ -284,8 +452,23 @@
             <button class="overlay-button" onclick="addManualPoint()">Add a Location Manually</button>
             <button class="overlay-button" onclick="clearMap()">Clear Map</button>
             <button class="overlay-button" onclick="refreshMap()">Refresh Map</button>
+            <button class="overlay-button" onclick="viewArchivedPoints()">View Archived Points</button>
             <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
             <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
+            <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
+            <div class="date-filter-group" id="dateFilters" role="group" aria-labelledby="dateFiltersTitle">
+                <label for="filterStartDate">
+                    <span>Start Date</span>
+                    <input type="date" id="filterStartDate" name="filterStartDate">
+                </label>
+                <label for="filterEndDate">
+                    <span>End Date</span>
+                    <input type="date" id="filterEndDate" name="filterEndDate">
+                </label>
+                <div class="date-filter-actions">
+                    <button type="button" class="date-filter-clear" id="clearDateFilters">Clear Dates</button>
+                </div>
+            </div>
         </div>
     </div>
     <div id="status"></div>
@@ -322,6 +505,17 @@
             </form>
         </div>
     </div>
+    <div id="archivedPointsModal" class="modal-overlay" aria-hidden="true" hidden>
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="archivedPointsTitle" tabindex="-1">
+            <h2 id="archivedPointsTitle">Archived Data Points</h2>
+            <div id="archivedPointsList" class="archived-list" role="list">
+                <p class="archived-empty">No archived data points.</p>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="modal-button secondary" id="archivedPointsClose">Close</button>
+            </div>
+        </div>
+    </div>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
@@ -331,18 +525,73 @@ const MENU_ICON_PATH = "{{ url_for('static', filename='assets/menu-icon.svg') }}
 const CLOSE_ICON_PATH = "{{ url_for('static', filename='assets/close-icon.svg') }}";
 let map;
 let markerCluster;
-let manualPointModal;
-let manualPointModalContent;
 let manualPointForm;
-let manualPointCancelButton;
-let manualPointFocusableElements = [];
-let previouslyFocusedElement = null;
-let manualPointModalInitialized = false;
+let manualPointModalController = null;
+let archivedPointsModalController = null;
+let archivedPointsList = null;
 
 const SOURCE_TYPE_LABELS = {
     google_timeline: 'Google Timeline',
     manual: 'Manual Entry',
 };
+
+const MARKER_ICON_PATHS = {
+    google_timeline: "{{ url_for('static', filename='assets/marker-pin-blue.svg') }}",
+    manual: "{{ url_for('static', filename='assets/marker-pin-orange.svg') }}",
+    default: "{{ url_for('static', filename='assets/marker-pin-gray.svg') }}",
+};
+
+const markerIconCache = new Map();
+
+const HTML_ESCAPE_LOOKUP = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+};
+const HTML_ESCAPE_REGEX = /[&<>"']/g;
+
+function escapeHtml(value) {
+    if (value === null || value === undefined) { return ''; }
+    return String(value).replace(HTML_ESCAPE_REGEX, (match) => HTML_ESCAPE_LOOKUP[match] || match);
+}
+
+function escapeHtmlAttribute(value) {
+    return escapeHtml(value).replace(/`/g, '&#96;');
+}
+
+function createPopupContent(markerData) {
+    if (!markerData) { return ''; }
+
+    const markerId = markerData.id || '';
+    const safeId = escapeHtmlAttribute(markerId);
+    const place = escapeHtml(markerData.place || 'Unknown');
+    const sourceLabel = getSourceTypeLabel(markerData.source_type);
+    const sourceRow = sourceLabel
+        ? `<div class="marker-popup-row"><span class="marker-popup-label">Source</span><span class="marker-popup-value">${escapeHtml(sourceLabel)}</span></div>`
+        : '';
+    const date = escapeHtml(markerData.date || 'Unknown');
+    const latNumber = Number(markerData.lat);
+    const lngNumber = Number(markerData.lng);
+    const latText = Number.isFinite(latNumber) ? latNumber.toFixed(4) : String(markerData.lat ?? '');
+    const lngText = Number.isFinite(lngNumber) ? lngNumber.toFixed(4) : String(markerData.lng ?? '');
+    const coordinates = `${escapeHtml(latText)}, ${escapeHtml(lngText)}`;
+    const hasId = Boolean(markerId);
+    const actions = hasId
+        ? `<div class="marker-actions"><button type="button" class="marker-action marker-action-archive">Archive</button><button type="button" class="marker-action marker-action-delete">Delete</button></div>`
+        : '';
+
+    return [
+        `<div class="marker-popup"${hasId ? ` data-marker-id="${safeId}"` : ''}>`,
+        `<div class="marker-popup-row"><span class="marker-popup-label">Place Name</span><span class="marker-popup-value">${place}</span></div>`,
+        sourceRow,
+        `<div class="marker-popup-row"><span class="marker-popup-label">Date Visited</span><span class="marker-popup-value">${date}</span></div>`,
+        `<div class="marker-popup-row"><span class="marker-popup-label">Coordinates</span><span class="marker-popup-value">${coordinates}</span></div>`,
+        actions,
+        `</div>`,
+    ].filter(Boolean).join('');
+}
 
 function getSourceTypeLabel(type) {
     if (!type) { return ''; }
@@ -352,6 +601,24 @@ function getSourceTypeLabel(type) {
     return type
         .replace(/_/g, ' ')
         .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function getMarkerIcon(sourceType) {
+    const iconUrl = MARKER_ICON_PATHS[sourceType] || MARKER_ICON_PATHS.default;
+    if (markerIconCache.has(iconUrl)) {
+        return markerIconCache.get(iconUrl);
+    }
+    const icon = L.icon({
+        className: 'marker-pin-icon',
+        iconUrl,
+        iconRetinaUrl: iconUrl,
+        iconSize: [36, 48],
+        iconAnchor: [18, 44],
+        popupAnchor: [0, -40],
+    });
+
+    markerIconCache.set(iconUrl, icon);
+    return icon;
 }
 
 function showLoading() { document.getElementById('loading').style.display = 'flex'; }
@@ -382,27 +649,74 @@ function initMap() {
 async function loadMarkers() {
     // Show a loading overlay while fetching marker data
     showLoading();
+    const startDateInput = document.getElementById('filterStartDate');
+    const endDateInput = document.getElementById('filterEndDate');
+    const startDate = startDateInput ? startDateInput.value : '';
+    const endDate = endDateInput ? endDateInput.value : '';
+
+    if (startDate && endDate && startDate > endDate) {
+        hideLoading();
+        showStatus('Start date must be on or before end date.', true);
+        return;
+    }
+
     // Remove any markers currently displayed
     markerCluster.clearLayers();
     // Collect the values of all checked source type filters
     const checked = Array.from(
         document.querySelectorAll('#sourceTypeFilters input:checked')
     ).map(cb => cb.value);
+
+    const payload = { source_types: checked };
+    if (startDate) { payload.start_date = startDate; }
+    if (endDate) { payload.end_date = endDate; }
+
     try {
         // Request the marker list from the server, filtering by source type
         const response = await fetch('/api/map_data', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source_types: checked })
+            body: JSON.stringify(payload)
         });
         // Parse the JSON response
         const markers = await response.json();
         // Add a Leaflet marker for each item returned
         markers.forEach(m => {
-            const popup = `<div><strong>Place Name:</strong> ${m.place}<br>` +
-                          `<strong>Date Visited:</strong> ${m.date}<br>` +
-                          `<strong>Coordinates:</strong> ${m.lat.toFixed(4)}, ${m.lng.toFixed(4)}</div>`;
-            L.marker([m.lat, m.lng]).bindPopup(popup).addTo(markerCluster);
+            const lat = Number(m.lat);
+            const lng = Number(m.lng);
+            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                return;
+            }
+
+            const marker = L.marker([lat, lng], {
+                icon: getMarkerIcon(m.source_type),
+                title: m.place || '',
+                riseOnHover: true,
+            });
+
+            const popupContent = createPopupContent(m);
+            marker.bindPopup(popupContent).addTo(markerCluster);
+
+            marker.on('popupopen', () => {
+                const popupElement = marker.getPopup() ? marker.getPopup().getElement() : null;
+                if (!popupElement) { return; }
+
+                const archiveButton = popupElement.querySelector('.marker-action-archive');
+                if (archiveButton) {
+                    archiveButton.onclick = (event) => {
+                        event.preventDefault();
+                        archiveMarker(m.id, marker, archiveButton);
+                    };
+                }
+
+                const deleteButton = popupElement.querySelector('.marker-action-delete');
+                if (deleteButton) {
+                    deleteButton.onclick = (event) => {
+                        event.preventDefault();
+                        deleteMarker(m.id, marker, deleteButton);
+                    };
+                }
+            });
         });
         // Done loading
         hideLoading();
@@ -431,6 +745,11 @@ async function updateMap() {
 }
 
 async function clearMap() {
+    const confirmClear = window.confirm(
+        'Clearing the map will remove all data permanently. This action cannot be undone. Do you want to continue?'
+    );
+    if (!confirmClear) { return; }
+
     showLoading();
     try {
         const response = await fetch('/api/clear', { method: 'POST' });
@@ -444,123 +763,167 @@ async function clearMap() {
     }
 }
 
-function setupManualPointModal() {
-    if (manualPointModalInitialized) { return; }
-    manualPointModal = document.getElementById('manualPointModal');
-    if (!manualPointModal) { return; }
-    manualPointModalContent = manualPointModal.querySelector('.modal-content');
+function createModalController(modalId, { getInitialFocus, onClose } = {}) {
+    const modal = document.getElementById(modalId);
+    if (!modal) { return null; }
+    const modalContent = modal.querySelector('.modal-content');
+    let focusableElements = [];
+    let previouslyFocused = null;
+
+    function setFocusableElements() {
+        focusableElements = Array.from(
+            modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+        ).filter((el) => !el.disabled && modal.contains(el));
+    }
+
+    function focusInitialElement() {
+        const target = typeof getInitialFocus === 'function' ? getInitialFocus() : null;
+        if (target && typeof target.focus === 'function') {
+            target.focus();
+            return;
+        }
+
+        if (focusableElements.length > 0) {
+            focusableElements[0].focus();
+            return;
+        }
+
+        if (modalContent && typeof modalContent.focus === 'function') {
+            modalContent.focus();
+        }
+    }
+
+    function handleKeydown(event) {
+        if (!modal.classList.contains('open')) { return; }
+
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            close();
+            return;
+        }
+
+        if (event.key !== 'Tab') { return; }
+
+        setFocusableElements();
+        if (focusableElements.length === 0) {
+            event.preventDefault();
+            if (modalContent && typeof modalContent.focus === 'function') {
+                modalContent.focus();
+            }
+            return;
+        }
+
+        const first = focusableElements[0];
+        const last = focusableElements[focusableElements.length - 1];
+        const active = document.activeElement;
+
+        if (event.shiftKey) {
+            if (active === first || !modal.contains(active)) {
+                event.preventDefault();
+                last.focus();
+            }
+        } else if (active === last) {
+            event.preventDefault();
+            first.focus();
+        }
+    }
+
+    function open() {
+        previouslyFocused = document.activeElement;
+        modal.classList.add('open');
+        modal.removeAttribute('hidden');
+        modal.setAttribute('aria-hidden', 'false');
+        setFocusableElements();
+        focusInitialElement();
+        document.addEventListener('keydown', handleKeydown);
+    }
+
+    function close() {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        modal.setAttribute('hidden', '');
+        document.removeEventListener('keydown', handleKeydown);
+        focusableElements = [];
+        if (typeof onClose === 'function') {
+            onClose();
+        }
+        if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
+            previouslyFocused.focus();
+        }
+        previouslyFocused = null;
+    }
+
+    modal.addEventListener('click', (event) => {
+        if (event.target === modal) {
+            close();
+        }
+    });
+
+    return {
+        open,
+        close,
+        refreshFocusableElements: setFocusableElements,
+    };
+}
+
+function ensureManualPointModal() {
+    if (manualPointModalController) { return manualPointModalController; }
+
     manualPointForm = document.getElementById('manualPointForm');
-    manualPointCancelButton = document.getElementById('manualPointCancel');
+    const controller = createModalController('manualPointModal', {
+        getInitialFocus: () => {
+            const form = manualPointForm || document.getElementById('manualPointForm');
+            return form ? form.elements['place_name'] : null;
+        },
+        onClose: () => {
+            const form = manualPointForm || document.getElementById('manualPointForm');
+            if (form) { form.reset(); }
+        },
+    });
+
+    if (!controller) { return null; }
+    manualPointModalController = controller;
+
+    const cancelButton = document.getElementById('manualPointCancel');
+    if (cancelButton) {
+        cancelButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            manualPointModalController.close();
+        });
+    }
 
     if (manualPointForm) {
         manualPointForm.addEventListener('submit', handleManualPointSubmit);
     }
 
-    if (manualPointCancelButton) {
-        manualPointCancelButton.addEventListener('click', (event) => {
+    return manualPointModalController;
+}
+
+function ensureArchivedPointsModal() {
+    if (archivedPointsModalController) { return archivedPointsModalController; }
+
+    archivedPointsList = document.getElementById('archivedPointsList');
+    const controller = createModalController('archivedPointsModal', {
+        getInitialFocus: () => document.getElementById('archivedPointsClose'),
+    });
+
+    if (!controller) { return null; }
+    archivedPointsModalController = controller;
+
+    const closeButton = document.getElementById('archivedPointsClose');
+    if (closeButton) {
+        closeButton.addEventListener('click', (event) => {
             event.preventDefault();
-            closeManualPointModal();
+            archivedPointsModalController.close();
         });
     }
 
-    if (manualPointModal) {
-        manualPointModal.addEventListener('click', (event) => {
-            if (event.target === manualPointModal) {
-                closeManualPointModal();
-            }
-        });
-    }
-
-    manualPointModalInitialized = true;
-}
-
-function setManualPointFocusableElements() {
-    if (!manualPointModal) {
-        manualPointFocusableElements = [];
-        return;
-    }
-    manualPointFocusableElements = Array.from(
-        manualPointModal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
-    ).filter(el => !el.disabled);
-}
-
-function manualPointKeydownHandler(event) {
-    if (!manualPointModal || !manualPointModal.classList.contains('open')) { return; }
-
-    if (event.key === 'Escape') {
-        event.preventDefault();
-        closeManualPointModal();
-        return;
-    }
-
-    if (event.key !== 'Tab') { return; }
-
-    setManualPointFocusableElements();
-    if (manualPointFocusableElements.length === 0) {
-        event.preventDefault();
-        if (manualPointModalContent) { manualPointModalContent.focus(); }
-        return;
-    }
-
-    const firstFocusable = manualPointFocusableElements[0];
-    const lastFocusable = manualPointFocusableElements[manualPointFocusableElements.length - 1];
-    const activeElement = document.activeElement;
-
-    if (event.shiftKey) {
-        if (activeElement === firstFocusable || !manualPointModal.contains(activeElement)) {
-            event.preventDefault();
-            lastFocusable.focus();
-        }
-    } else if (activeElement === lastFocusable) {
-        event.preventDefault();
-        firstFocusable.focus();
-    }
-}
-
-function openManualPointModal() {
-    if (!manualPointModal) { setupManualPointModal(); }
-    if (!manualPointModal) { return; }
-
-    previouslyFocusedElement = document.activeElement;
-    manualPointModal.classList.add('open');
-    manualPointModal.removeAttribute('hidden');
-    manualPointModal.setAttribute('aria-hidden', 'false');
-
-    setManualPointFocusableElements();
-    const placeField = manualPointForm ? manualPointForm.elements['place_name'] : null;
-    if (placeField) {
-        placeField.focus();
-    } else if (manualPointFocusableElements.length) {
-        manualPointFocusableElements[0].focus();
-    } else if (manualPointModalContent) {
-        manualPointModalContent.focus();
-    }
-
-    document.addEventListener('keydown', manualPointKeydownHandler);
-}
-
-function closeManualPointModal() {
-    if (!manualPointModal) { return; }
-
-    manualPointModal.classList.remove('open');
-    manualPointModal.setAttribute('aria-hidden', 'true');
-    manualPointModal.setAttribute('hidden', '');
-    manualPointFocusableElements = [];
-
-    if (manualPointForm) {
-        manualPointForm.reset();
-    }
-
-    document.removeEventListener('keydown', manualPointKeydownHandler);
-
-    if (previouslyFocusedElement && typeof previouslyFocusedElement.focus === 'function') {
-        previouslyFocusedElement.focus();
-    }
-    previouslyFocusedElement = null;
+    return archivedPointsModalController;
 }
 
 async function handleManualPointSubmit(event) {
     event.preventDefault();
+    manualPointForm = manualPointForm || document.getElementById('manualPointForm');
     if (!manualPointForm) { return; }
 
     const place = manualPointForm.elements['place_name'].value.trim();
@@ -623,7 +986,9 @@ async function handleManualPointSubmit(event) {
         hideLoading();
         showStatus(result.message, result.status === 'error');
         if (result.status === 'success') {
-            closeManualPointModal();
+            if (manualPointModalController) {
+                manualPointModalController.close();
+            }
             loadMarkers();
         }
     } catch(err) {
@@ -633,13 +998,207 @@ async function handleManualPointSubmit(event) {
 }
 
 function addManualPoint() {
-    openManualPointModal();
+    const controller = ensureManualPointModal();
+    if (controller) {
+        controller.open();
+    }
+}
+
+function viewArchivedPoints() {
+    const controller = ensureArchivedPointsModal();
+    if (!controller) { return; }
+    controller.open();
+    loadArchivedPointsList();
+}
+
+async function loadArchivedPointsList() {
+    archivedPointsList = archivedPointsList || document.getElementById('archivedPointsList');
+    if (!archivedPointsList) { return; }
+
+    archivedPointsList.innerHTML = '<p class="archived-empty">Loading archived data points...</p>';
+
+    try {
+        const response = await fetch('/api/archived_markers');
+        if (!response.ok) {
+            throw new Error('Failed to load archived data points.');
+        }
+        const markers = await response.json();
+
+        if (!Array.isArray(markers) || markers.length === 0) {
+            archivedPointsList.innerHTML = '<p class="archived-empty">No archived data points.</p>';
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+        markers.forEach((marker) => {
+            const item = document.createElement('div');
+            item.className = 'archived-item';
+            if (marker.id) {
+                item.dataset.markerId = marker.id;
+            }
+            item.setAttribute('role', 'listitem');
+
+            const details = document.createElement('div');
+            details.className = 'archived-item-details';
+
+            const title = document.createElement('div');
+            title.className = 'archived-item-place';
+            title.textContent = marker.place || 'Unknown';
+            details.appendChild(title);
+
+            const meta = document.createElement('div');
+            meta.className = 'archived-item-meta';
+            const metaParts = [];
+            if (marker.date) {
+                metaParts.push(marker.date);
+            }
+            const latNumber = Number(marker.lat);
+            const lngNumber = Number(marker.lng);
+            if (Number.isFinite(latNumber) && Number.isFinite(lngNumber)) {
+                metaParts.push(`${latNumber.toFixed(4)}, ${lngNumber.toFixed(4)}`);
+            }
+            meta.textContent = metaParts.join(' • ');
+            details.appendChild(meta);
+
+            const actionButton = document.createElement('button');
+            actionButton.type = 'button';
+            actionButton.className = 'modal-button primary archived-item-action';
+            actionButton.textContent = 'Unarchive';
+            actionButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                unarchiveMarker(marker.id, actionButton);
+            });
+
+            item.appendChild(details);
+            item.appendChild(actionButton);
+            fragment.appendChild(item);
+        });
+
+        archivedPointsList.innerHTML = '';
+        archivedPointsList.appendChild(fragment);
+    } catch (error) {
+        console.error('Failed to load archived data points', error);
+        archivedPointsList.innerHTML = '<p class="archived-empty">Failed to load archived data points.</p>';
+    } finally {
+        if (archivedPointsModalController) {
+            archivedPointsModalController.refreshFocusableElements();
+        }
+    }
 }
 
 function refreshMap() { loadMarkers(); }
 
+async function archiveMarker(markerId, markerInstance, triggerButton) {
+    if (!markerId) {
+        showStatus('This data point cannot be archived.', true);
+        return;
+    }
+
+    if (triggerButton) { triggerButton.disabled = true; }
+    showLoading();
+
+    try {
+        const response = await fetch(`/api/markers/${encodeURIComponent(markerId)}/archive`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ archived: true }),
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || result.status === 'error') {
+            const message = (result && result.message) ? result.message : 'Failed to archive data point.';
+            throw new Error(message);
+        }
+
+        showStatus(result.message || 'Data point archived successfully.');
+        if (markerInstance && typeof markerInstance.closePopup === 'function') {
+            markerInstance.closePopup();
+        }
+        await loadMarkers();
+        const archivedModal = document.getElementById('archivedPointsModal');
+        if (archivedModal && archivedModal.classList.contains('open')) {
+            await loadArchivedPointsList();
+        }
+    } catch (error) {
+        showStatus(error.message || 'Failed to archive data point.', true);
+    } finally {
+        hideLoading();
+        if (triggerButton) { triggerButton.disabled = false; }
+    }
+}
+
+async function unarchiveMarker(markerId, triggerButton) {
+    if (!markerId) {
+        showStatus('This data point cannot be unarchived.', true);
+        return;
+    }
+
+    if (triggerButton) { triggerButton.disabled = true; }
+    showLoading();
+
+    try {
+        const response = await fetch(`/api/markers/${encodeURIComponent(markerId)}/archive`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ archived: false }),
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || result.status === 'error') {
+            const message = (result && result.message) ? result.message : 'Failed to unarchive data point.';
+            throw new Error(message);
+        }
+
+        showStatus(result.message || 'Data point unarchived successfully.');
+        await loadMarkers();
+        await loadArchivedPointsList();
+    } catch (error) {
+        showStatus(error.message || 'Failed to unarchive data point.', true);
+    } finally {
+        hideLoading();
+        if (triggerButton) { triggerButton.disabled = false; }
+    }
+}
+
+async function deleteMarker(markerId, markerInstance, triggerButton) {
+    if (!markerId) {
+        showStatus('This data point cannot be deleted.', true);
+        return;
+    }
+
+    const confirmDelete = window.confirm(
+        'Deleting this data point is irreversible. Do you want to continue?'
+    );
+    if (!confirmDelete) { return; }
+
+    if (triggerButton) { triggerButton.disabled = true; }
+    showLoading();
+
+    try {
+        const response = await fetch(`/api/markers/${encodeURIComponent(markerId)}`, { method: 'DELETE' });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || result.status === 'error') {
+            const message = (result && result.message) ? result.message : 'Failed to delete data point.';
+            throw new Error(message);
+        }
+
+        showStatus(result.message || 'Data point deleted successfully.');
+        if (markerInstance && typeof markerInstance.closePopup === 'function') {
+            markerInstance.closePopup();
+        }
+        await loadMarkers();
+    } catch (error) {
+        showStatus(error.message || 'Failed to delete data point.', true);
+    } finally {
+        hideLoading();
+        if (triggerButton) { triggerButton.disabled = false; }
+    }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
-    setupManualPointModal();
+    ensureManualPointModal();
+    ensureArchivedPointsModal();
     try {
         const response = await fetch('/api/source_types');
         const types = await response.json();
@@ -660,12 +1219,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch(err) {
         console.error('Failed to load source types', err);
     }
+    const startDateInput = document.getElementById('filterStartDate');
+    const endDateInput = document.getElementById('filterEndDate');
+    const clearDateButton = document.getElementById('clearDateFilters');
+
+    if (startDateInput) { startDateInput.addEventListener('change', loadMarkers); }
+    if (endDateInput) { endDateInput.addEventListener('change', loadMarkers); }
+    if (clearDateButton) {
+        clearDateButton.addEventListener('click', () => {
+            if (startDateInput) { startDateInput.value = ''; }
+            if (endDateInput) { endDateInput.value = ''; }
+            loadMarkers();
+        });
+    }
     initMap();
     const menu = document.querySelector('.menu-container');
     if (menu) { applyMenuState(menu, menu.classList.contains('open')); }
     document.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape') { return; }
-        if (manualPointModal && manualPointModal.classList.contains('open')) { return; }
+        const manualModalElement = document.getElementById('manualPointModal');
+        if (manualModalElement && manualModalElement.classList.contains('open')) { return; }
+        const archivedModalElement = document.getElementById('archivedPointsModal');
+        if (archivedModalElement && archivedModalElement.classList.contains('open')) { return; }
         const menu = document.querySelector('.menu-container');
         if (menu && menu.classList.contains('open')) {
             event.preventDefault();
