@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
 <head>
     <title>Wanderlog Map</title>
@@ -10,15 +10,44 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
+
         :root { --app-font-family: 'Raleway', 'Verdana', sans-serif; }
+
         body, html {    height: 100%; 
                         font-family: var(--app-font-family); 
                         overflow: hidden; }
+
         button, input, select { font-family: inherit; }
-        #map-container { position: relative; width: 100vw; height: 100vh; }
-        #map { width: 100%; height: 100%; }
-        .menu-container { position: absolute; top: 0; right: 0; height: 100%; width: min(340px, 90vw); z-index: 1000; background-color: rgba(255,255,255,0.96); padding: 24px 24px 24px 16px; border-radius: 24px 0 0 24px; box-shadow: -8px 0 24px rgba(0,0,0,0.18); display: flex; flex-direction: column; gap: 16px; transform: translateX(calc(100% - 80px)); transition: transform 0.35s ease, box-shadow 0.35s ease, padding 0.35s ease; backdrop-filter: blur(14px); overflow: hidden; }
-        .menu-container.open { transform: translateX(0); box-shadow: -12px 0 32px rgba(0,0,0,0.25); padding-left: 24px; }
+
+        #map-container {    position: relative; 
+                            width: 100vw; 
+                            height: 100vh; }
+
+        #map {  width: 100%; 
+                height: 100%; }
+
+        .menu-container {   position: absolute; 
+                            top: 0; 
+                            right: 0; 
+                            height: 100%; 
+                            width: min(18vw, 90vw); 
+                            z-index: 1000; 
+                            background-color: rgba(255,255,255,0.96); 
+                            padding: 24px 24px 24px 16px; 
+                            border-radius: 24px 0 0 24px; 
+                            box-shadow: -8px 0 24px rgba(0,0,0,0.18); 
+                            display: flex; 
+                            flex-direction: column; 
+                            gap: 16px; 
+                            transform: translateX(calc(100% - 80px)); 
+                            transition: transform 0.35s ease, box-shadow 0.35s ease, padding 0.35s ease; 
+                            backdrop-filter: blur(14px); 
+                            overflow: hidden; }
+        
+        .menu-container.open {  transform: translateX(0); 
+                                box-shadow: -12px 0 32px rgba(0,0,0,0.25); 
+                                padding-left: 24px; }
+
         .menu-toggle {  align-self: flex-start; 
                         cursor: pointer; 
                         user-select: none; 
@@ -39,13 +68,40 @@
                         writing-mode: vertical-rl; 
                         text-orientation: mixed; 
                         font-weight: 500; }
-        .menu-toggle:hover { background: rgba(255,255,255,1); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
+
+        .menu-toggle:hover {    background: rgba(255,255,255,1); 
+                                transform: translateY(-2px); 
+                                box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
+
         .menu-toggle:focus { outline: 2px solid rgba(0,120,212,0.6); outline-offset: 2px; }
-        .menu-toggle .menu-toggle-icon { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; line-height: 1; writing-mode: horizontal-tb; flex-shrink: 0; }
-        .menu-toggle .menu-toggle-icon img { width: 100%; height: 100%; object-fit: contain; display: block; }
+
+        .menu-toggle .menu-toggle-icon {    display: inline-flex; 
+                                            align-items: center; 
+                                            justify-content: center; 
+                                            width: 20px; 
+                                            height: 20px; 
+                                            line-height: 1; 
+                                            writing-mode: horizontal-tb; 
+                                            flex-shrink: 0; }
+
+        .menu-toggle .menu-toggle-icon img {    width: 100%; 
+                                                height: 100%; 
+                                                object-fit: contain; 
+                                                display: block; }
+
         .menu-toggle .menu-toggle-text { font-size: 12px; }
-        .menu-container.open .menu-toggle { align-self: flex-end; margin-left: auto; writing-mode: horizontal-tb; flex-direction: row; padding: 10px 16px; border-radius: 14px; gap: 8px; letter-spacing: 0.08em; box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
+
+        .menu-container.open .menu-toggle { align-self: flex-end; 
+                                            margin-left: auto; 
+                                            writing-mode: horizontal-tb; 
+                                            flex-direction: row; 
+                                            padding: 10px 16px; 
+                                            border-radius: 14px; 
+                                            gap: 8px; 
+                                            letter-spacing: 0.08em;
+                                            box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
         .menu-container.open .menu-toggle .menu-toggle-text { font-size: 14px; }
+
         .overlay-controls { display: flex; 
                             flex-direction: column; 
                             align-items: flex-end;
@@ -57,7 +113,9 @@
                             max-height: calc(100% - 80px); 
                             padding-right: 4px; 
                             pointer-events: none; }
+
         .menu-container.open .overlay-controls { opacity: 1; transform: translateX(0); pointer-events: auto; }
+
         .overlay-button {   background: rgba(255,255,255,0.95); 
                             color: #333; 
                             border: none; 
@@ -74,6 +132,15 @@
                             text-align: right; 
                             width: 100%; }
 
+        .overlay-section-title { align-self: stretch;
+                                 padding-top: 3px;
+                                 font-size: 13px;
+                                 font-weight: 600;
+                                 letter-spacing: 0.08em;
+                                 text-transform: uppercase;
+                                 color: #444;
+                                 text-align: right; }
+
         .overlay-button:hover {     background: rgba(255,255,255,1); 
                                     transform: translateY(-2px); 
                                     box-shadow: 5px 6px 0px 0px rgba(0, 0, 0, 0.15); }
@@ -81,28 +148,117 @@
         .overlay-button:active {    transform: translateY(0); 
                                     box-shadow: 5px 7px 0px 0px rgba(0, 0, 0, 0.15); }
 
-        .checkbox-group { display: flex; flex-direction: column; gap: 4px; }
-        .checkbox-group label { display: flex; align-items: center; gap: 8px; font-size: 14px; justify-content: space-between; }
-        .checkbox-group label span { flex: 1; min-width: 0; }
+        .checkbox-group {               display: flex; 
+                                        flex-direction: column; 
+                                        gap: 4px; }
+
+        .checkbox-group label {         display: flex; 
+                                        align-items: center; 
+                                        gap: 8px; 
+                                        font-size: 14px; 
+                                        justify-content: space-between; }
+
+        .checkbox-group label span {    flex: 1; 
+                                        min-width: 0; 
+                                        text-align: right;}
+
         .checkbox-group label input { flex-shrink: 0; }
 
-        #status { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.9); padding: 8px 12px; border-radius: 4px; display: none; font-size: 14px; z-index: 1000; }
-        #status.success { border: 1px solid #4CAF50; color: #4CAF50; }
-        #status.error { border: 1px solid #F44336; color: #F44336; }
-        .loading-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); display: none; align-items: center; justify-content: center; z-index: 2000; }
-        .loading-spinner { text-align: center; font-size: 18px; }
-        .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #0078D7; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 10px; }
+        #status {   position: absolute; 
+                    bottom: 20px; 
+                    left: 50%; 
+                    transform: translateX(-50%); 
+                    background: rgba(255,255,255,0.9); 
+                    padding: 8px 12px; 
+                    border-radius: 4px; 
+                    display: none; 
+                    font-size: 14px; 
+                    z-index: 1000; }
+
+        #status.success {   border: 1px solid #4CAF50; 
+                            color: #4CAF50; }
+                    
+        #status.error {     border: 1px solid #F44336; 
+                            color: #F44336; }
+
+        .loading-overlay {  position: absolute; 
+                            top: 0; 
+                            left: 0; 
+                            width: 100%; 
+                            height: 100%; 
+                            background: rgba(255,255,255,0.8); 
+                            display: none; 
+                            align-items: center; 
+                            justify-content: center; 
+                            z-index: 2000; }
+
+        .loading-spinner {  text-align: center; 
+                            font-size: 18px; }
+
+        .spinner {          border: 4px solid #f3f3f3; 
+                            border-top: 4px solid #0078D7; 
+                            border-radius: 50%; 
+                            width: 40px; 
+                            height: 40px; 
+                            animation: spin 1s linear infinite; 
+                            margin: 0 auto 10px; }
+
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .modal-overlay { position: absolute; inset: 0; background: rgba(0,0,0,0.45); display: none; align-items: center; justify-content: center; z-index: 3000; padding: 20px; }
+
+        .modal-overlay {    position: absolute; 
+                            inset: 0; background: rgba(0,0,0,0.45); 
+                            display: none; 
+                            align-items: center; 
+                            justify-content: center; 
+                            z-index: 3000; 
+                            padding: 20px; }
+
         .modal-overlay.open { display: flex; }
-        .modal-content { background: #fff; border-radius: 12px; width: min(420px, 100%); box-shadow: 0 12px 32px rgba(0,0,0,0.25); padding: 24px; display: flex; flex-direction: column; gap: 16px; outline: none; }
-        .modal-content h2 { font-size: 20px; margin-bottom: 4px; }
-        .modal-content form { display: flex; flex-direction: column; gap: 14px; }
-        .form-group { display: flex; flex-direction: column; gap: 6px; }
-        .form-group label { font-weight: 600; font-size: 14px; color: #333; }
-        .form-group input, .form-group select { padding: 10px; border: 1px solid #ccc; border-radius: 8px; font-size: 14px; width: 100%; }
-        .modal-actions { display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px; }
-        .modal-button { border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px; cursor: pointer; transition: background 0.2s ease, transform 0.2s ease; font-weight: 600; }
+
+        .modal-content {    background: #fff; 
+                            border-radius: 12px; 
+                            width: min(420px, 100%); 
+                            box-shadow: 0 12px 32px rgba(0,0,0,0.25); 
+                            padding: 24px; 
+                            display: flex; 
+                            flex-direction: column; 
+                            gap: 16px; 
+                            outline: none; }
+
+        .modal-content h2 { font-size: 20px; 
+                            margin-bottom: 4px; }
+
+        .modal-content form { display: flex; 
+                            flex-direction: column; 
+                            gap: 14px; }
+
+        .form-group {       display: flex; 
+                            flex-direction: column; 
+                            gap: 6px; }
+
+        .form-group label { font-weight: 600; 
+                            font-size: 14px; 
+                            color: #333; }
+
+        .form-group input, .form-group select { padding: 10px; 
+                                                border: 1px solid #ccc; 
+                                                border-radius: 8px; 
+                                                font-size: 14px; 
+                                                width: 100%; }
+
+        .modal-actions {    display: flex; 
+                            justify-content: flex-end; 
+                            gap: 12px; 
+                            margin-top: 8px; }
+
+        .modal-button {     border: none; 
+                            border-radius: 8px; 
+                            padding: 10px 18px; 
+                            font-size: 14px; 
+                            cursor: pointer; 
+                            transition: background 0.2s ease, transform 0.2s ease; 
+                            font-weight: 600; }
+
         .modal-button.secondary { background: #e0e0e0; color: #333; }
         .modal-button.secondary:hover { background: #d5d5d5; }
         .modal-button.primary { background: #0078d4; color: #fff; }
@@ -123,10 +279,12 @@
         </button>
         <div class="overlay-controls" id="menuControls" aria-hidden="true" inert>
             <button class="overlay-button" onclick="document.getElementById('timelineFile').click()">Import Timeline Data</button>
+            <button class="overlay-button" onclick="addManualPoint()">Add a Location Manually</button>
             <button class="overlay-button" onclick="clearMap()">Clear Map</button>
-            <button class="overlay-button" onclick="addManualPoint()">Add Manual Location</button>
-            <div id="sourceTypeFilters" class="checkbox-group"></div>
             <button class="overlay-button" onclick="refreshMap()">Refresh Map</button>
+            <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
+            <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
+            
         </div>
     </div>
     <div id="status"></div>
