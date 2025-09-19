@@ -69,9 +69,26 @@ def api_update_timeline():
 def api_clear():
     """Clear all timeline data and reset the map state."""
 
+    df = data_cache.timeline_df
+    backup_path = None
+
+    if df is not None and not df.empty:
+        try:
+            backup_path = data_cache.backup_timeline_data()
+        except Exception as exc:
+            return jsonify({
+                'status': 'error',
+                'message': f'Failed to create backup before clearing data: {exc}'
+            }), 500
+
     data_cache.timeline_df = pd.DataFrame()
     data_cache.save_timeline_data()
-    return jsonify({'status': 'success', 'message': 'All timeline data cleared successfully.'})
+
+    message = 'All timeline data cleared successfully.'
+    if backup_path:
+        message += f' Backup saved to {backup_path}.'
+
+    return jsonify({'status': 'success', 'message': message})
 
 
 @main.route('/api/add_point', methods=['POST'])

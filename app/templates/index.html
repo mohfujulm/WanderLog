@@ -745,6 +745,11 @@ async function updateMap() {
 }
 
 async function clearMap() {
+    const confirmClear = window.confirm(
+        'Clearing the map will remove all data permanently. This action cannot be undone. Do you want to continue?'
+    );
+    if (!confirmClear) { return; }
+
     showLoading();
     try {
         const response = await fetch('/api/clear', { method: 'POST' });
@@ -1160,6 +1165,11 @@ async function deleteMarker(markerId, markerInstance, triggerButton) {
         showStatus('This data point cannot be deleted.', true);
         return;
     }
+
+    const confirmDelete = window.confirm(
+        'Deleting this data point is irreversible. Do you want to continue?'
+    );
+    if (!confirmDelete) { return; }
 
     if (triggerButton) { triggerButton.disabled = true; }
     showLoading();
