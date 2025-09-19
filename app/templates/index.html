@@ -282,11 +282,24 @@
                             font-size: 14px; 
                             color: #333; }
 
-        .form-group input, .form-group select { padding: 10px; 
-                                                border: 1px solid #ccc; 
-                                                border-radius: 8px; 
-                                                font-size: 14px; 
+        .form-group input, .form-group select { padding: 10px;
+                                                border: 1px solid #ccc;
+                                                border-radius: 8px;
+                                                font-size: 14px;
                                                 width: 100%; }
+
+        .form-helper-text {
+            font-size: 12px;
+            color: #555;
+            line-height: 1.4;
+        }
+
+        .alias-modal-original {
+            display: block;
+            margin-top: 2px;
+            font-weight: 600;
+            color: #1f2937;
+        }
 
         .modal-actions {    display: flex; 
                             justify-content: flex-end; 
@@ -352,9 +365,21 @@
             color: #555;
         }
 
+        .archived-item-place-original {
+            font-size: 11px;
+            color: #6b7280;
+        }
+
         .archived-item-action {
             align-self: center;
             white-space: nowrap;
+        }
+
+        .archived-item-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: stretch;
         }
 
         .marker-popup {
@@ -391,6 +416,7 @@
             display: flex;
             gap: 8px;
             margin-top: 4px;
+            flex-wrap: wrap;
         }
 
         .marker-action {
@@ -422,6 +448,16 @@
 
         .marker-action-archive:hover:not(:disabled) {
             background: #dce4ff;
+            transform: translateY(-1px);
+        }
+
+        .marker-action-alias {
+            background: #e6f4ea;
+            color: #1b5e20;
+        }
+
+        .marker-action-alias:hover:not(:disabled) {
+            background: #d0ecd9;
             transform: translateY(-1px);
         }
 
@@ -487,6 +523,11 @@
                     <input type="text" id="manualPlace" name="place_name" autocomplete="off" required>
                 </div>
                 <div class="form-group">
+                    <label for="manualAlias">Custom Name (Optional)</label>
+                    <input type="text" id="manualAlias" name="alias" maxlength="120" autocomplete="off" placeholder="e.g. Grandma's House">
+                    <p class="form-helper-text">Leave blank to use the place name from your timeline.</p>
+                </div>
+                <div class="form-group">
                     <label for="manualDate">Date</label>
                     <input type="date" id="manualDate" name="start_date" required>
                 </div>
@@ -500,6 +541,25 @@
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="modal-button secondary" id="manualPointCancel">Cancel</button>
+                    <button type="submit" class="modal-button primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div id="aliasModal" class="modal-overlay" aria-hidden="true" hidden>
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="aliasModalTitle" tabindex="-1">
+            <h2 id="aliasModalTitle">Rename Location</h2>
+            <form id="aliasForm">
+                <div class="form-group">
+                    <label for="aliasInput">Custom Name</label>
+                    <input type="text" id="aliasInput" name="alias" maxlength="120" autocomplete="off" placeholder="Enter a nickname or leave blank">
+                    <p class="form-helper-text">
+                        Original place name:
+                        <span id="aliasOriginalName" class="alias-modal-original"></span>
+                    </p>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="modal-button secondary" id="aliasCancel">Cancel</button>
                     <button type="submit" class="modal-button primary">Save</button>
                 </div>
             </form>
@@ -529,6 +589,11 @@ let manualPointForm;
 let manualPointModalController = null;
 let archivedPointsModalController = null;
 let archivedPointsList = null;
+let aliasForm;
+let aliasModalController = null;
+let aliasOriginalNameElement = null;
+let aliasTargetMarkerId = null;
+let aliasModalContext = { isArchived: false, triggerButton: null };
 
 const SOURCE_TYPE_LABELS = {
     google_timeline: 'Google Timeline',
@@ -540,6 +605,8 @@ const MARKER_ICON_PATHS = {
     manual: "{{ url_for('static', filename='assets/marker-pin-orange.svg') }}",
     default: "{{ url_for('static', filename='assets/marker-pin-gray.svg') }}",
 };
+
+const MAX_ALIAS_LENGTH = 120;
 
 const markerIconCache = new Map();
 
@@ -566,7 +633,28 @@ function createPopupContent(markerData) {
 
     const markerId = markerData.id || '';
     const safeId = escapeHtmlAttribute(markerId);
-    const place = escapeHtml(markerData.place || 'Unknown');
+    const placeRaw = markerData.place ?? '';
+    const placeClean = typeof placeRaw === 'string'
+        ? placeRaw.trim()
+        : String(placeRaw || '').trim();
+    const aliasRaw = markerData.alias ?? '';
+    const aliasClean = typeof aliasRaw === 'string'
+        ? aliasRaw.trim()
+        : String(aliasRaw || '').trim();
+    const displayRaw = markerData.display_name ?? '';
+    let displayClean = typeof displayRaw === 'string'
+        ? displayRaw.trim()
+        : String(displayRaw || '').trim();
+
+    if (!displayClean) {
+        displayClean = aliasClean || placeClean;
+    }
+
+    const hasAlias = aliasClean.length > 0;
+    const nameLabel = hasAlias ? 'Alias' : 'Place Name';
+
+    const place = escapeHtml(placeClean || 'Unknown');
+    const displayName = escapeHtml(displayClean || 'Unknown');
     const sourceLabel = getSourceTypeLabel(markerData.source_type);
     const sourceRow = sourceLabel
         ? `<div class="marker-popup-row"><span class="marker-popup-label">Source</span><span class="marker-popup-value">${escapeHtml(sourceLabel)}</span></div>`
@@ -578,13 +666,17 @@ function createPopupContent(markerData) {
     const lngText = Number.isFinite(lngNumber) ? lngNumber.toFixed(4) : String(markerData.lng ?? '');
     const coordinates = `${escapeHtml(latText)}, ${escapeHtml(lngText)}`;
     const hasId = Boolean(markerId);
+    const aliasRow = hasAlias
+        ? `<div class="marker-popup-row"><span class="marker-popup-label">Place Name</span><span class="marker-popup-value">${place}</span></div>`
+        : '';
     const actions = hasId
-        ? `<div class="marker-actions"><button type="button" class="marker-action marker-action-archive">Archive</button><button type="button" class="marker-action marker-action-delete">Delete</button></div>`
+        ? `<div class="marker-actions"><button type="button" class="marker-action marker-action-alias">Rename</button><button type="button" class="marker-action marker-action-archive">Archive</button><button type="button" class="marker-action marker-action-delete">Delete</button></div>`
         : '';
 
     return [
         `<div class="marker-popup"${hasId ? ` data-marker-id="${safeId}"` : ''}>`,
-        `<div class="marker-popup-row"><span class="marker-popup-label">Place Name</span><span class="marker-popup-value">${place}</span></div>`,
+        `<div class="marker-popup-row"><span class="marker-popup-label">${nameLabel}</span><span class="marker-popup-value">${displayName}</span></div>`,
+        aliasRow,
         sourceRow,
         `<div class="marker-popup-row"><span class="marker-popup-label">Date Visited</span><span class="marker-popup-value">${date}</span></div>`,
         `<div class="marker-popup-row"><span class="marker-popup-label">Coordinates</span><span class="marker-popup-value">${coordinates}</span></div>`,
@@ -688,9 +780,19 @@ async function loadMarkers() {
                 return;
             }
 
+            const displayNameRaw = m.display_name ?? '';
+            const displayNameClean = typeof displayNameRaw === 'string'
+                ? displayNameRaw.trim()
+                : String(displayNameRaw || '').trim();
+            const placeRaw = m.place ?? '';
+            const placeClean = typeof placeRaw === 'string'
+                ? placeRaw.trim()
+                : String(placeRaw || '').trim();
+            const markerTitle = displayNameClean || placeClean;
+
             const marker = L.marker([lat, lng], {
                 icon: getMarkerIcon(m.source_type),
-                title: m.place || '',
+                title: markerTitle,
                 riseOnHover: true,
             });
 
@@ -706,6 +808,14 @@ async function loadMarkers() {
                     archiveButton.onclick = (event) => {
                         event.preventDefault();
                         archiveMarker(m.id, marker, archiveButton);
+                    };
+                }
+
+                const renameButton = popupElement.querySelector('.marker-action-alias');
+                if (renameButton) {
+                    renameButton.onclick = (event) => {
+                        event.preventDefault();
+                        openAliasModal(m, { triggerButton: renameButton, isArchived: false });
                     };
                 }
 
@@ -899,6 +1009,147 @@ function ensureManualPointModal() {
     return manualPointModalController;
 }
 
+function ensureAliasModal() {
+    if (aliasModalController) { return aliasModalController; }
+
+    aliasForm = document.getElementById('aliasForm');
+    aliasOriginalNameElement = document.getElementById('aliasOriginalName');
+
+    const controller = createModalController('aliasModal', {
+        getInitialFocus: () => {
+            const form = aliasForm || document.getElementById('aliasForm');
+            return form ? form.elements['alias'] : null;
+        },
+        onClose: () => {
+            aliasTargetMarkerId = null;
+            aliasModalContext = { isArchived: false, triggerButton: null };
+            const form = aliasForm || document.getElementById('aliasForm');
+            if (form) { form.reset(); }
+            if (aliasOriginalNameElement) { aliasOriginalNameElement.textContent = ''; }
+        },
+    });
+
+    if (!controller) { return null; }
+    aliasModalController = controller;
+
+    const cancelButton = document.getElementById('aliasCancel');
+    if (cancelButton) {
+        cancelButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            aliasModalController.close();
+        });
+    }
+
+    if (aliasForm) {
+        aliasForm.addEventListener('submit', handleAliasSubmit);
+    }
+
+    return aliasModalController;
+}
+
+function openAliasModal(markerData, options = {}) {
+    if (!markerData || !markerData.id) {
+        showStatus('This data point cannot be renamed.', true);
+        return;
+    }
+
+    const controller = ensureAliasModal();
+    if (!controller) { return; }
+
+    aliasTargetMarkerId = markerData.id;
+    const triggerButton = options.triggerButton || null;
+    const isArchived = Boolean(options.isArchived);
+    aliasModalContext = { triggerButton, isArchived };
+
+    aliasForm = aliasForm || document.getElementById('aliasForm');
+    if (aliasForm) {
+        const aliasField = aliasForm.elements['alias'];
+        const aliasValueRaw = markerData.alias ?? '';
+        const aliasValue = typeof aliasValueRaw === 'string'
+            ? aliasValueRaw.trim()
+            : String(aliasValueRaw || '').trim();
+        if (aliasField) {
+            aliasField.value = aliasValue;
+        }
+    }
+
+    aliasOriginalNameElement = aliasOriginalNameElement || document.getElementById('aliasOriginalName');
+    if (aliasOriginalNameElement) {
+        const placeRaw = markerData.place ?? '';
+        const placeValue = typeof placeRaw === 'string'
+            ? placeRaw.trim()
+            : String(placeRaw || '').trim();
+        aliasOriginalNameElement.textContent = placeValue || 'Unknown';
+    }
+
+    controller.open();
+    if (controller.refreshFocusableElements) {
+        controller.refreshFocusableElements();
+    }
+}
+
+async function handleAliasSubmit(event) {
+    event.preventDefault();
+
+    aliasForm = aliasForm || document.getElementById('aliasForm');
+    if (!aliasForm) { return; }
+
+    if (!aliasTargetMarkerId) {
+        showStatus('This data point cannot be renamed.', true);
+        return;
+    }
+
+    const aliasField = aliasForm.elements['alias'];
+    const aliasValue = aliasField ? aliasField.value.trim() : '';
+
+    if (aliasValue.length > MAX_ALIAS_LENGTH) {
+        showStatus(`Alias must be ${MAX_ALIAS_LENGTH} characters or fewer.`, true);
+        if (aliasField) { aliasField.focus(); }
+        return;
+    }
+
+    const submitButton = aliasForm.querySelector('button[type="submit"]');
+    const cancelButton = document.getElementById('aliasCancel');
+    const triggerButton = aliasModalContext.triggerButton || null;
+    const isArchived = Boolean(aliasModalContext.isArchived);
+
+    if (submitButton) { submitButton.disabled = true; }
+    if (cancelButton) { cancelButton.disabled = true; }
+    if (triggerButton) { triggerButton.disabled = true; }
+
+    showLoading();
+
+    try {
+        const response = await fetch(`/api/markers/${encodeURIComponent(aliasTargetMarkerId)}/alias`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ alias: aliasValue }),
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || result.status === 'error') {
+            const message = (result && result.message) ? result.message : 'Failed to update alias.';
+            throw new Error(message);
+        }
+
+        showStatus(result.message || 'Alias updated successfully.');
+        if (aliasModalController) {
+            aliasModalController.close();
+        }
+        await loadMarkers();
+        if (isArchived) {
+            await loadArchivedPointsList();
+        }
+    } catch (error) {
+        showStatus(error.message || 'Failed to update alias.', true);
+    } finally {
+        hideLoading();
+        if (submitButton) { submitButton.disabled = false; }
+        if (cancelButton) { cancelButton.disabled = false; }
+        if (triggerButton) { triggerButton.disabled = false; }
+    }
+}
+
 function ensureArchivedPointsModal() {
     if (archivedPointsModalController) { return archivedPointsModalController; }
 
@@ -927,6 +1178,8 @@ async function handleManualPointSubmit(event) {
     if (!manualPointForm) { return; }
 
     const place = manualPointForm.elements['place_name'].value.trim();
+    const aliasInput = manualPointForm.elements['alias'];
+    const aliasValue = aliasInput ? aliasInput.value.trim() : '';
     const date = manualPointForm.elements['start_date'].value;
     const latValue = manualPointForm.elements['latitude'].value.trim();
     const lonValue = manualPointForm.elements['longitude'].value.trim();
@@ -934,6 +1187,12 @@ async function handleManualPointSubmit(event) {
     if (!place) {
         showStatus('Place name is required.', true);
         manualPointForm.elements['place_name'].focus();
+        return;
+    }
+
+    if (aliasValue.length > MAX_ALIAS_LENGTH) {
+        showStatus(`Alias must be ${MAX_ALIAS_LENGTH} characters or fewer.`, true);
+        if (aliasInput) { aliasInput.focus(); }
         return;
     }
 
@@ -979,7 +1238,8 @@ async function handleManualPointSubmit(event) {
                 start_date: date,
                 latitude: lat,
                 longitude: lon,
-                source_type: 'manual'
+                source_type: 'manual',
+                alias: aliasValue,
             })
         });
         const result = await response.json();
@@ -1043,8 +1303,27 @@ async function loadArchivedPointsList() {
 
             const title = document.createElement('div');
             title.className = 'archived-item-place';
-            title.textContent = marker.place || 'Unknown';
+            const displayNameRaw = marker.display_name ?? '';
+            const displayName = typeof displayNameRaw === 'string'
+                ? displayNameRaw.trim()
+                : String(displayNameRaw || '').trim();
+            const placeRaw = marker.place ?? '';
+            const placeText = typeof placeRaw === 'string'
+                ? placeRaw.trim()
+                : String(placeRaw || '').trim();
+            const aliasRaw = marker.alias ?? '';
+            const aliasText = typeof aliasRaw === 'string'
+                ? aliasRaw.trim()
+                : String(aliasRaw || '').trim();
+            title.textContent = displayName || placeText || 'Unknown';
             details.appendChild(title);
+
+            if (aliasText && placeText && aliasText !== placeText) {
+                const original = document.createElement('div');
+                original.className = 'archived-item-place-original';
+                original.textContent = placeText;
+                details.appendChild(original);
+            }
 
             const meta = document.createElement('div');
             meta.className = 'archived-item-meta';
@@ -1060,17 +1339,33 @@ async function loadArchivedPointsList() {
             meta.textContent = metaParts.join(' • ');
             details.appendChild(meta);
 
-            const actionButton = document.createElement('button');
-            actionButton.type = 'button';
-            actionButton.className = 'modal-button primary archived-item-action';
-            actionButton.textContent = 'Unarchive';
-            actionButton.addEventListener('click', (event) => {
+            const actionsContainer = document.createElement('div');
+            actionsContainer.className = 'archived-item-actions';
+
+            if (marker.id) {
+                const renameButton = document.createElement('button');
+                renameButton.type = 'button';
+                renameButton.className = 'modal-button secondary archived-item-action';
+                renameButton.textContent = 'Rename';
+                renameButton.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    openAliasModal(marker, { triggerButton: renameButton, isArchived: true });
+                });
+                actionsContainer.appendChild(renameButton);
+            }
+
+            const unarchiveButton = document.createElement('button');
+            unarchiveButton.type = 'button';
+            unarchiveButton.className = 'modal-button primary archived-item-action';
+            unarchiveButton.textContent = 'Unarchive';
+            unarchiveButton.addEventListener('click', (event) => {
                 event.preventDefault();
-                unarchiveMarker(marker.id, actionButton);
+                unarchiveMarker(marker.id, unarchiveButton);
             });
+            actionsContainer.appendChild(unarchiveButton);
 
             item.appendChild(details);
-            item.appendChild(actionButton);
+            item.appendChild(actionsContainer);
             fragment.appendChild(item);
         });
 
@@ -1198,6 +1493,7 @@ async function deleteMarker(markerId, markerInstance, triggerButton) {
 
 document.addEventListener('DOMContentLoaded', async () => {
     ensureManualPointModal();
+    ensureAliasModal();
     ensureArchivedPointsModal();
     try {
         const response = await fetch('/api/source_types');
@@ -1239,6 +1535,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (event.key !== 'Escape') { return; }
         const manualModalElement = document.getElementById('manualPointModal');
         if (manualModalElement && manualModalElement.classList.contains('open')) { return; }
+        const aliasModalElement = document.getElementById('aliasModal');
+        if (aliasModalElement && aliasModalElement.classList.contains('open')) { return; }
         const archivedModalElement = document.getElementById('archivedPointsModal');
         if (archivedModalElement && archivedModalElement.classList.contains('open')) { return; }
         const menu = document.querySelector('.menu-container');
