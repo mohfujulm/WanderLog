@@ -6,7 +6,7 @@ import os
 import pandas as pd
 from flask import Blueprint, jsonify, render_template, request
 
-from app.map_utils import dataframe_to_markers
+from app.map_utils import dataframe_to_markers, filter_dataframe_by_date_range
 from app.utils.json_processing_functions import unique_visits_to_df
 from . import data_cache
 
@@ -133,10 +133,12 @@ def api_map_data():
         return jsonify([])
 
     if request.method == 'POST':
-        # For POST requests, read JSON body and grab any source type filters
+        # For POST requests, read JSON body and grab any filters
         data = request.get_json(silent=True) or {}
         source_types = data.get('source_types')
         source_types_provided = 'source_types' in data
+        start_date = data.get('start_date') or None
+        end_date = data.get('end_date') or None
     else:
         # GET requests provide the filters as query string values
         if 'source_types' in request.args:
@@ -146,10 +148,16 @@ def api_map_data():
             source_types = None
             source_types_provided = False
 
+        start_date = request.args.get('start_date') or None
+        end_date = request.args.get('end_date') or None
+
     # Apply filtering when specific source types are requested
     if source_types_provided:
         source_types = source_types or []
         df = df[df.get('Source Type').isin(source_types)]
+
+    # Apply optional date filtering
+    df = filter_dataframe_by_date_range(df, start_date=start_date, end_date=end_date)
 
     # Convert the filtered DataFrame into simple marker dictionaries
     return jsonify(dataframe_to_markers(df))

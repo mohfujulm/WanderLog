@@ -208,3 +208,48 @@ def dataframe_to_markers(df: pd.DataFrame) -> list[dict]:
 
     # The frontend expects a list of marker dictionaries
     return markers
+
+
+def filter_dataframe_by_date_range(
+    df: pd.DataFrame,
+    start_date: str | None = None,
+    end_date: str | None = None,
+) -> pd.DataFrame:
+    """Return rows that fall within the provided ``start_date``/``end_date`` range.
+
+    Parameters
+    ----------
+    df:
+        Timeline data to filter.
+    start_date, end_date:
+        Optional ISO formatted date strings (``YYYY-MM-DD``).  When omitted,
+        the corresponding bound is ignored.
+    """
+
+    if df is None or df.empty:
+        return df
+
+    if "Start Date" not in df.columns:
+        return df
+
+    # Normalise empty strings to ``None`` so ``pd.to_datetime`` handles them.
+    start_date = start_date or None
+    end_date = end_date or None
+
+    if start_date is None and end_date is None:
+        return df
+
+    dates = pd.to_datetime(df["Start Date"], errors="coerce")
+    mask = pd.Series(True, index=df.index)
+
+    if start_date is not None:
+        start = pd.to_datetime(start_date, errors="coerce")
+        if pd.notna(start):
+            mask &= dates >= start
+
+    if end_date is not None:
+        end = pd.to_datetime(end_date, errors="coerce")
+        if pd.notna(end):
+            mask &= dates <= end
+
+    return df.loc[mask]
