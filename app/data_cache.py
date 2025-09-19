@@ -1,8 +1,11 @@
 import os
+from datetime import datetime
+
 import pandas as pd
 
 # Path to the master timeline CSV
 CSV_PATH = os.path.join('data', 'master_timeline_data.csv')
+BACKUP_TEMPLATE = os.path.join('data', 'master_timeline_data_backup_{timestamp}.csv')
 
 # Cached pandas DataFrame
 timeline_df = None
@@ -54,4 +57,28 @@ def save_timeline_data():
         print(f"Saved {len(timeline_df)} rows to {CSV_PATH}")
     except Exception as exc:
         print(f"Failed to save {CSV_PATH}: {exc}")
+
+
+def backup_timeline_data():
+    """Create a timestamped backup of the current ``timeline_df``.
+
+    Returns the path to the backup file if a backup was created.
+    """
+
+    global timeline_df
+
+    if timeline_df is None or timeline_df.empty:
+        print("No timeline data to backup.")
+        return None
+
+    ensure_archived_column()
+
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    backup_path = BACKUP_TEMPLATE.format(timestamp=timestamp)
+
+    os.makedirs(os.path.dirname(backup_path), exist_ok=True)
+
+    timeline_df.to_csv(backup_path, index=False)
+    print(f"Created backup with {len(timeline_df)} rows at {backup_path}")
+    return backup_path
 
