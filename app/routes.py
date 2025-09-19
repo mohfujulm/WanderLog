@@ -220,3 +220,25 @@ def api_map_data():
 
     # Convert the filtered DataFrame into simple marker dictionaries
     return jsonify(dataframe_to_markers(df))
+
+
+@main.route('/api/archived_markers', methods=['GET'])
+def api_archived_markers():
+    """Return archived marker data points for management."""
+
+    df = data_cache.timeline_df
+    if df is None or df.empty:
+        return jsonify([])
+
+    data_cache.ensure_archived_column()
+    archived_series = df.get('Archived')
+    if archived_series is None:
+        return jsonify([])
+
+    archived_mask = archived_series.fillna(False).astype(str).str.lower() == 'true'
+    archived_df = df[archived_mask]
+
+    if archived_df.empty:
+        return jsonify([])
+
+    return jsonify(dataframe_to_markers(archived_df, include_archived=True))

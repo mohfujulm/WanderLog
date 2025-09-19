@@ -186,8 +186,20 @@ def update_map_with_timeline_data(
     # The map is kept in memory; the calling code can render it as needed
 
 
-def dataframe_to_markers(df: pd.DataFrame) -> list[dict]:
-    """Return a simplified marker list from the timeline dataframe."""
+def dataframe_to_markers(
+    df: pd.DataFrame,
+    include_archived: bool = False,
+) -> list[dict]:
+    """Return a simplified marker list from the timeline dataframe.
+
+    Parameters
+    ----------
+    df:
+        Source DataFrame containing timeline data.
+    include_archived:
+        When ``True`` archived rows are retained in the output; otherwise they
+        are omitted.
+    """
 
     # Return early if no timeline data is available
     if df is None or df.empty:
@@ -196,7 +208,8 @@ def dataframe_to_markers(df: pd.DataFrame) -> list[dict]:
     markers = []
     # Iterate over each row and build a small dict for the frontend
     for _, row in df.iterrows():
-        if bool(row.get("Archived", False)):
+        archived_value = bool(row.get("Archived", False))
+        if archived_value and not include_archived:
             continue
 
         markers.append(
@@ -207,6 +220,7 @@ def dataframe_to_markers(df: pd.DataFrame) -> list[dict]:
                 "place": row.get("Place Name", ""),  # Human readable place name
                 "date": row.get("Start Date", ""),   # Date when the place was visited
                 "source_type": row.get("Source Type", ""),  # Data source category
+                "archived": archived_value,
             }
         )
 
