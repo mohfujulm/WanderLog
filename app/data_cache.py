@@ -12,7 +12,13 @@ timeline_df = None
 
 
 def ensure_archived_column():
-    """Ensure the global ``timeline_df`` has an ``Archived`` column."""
+    """Ensure the cached dataframe has the required maintenance columns.
+
+    The timeline data historically did not include management columns such as
+    ``Archived`` or the newly added ``Alias`` field.  This helper normalises
+    the dataframe so the rest of the codebase can rely on those columns being
+    present with sensible default values.
+    """
 
     global timeline_df
 
@@ -23,6 +29,13 @@ def ensure_archived_column():
         timeline_df["Archived"] = False
     else:
         timeline_df["Archived"] = timeline_df["Archived"].fillna(False)
+
+    if "Alias" not in timeline_df.columns:
+        timeline_df["Alias"] = ""
+    else:
+        timeline_df["Alias"] = timeline_df["Alias"].apply(
+            lambda value: "" if pd.isna(value) else str(value)
+        )
 
 def load_timeline_data():
     """Load the timeline CSV into ``timeline_df`` if present."""

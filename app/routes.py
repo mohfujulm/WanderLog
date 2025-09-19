@@ -13,6 +13,7 @@ from . import data_cache
 main = Blueprint("main", __name__)
 
 MAPBOX_ACCESS_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN")
+MAX_ALIAS_LENGTH = 120
 
 @main.route('/')
 def index():
@@ -106,6 +107,18 @@ def api_add_point():
     place_name = data.get('place_name', 'Unknown')
     start_date = data.get('start_date', '')
     source_type = data.get('source_type', 'manual')
+    alias_value = data.get('alias', '')
+
+    if alias_value is None:
+        alias_value = ''
+
+    alias_value = str(alias_value).strip()
+
+    if len(alias_value) > MAX_ALIAS_LENGTH:
+        return jsonify(
+            status='error',
+            message=f'Alias must be {MAX_ALIAS_LENGTH} characters or fewer.'
+        ), 400
 
     new_row = pd.DataFrame([
         {
@@ -116,6 +129,7 @@ def api_add_point():
             'Source Type': source_type,
             'Place Name': place_name,
             'Archived': False,
+            'Alias': alias_value,
         }
     ])
 
@@ -199,6 +213,8 @@ def api_map_data():
 
     # Grab the cached timeline DataFrame held in memory
     df = data_cache.timeline_df
+    data_cache.ensure_archived_column()
+    df = data_cache.timeline_df
 
     # If no data has been loaded yet return an empty array
     if df is None or df.empty:
@@ -248,6 +264,7 @@ def api_archived_markers():
         return jsonify([])
 
     data_cache.ensure_archived_column()
+    df = data_cache.timeline_df
     archived_series = df.get('Archived')
     if archived_series is None:
         return jsonify([])
@@ -259,3 +276,56 @@ def api_archived_markers():
         return jsonify([])
 
     return jsonify(dataframe_to_markers(archived_df, include_archived=True))
+
+
+@main.route('/api/markers/<place_id>/alias', methods=['POST'])
+def api_update_alias(place_id: str):
+    """Create or update a custom alias for the given marker."""
+
+    df = data_cache.timeline_df
+    if df is None or df.empty or 'Place ID' not in df.columns:
+        return jsonify(status='error', message='Data point not found.'), 404
+
+    data_cache.ensure_archived_column()
+    df = data_cache.timeline_df
+
+    mask = df['Place ID'] == place_id
+    if not mask.any():
+        return jsonify(status='error', message='Data point not found.'), 404
+
+    payload = request.get_json(silent=True) or {}
+    alias_value = payload.get('alias', '')
+
+    if alias_value is None:
+        alias_value = ''
+
+    alias_value = str(alias_value).strip()
+
+    if len(alias_value) > MAX_ALIAS_LENGTH:
+        return jsonify(
+            status='error',
+            message=f'Alias must be {MAX_ALIAS_LENGTH} characters or fewer.'
+        ), 400
+
+    df.loc[mask, 'Alias'] = alias_value
+    data_cache.timeline_df = df
+    data_cache.ensure_archived_column()
+    data_cache.save_timeline_data()
+
+    place_name = ''
+    if 'Place Name' in df.columns:
+        try:
+            place_name = str(df.loc[mask, 'Place Name'].iloc[0])
+        except Exception:
+            place_name = ''
+
+    display_name = alias_value or place_name
+
+    message = 'Alias updated successfully.' if alias_value else 'Alias cleared successfully.'
+
+    return jsonify(
+        status='success',
+        message=message,
+        alias=alias_value,
+        display_name=display_name,
+    )
