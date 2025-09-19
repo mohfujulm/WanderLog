@@ -41,7 +41,8 @@
                         font-weight: 500; }
         .menu-toggle:hover { background: rgba(255,255,255,1); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
         .menu-toggle:focus { outline: 2px solid rgba(0,120,212,0.6); outline-offset: 2px; }
-        .menu-toggle .menu-toggle-icon { font-size: 20px; line-height: 1; }
+        .menu-toggle .menu-toggle-icon { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; line-height: 1; writing-mode: horizontal-tb; flex-shrink: 0; }
+        .menu-toggle .menu-toggle-icon img { width: 100%; height: 100%; object-fit: contain; display: block; }
         .menu-toggle .menu-toggle-text { font-size: 12px; }
         .menu-container.open .menu-toggle { align-self: flex-end; margin-left: auto; writing-mode: horizontal-tb; flex-direction: row; padding: 10px 16px; border-radius: 14px; gap: 8px; letter-spacing: 0.08em; box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
         .menu-container.open .menu-toggle .menu-toggle-text { font-size: 14px; }
@@ -81,7 +82,9 @@
                                     box-shadow: 5px 7px 0px 0px rgba(0, 0, 0, 0.15); }
 
         .checkbox-group { display: flex; flex-direction: column; gap: 4px; }
-        .checkbox-group label { display: flex; align-items: center; gap: 4px; font-size: 14px; }
+        .checkbox-group label { display: flex; align-items: center; gap: 8px; font-size: 14px; justify-content: space-between; }
+        .checkbox-group label span { flex: 1; min-width: 0; }
+        .checkbox-group label input { flex-shrink: 0; }
 
         #status { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.9); padding: 8px 12px; border-radius: 4px; display: none; font-size: 14px; z-index: 1000; }
         #status.success { border: 1px solid #4CAF50; color: #4CAF50; }
@@ -113,7 +116,9 @@
     <input type="file" id="timelineFile" accept=".json" style="display:none" onchange="updateMap()">
     <div class="menu-container" role="complementary" aria-label="Map controls panel">
         <button class="menu-toggle" type="button" onclick="toggleMenu()" aria-label="Open menu" aria-expanded="false" aria-controls="menuControls">
-            <span class="menu-toggle-icon" aria-hidden="true">☰</span>
+            <span class="menu-toggle-icon" aria-hidden="true">
+                <img src="{{ url_for('static', filename='assets/menu-icon.svg') }}" alt="" aria-hidden="true">
+            </span>
             <span class="menu-toggle-text">Menu</span>
         </button>
         <div class="overlay-controls" id="menuControls" aria-hidden="true" inert>
@@ -163,6 +168,8 @@
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script>
 const MAPBOX_TOKEN = "{{ mapbox_token }}";
+const MENU_ICON_PATH = "{{ url_for('static', filename='assets/menu-icon.svg') }}";
+const CLOSE_ICON_PATH = "{{ url_for('static', filename='assets/close-icon.svg') }}";
 let map;
 let markerCluster;
 let manualPointModal;
@@ -485,8 +492,10 @@ document.addEventListener('DOMContentLoaded', async () => {
             cb.value = type;
             cb.checked = true;
             cb.addEventListener('change', loadMarkers);
+            const text = document.createElement('span');
+            text.textContent = getSourceTypeLabel(type);
+            label.appendChild(text);
             label.appendChild(cb);
-            label.appendChild(document.createTextNode(' ' + getSourceTypeLabel(type)));
             container.appendChild(label);
         });
     } catch(err) {
@@ -517,7 +526,7 @@ function toggleMenu() {
 
 function applyMenuState(menu, isOpen) {
     const trigger = menu.querySelector('.menu-toggle');
-    const icon = trigger ? trigger.querySelector('.menu-toggle-icon') : null;
+    const icon = trigger ? trigger.querySelector('.menu-toggle-icon img') : null;
     const label = trigger ? trigger.querySelector('.menu-toggle-text') : null;
     const controls = menu.querySelector('.overlay-controls');
 
@@ -525,7 +534,7 @@ function applyMenuState(menu, isOpen) {
         trigger.setAttribute('aria-expanded', String(isOpen));
         trigger.setAttribute('aria-label', isOpen ? 'Close menu' : 'Open menu');
     }
-    if (icon) { icon.textContent = isOpen ? '✕' : '☰'; }
+    if (icon) { icon.setAttribute('src', isOpen ? CLOSE_ICON_PATH : MENU_ICON_PATH); }
     if (label) { label.textContent = isOpen ? 'Close' : 'Menu'; }
     if (controls) {
         controls.setAttribute('aria-hidden', String(!isOpen));
