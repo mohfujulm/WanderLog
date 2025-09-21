@@ -106,20 +106,76 @@
                                             box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
         .menu-container.open .menu-toggle .menu-toggle-text { font-size: 14px; }
 
-        .overlay-controls { display: flex; 
-                            flex-direction: column; 
-                            align-items: flex-end;
-                            gap: 12px; 
-                            opacity: 0; 
-                            transform: translateX(16px); 
-                            transition: opacity 0.25s ease 0.1s, transform 0.25s ease 0.1s; 
-                            overflow-y: auto; 
-                            max-height: calc(100% - 80px); 
-                            padding-right: 4px; 
+        .overlay-controls { display: flex;
+                            flex-direction: column;
+                            align-items: stretch;
+                            gap: 16px;
+                            opacity: 0;
+                            transform: translateX(16px);
+                            transition: opacity 0.25s ease 0.1s, transform 0.25s ease 0.1s;
+                            overflow-y: auto;
+                            max-height: calc(100% - 80px);
+                            padding-right: 4px;
                             pointer-events: none; }
 
 
         .menu-container.open .overlay-controls { opacity: 1; transform: translateX(0); pointer-events: auto; }
+
+        .menu-tabs {        display: flex;
+                            gap: 8px;
+                            justify-content: flex-end;
+                            align-self: stretch;
+                            flex-wrap: wrap; }
+
+        .menu-tab {         background: rgba(255,255,255,0.9);
+                            border: 1px solid rgba(0,0,0,0.08);
+                            border-radius: 12px;
+                            padding: 10px 16px;
+                            font-size: 13px;
+                            font-weight: 600;
+                            color: #333;
+                            cursor: pointer;
+                            transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+                            min-width: 130px;
+                            text-align: center; }
+
+        .menu-tab:hover {   background: rgba(255,255,255,1);
+                            box-shadow: 0 6px 16px rgba(0,0,0,0.12); }
+
+        .menu-tab:focus {   outline: 2px solid rgba(0,120,212,0.5);
+                            outline-offset: 2px; }
+
+        .menu-tab[aria-selected="true"] {
+            background: #0078d4;
+            color: #fff;
+            box-shadow: 0 10px 18px rgba(0, 120, 212, 0.25);
+        }
+
+        .menu-tabpanel {    display: none;
+                            flex-direction: column;
+                            align-items: flex-end;
+                            gap: 12px;
+                            width: 100%; }
+
+        .menu-tabpanel.active {
+            display: flex;
+        }
+
+        .trips-empty-state {
+            align-self: stretch;
+            background: rgba(255,255,255,0.85);
+            border-radius: 16px;
+            padding: 18px;
+            border: 1px solid rgba(0,0,0,0.08);
+            font-size: 13px;
+            color: #4b5563;
+            text-align: right;
+            line-height: 1.5;
+        }
+
+        .trips-empty-state p {
+            margin: 0;
+        }
 
         .overlay-button {   background: rgba(255,255,255,0.95); 
                             color: #333; 
@@ -477,32 +533,47 @@
     <div id="map"></div>
     <input type="file" id="timelineFile" accept=".json" style="display:none" onchange="updateMap()">
     <div class="menu-container" role="complementary" aria-label="Map controls panel">
-        <button class="menu-toggle" type="button" onclick="toggleMenu()" aria-label="Open menu" aria-expanded="false" aria-controls="menuControls">
+        <button class="menu-toggle" type="button" onclick="toggleMenu()" aria-label="Open Data Controls panel" aria-expanded="false" aria-controls="menuControls">
             <span class="menu-toggle-icon" aria-hidden="true">
                 <img src="{{ url_for('static', filename='assets/menu-icon.svg') }}" alt="" aria-hidden="true">
             </span>
-            <span class="menu-toggle-text">Menu</span>
+            <span class="menu-toggle-text">Data Controls</span>
         </button>
         <div class="overlay-controls" id="menuControls" aria-hidden="true" inert>
-            <button class="overlay-button" onclick="document.getElementById('timelineFile').click()">Import Timeline Data</button>
-            <button class="overlay-button" onclick="addManualPoint()">Add a Location Manually</button>
-            <button class="overlay-button" onclick="clearMap()">Clear Map</button>
-            <button class="overlay-button" onclick="refreshMap()">Refresh Map</button>
-            <button class="overlay-button" onclick="viewArchivedPoints()">View Archived Points</button>
-            <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
-            <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
-            <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
-            <div class="date-filter-group" id="dateFilters" role="group" aria-labelledby="dateFiltersTitle">
-                <label for="filterStartDate">
-                    <span>Start Date</span>
-                    <input type="date" id="filterStartDate" name="filterStartDate">
-                </label>
-                <label for="filterEndDate">
-                    <span>End Date</span>
-                    <input type="date" id="filterEndDate" name="filterEndDate">
-                </label>
-                <div class="date-filter-actions">
-                    <button type="button" class="date-filter-clear" id="clearDateFilters">Clear Dates</button>
+            <div class="menu-tabs" role="tablist" aria-label="Side panel sections">
+                <button type="button" class="menu-tab active" id="dataControlsTab" role="tab" aria-selected="true" aria-controls="dataControlsPanel">
+                    Data Controls
+                </button>
+                <button type="button" class="menu-tab" id="tripsTab" role="tab" aria-selected="false" aria-controls="tripsPanel" tabindex="-1">
+                    Trips
+                </button>
+            </div>
+            <div id="dataControlsPanel" class="menu-tabpanel active" role="tabpanel" aria-labelledby="dataControlsTab">
+                <button class="overlay-button" onclick="document.getElementById('timelineFile').click()">Import Timeline Data</button>
+                <button class="overlay-button" onclick="addManualPoint()">Add a Location Manually</button>
+                <button class="overlay-button" onclick="clearMap()">Clear Map</button>
+                <button class="overlay-button" onclick="refreshMap()">Refresh Map</button>
+                <button class="overlay-button" onclick="viewArchivedPoints()">View Archived Points</button>
+                <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
+                <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
+                <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
+                <div class="date-filter-group" id="dateFilters" role="group" aria-labelledby="dateFiltersTitle">
+                    <label for="filterStartDate">
+                        <span>Start Date</span>
+                        <input type="date" id="filterStartDate" name="filterStartDate">
+                    </label>
+                    <label for="filterEndDate">
+                        <span>End Date</span>
+                        <input type="date" id="filterEndDate" name="filterEndDate">
+                    </label>
+                    <div class="date-filter-actions">
+                        <button type="button" class="date-filter-clear" id="clearDateFilters">Clear Dates</button>
+                    </div>
+                </div>
+            </div>
+            <div id="tripsPanel" class="menu-tabpanel" role="tabpanel" aria-labelledby="tripsTab" hidden>
+                <div class="trips-empty-state">
+                    <p>Plan and review your adventures here. Trips will appear once timeline data has been processed.</p>
                 </div>
             </div>
         </div>
@@ -1491,6 +1562,92 @@ async function deleteMarker(markerId, markerInstance, triggerButton) {
     }
 }
 
+function getActivePanelLabel(menu) {
+    if (!menu) { return 'Data Controls'; }
+    const activeTab = menu.querySelector('.menu-tab[aria-selected="true"]');
+    if (activeTab) {
+        const text = activeTab.textContent || '';
+        const trimmed = text.trim();
+        if (trimmed.length > 0) { return trimmed; }
+    }
+    return 'Data Controls';
+}
+
+function activateMenuTab(tab) {
+    if (!tab) { return; }
+    const menu = tab.closest('.menu-container');
+    const panelId = tab.getAttribute('aria-controls');
+    const tabs = menu ? Array.from(menu.querySelectorAll('.menu-tab')) : [];
+    const panels = menu ? Array.from(menu.querySelectorAll('.menu-tabpanel')) : [];
+
+    tabs.forEach((button) => {
+        const isActive = button === tab;
+        button.setAttribute('aria-selected', String(isActive));
+        if (isActive) {
+            button.classList.add('active');
+            button.removeAttribute('tabindex');
+        } else {
+            button.classList.remove('active');
+            button.setAttribute('tabindex', '-1');
+        }
+    });
+
+    panels.forEach((panel) => {
+        if (!panel) { return; }
+        const isTarget = panel.id === panelId;
+        if (isTarget) {
+            panel.classList.add('active');
+            panel.removeAttribute('hidden');
+        } else {
+            panel.classList.remove('active');
+            panel.setAttribute('hidden', '');
+        }
+    });
+
+    if (menu) {
+        applyMenuState(menu, menu.classList.contains('open'));
+    }
+}
+
+function handleMenuTabKeydown(event) {
+    const { key } = event;
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(key)) { return; }
+    const currentTab = event.currentTarget;
+    const menu = currentTab ? currentTab.closest('.menu-container') : null;
+    if (!menu) { return; }
+    const tabs = Array.from(menu.querySelectorAll('.menu-tab'));
+    const currentIndex = tabs.indexOf(currentTab);
+    if (currentIndex === -1) { return; }
+
+    event.preventDefault();
+    let nextIndex = currentIndex;
+    if (key === 'Home') { nextIndex = 0; }
+    else if (key === 'End') { nextIndex = tabs.length - 1; }
+    else if (key === 'ArrowLeft') { nextIndex = (currentIndex - 1 + tabs.length) % tabs.length; }
+    else if (key === 'ArrowRight') { nextIndex = (currentIndex + 1) % tabs.length; }
+
+    const nextTab = tabs[nextIndex];
+    if (nextTab) {
+        nextTab.focus();
+        activateMenuTab(nextTab);
+    }
+}
+
+function initializeMenuTabs() {
+    const menu = document.querySelector('.menu-container');
+    if (!menu) { return; }
+    const tabs = Array.from(menu.querySelectorAll('.menu-tab'));
+    if (!tabs.length) { return; }
+
+    tabs.forEach((tab) => {
+        tab.addEventListener('click', () => activateMenuTab(tab));
+        tab.addEventListener('keydown', handleMenuTabKeydown);
+    });
+
+    const selected = tabs.find((tab) => tab.getAttribute('aria-selected') === 'true') || tabs[0];
+    activateMenuTab(selected);
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     ensureManualPointModal();
     ensureAliasModal();
@@ -1529,6 +1686,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
     initMap();
+    initializeMenuTabs();
     const menu = document.querySelector('.menu-container');
     if (menu) { applyMenuState(menu, menu.classList.contains('open')); }
     document.addEventListener('keydown', (event) => {
@@ -1561,13 +1719,15 @@ function applyMenuState(menu, isOpen) {
     const icon = trigger ? trigger.querySelector('.menu-toggle-icon img') : null;
     const label = trigger ? trigger.querySelector('.menu-toggle-text') : null;
     const controls = menu.querySelector('.overlay-controls');
+    const panelLabel = getActivePanelLabel(menu);
 
     if (trigger) {
         trigger.setAttribute('aria-expanded', String(isOpen));
-        trigger.setAttribute('aria-label', isOpen ? 'Close menu' : 'Open menu');
+        const description = panelLabel ? `${panelLabel} panel` : 'panel';
+        trigger.setAttribute('aria-label', isOpen ? `Close ${description}` : `Open ${description}`);
     }
     if (icon) { icon.setAttribute('src', isOpen ? CLOSE_ICON_PATH : MENU_ICON_PATH); }
-    if (label) { label.textContent = isOpen ? 'Close' : 'Menu'; }
+    if (label) { label.textContent = isOpen ? 'Close' : panelLabel; }
     if (controls) {
         controls.setAttribute('aria-hidden', String(!isOpen));
         if (isOpen) { controls.removeAttribute('inert'); }
