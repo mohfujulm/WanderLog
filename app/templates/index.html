@@ -30,48 +30,49 @@
             filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.25));
         }
 
-        .menu-container {   position: absolute; 
-                            top: 0; 
-                            right: 0; 
-                            height: 100%; 
-                            width: min(18vw, 90vw); 
-                            z-index: 1000; 
-                            background-color: rgba(255,255,255,0.96); 
-                            padding: 24px 24px 24px 16px; 
-                            border-radius: 24px 0 0 24px; 
-                            box-shadow: -8px 0 24px rgba(0,0,0,0.18); 
-                            display: flex; 
-                            flex-direction: column; 
-                            gap: 16px; 
-                            transform: translateX(calc(100% - 80px)); 
-                            transition: transform 0.35s ease, box-shadow 0.35s ease, padding 0.35s ease; 
-                            backdrop-filter: blur(14px); 
+        .menu-container {   position: absolute;
+                            top: 0;
+                            right: 0;
+                            height: 100%;
+                            width: clamp(220px, 18vw, 90vw);
+                            z-index: 1000;
+                            background-color: rgba(255,255,255,0.96);
+                            padding: 24px 24px 24px 16px;
+                            border-radius: 24px 0 0 24px;
+                            box-shadow: -8px 0 24px rgba(0,0,0,0.18);
+                            display: flex;
+                            flex-direction: column;
+                            gap: 16px;
+                            --menu-peek-width: min(190px, 100%);
+                            transform: translateX(calc(100% - var(--menu-peek-width)));
+                            transition: transform 0.35s ease, box-shadow 0.35s ease, padding 0.35s ease;
+                            backdrop-filter: blur(14px);
                             overflow: hidden; }
         
         .menu-container.open {  transform: translateX(0); 
                                 box-shadow: -12px 0 32px rgba(0,0,0,0.25); 
                                 padding-left: 24px; }
 
-        .menu-toggle {  align-self: flex-start; 
-                        cursor: pointer; 
-                        user-select: none; 
-                        padding: 18px 12px; 
-                        background: rgba(255,255,255,0.95); 
-                        border-radius: 18px; 
-                        box-shadow: 0 6px 18px rgba(0,0,0,0.12); 
-                        transition: background 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease; 
-                        border: none; 
-                        display: inline-flex; 
-                        flex-direction: row; 
-                        align-items: center; 
-                        justify-content: center; 
-                        gap: 8px; 
-                        text-transform: uppercase; 
-                        letter-spacing: 0.12em; 
-                        color: #333; 
-                        writing-mode: vertical-rl; 
-                        text-orientation: mixed; 
-                        font-weight: 500; }
+        .menu-toggle {  align-self: flex-start;
+                        cursor: pointer;
+                        user-select: none;
+                        padding: 12px 18px;
+                        background: rgba(255,255,255,0.95);
+                        border-radius: 18px;
+                        box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+                        transition: background 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+                        border: none;
+                        display: inline-flex;
+                        flex-direction: row;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 8px;
+                        text-transform: uppercase;
+                        letter-spacing: 0.12em;
+                        color: #333;
+                        font-weight: 600;
+                        min-width: 150px;
+                        white-space: nowrap; }
 
         .menu-toggle:hover {    background: rgba(255,255,255,1); 
                                 transform: translateY(-2px); 
@@ -93,15 +94,13 @@
                                                 object-fit: contain; 
                                                 display: block; }
 
-        .menu-toggle .menu-toggle-text { font-size: 12px; }
+        .menu-toggle .menu-toggle-text { font-size: 13px; }
 
-        .menu-container.open .menu-toggle { align-self: flex-end; 
-                                            margin-left: auto; 
-                                            writing-mode: horizontal-tb; 
-                                            flex-direction: row; 
-                                            padding: 10px 16px; 
-                                            border-radius: 14px; 
-                                            gap: 8px; 
+        .menu-container.open .menu-toggle { align-self: flex-end;
+                                            margin-left: auto;
+                                            padding: 10px 16px;
+                                            border-radius: 14px;
+                                            gap: 8px;
                                             letter-spacing: 0.08em;
                                             box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
         .menu-container.open .menu-toggle .menu-toggle-text { font-size: 14px; }
@@ -121,67 +120,11 @@
 
         .menu-container.open .overlay-controls { opacity: 1; transform: translateX(0); pointer-events: auto; }
 
-        .menu-tabs {        display: flex;
-                            gap: 8px;
-                            justify-content: flex-end;
-                            align-self: stretch;
-                            flex-wrap: wrap; }
-
-        .menu-tab {         background: rgba(255,255,255,0.9);
-                            border: 1px solid rgba(0,0,0,0.08);
-                            border-radius: 12px;
-                            padding: 10px 16px;
-                            font-size: 13px;
-                            font-weight: 600;
+        .overlay-button {   background: rgba(255,255,255,0.95);
                             color: #333;
-                            cursor: pointer;
-                            transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
-                            min-width: 130px;
-                            text-align: center; }
-
-        .menu-tab:hover {   background: rgba(255,255,255,1);
-                            box-shadow: 0 6px 16px rgba(0,0,0,0.12); }
-
-        .menu-tab:focus {   outline: 2px solid rgba(0,120,212,0.5);
-                            outline-offset: 2px; }
-
-        .menu-tab[aria-selected="true"] {
-            background: #0078d4;
-            color: #fff;
-            box-shadow: 0 10px 18px rgba(0, 120, 212, 0.25);
-        }
-
-        .menu-tabpanel {    display: none;
-                            flex-direction: column;
-                            align-items: flex-end;
-                            gap: 12px;
-                            width: 100%; }
-
-        .menu-tabpanel.active {
-            display: flex;
-        }
-
-        .trips-empty-state {
-            align-self: stretch;
-            background: rgba(255,255,255,0.85);
-            border-radius: 16px;
-            padding: 18px;
-            border: 1px solid rgba(0,0,0,0.08);
-            font-size: 13px;
-            color: #4b5563;
-            text-align: right;
-            line-height: 1.5;
-        }
-
-        .trips-empty-state p {
-            margin: 0;
-        }
-
-        .overlay-button {   background: rgba(255,255,255,0.95); 
-                            color: #333; 
-                            border: none; 
-                            padding: 12px 18px; 
-                            font-size: 14px; 
+                            border: none;
+                            padding: 12px 18px;
+                            font-size: 14px;
                             font-weight: 500; 
                             border-radius: 15px; 
                             cursor: pointer; 
@@ -189,9 +132,26 @@
                             box-shadow: 3px 4px 0px 0px rgba(0, 0, 0, 0.15); 
                             backdrop-filter: blur(10px); 
                             border: 1px solid rgba(255,255,255,0.2); 
-                            min-width: 180px; 
-                            text-align: right; 
+                            min-width: 180px;
+                            text-align: right;
                             width: 100%; }
+
+        .overlay-button-trips {
+            background: #0078d4;
+            color: #fff;
+            box-shadow: 3px 4px 0px 0px rgba(0, 120, 212, 0.35);
+            margin-top: 8px;
+        }
+
+        .overlay-button-trips:hover {
+            background: #0a69b9;
+            box-shadow: 4px 5px 0px 0px rgba(0, 120, 212, 0.35);
+        }
+
+        .overlay-button-trips:active {
+            transform: translateY(0);
+            box-shadow: 3px 4px 0px 0px rgba(0, 120, 212, 0.35);
+        }
 
         .overlay-section-title { align-self: stretch;
                                  padding-top: 3px;
@@ -540,42 +500,28 @@
             <span class="menu-toggle-text">Data Controls</span>
         </button>
         <div class="overlay-controls" id="menuControls" aria-hidden="true" inert>
-            <div class="menu-tabs" role="tablist" aria-label="Side panel sections">
-                <button type="button" class="menu-tab active" id="dataControlsTab" role="tab" aria-selected="true" aria-controls="dataControlsPanel">
-                    Data Controls
-                </button>
-                <button type="button" class="menu-tab" id="tripsTab" role="tab" aria-selected="false" aria-controls="tripsPanel" tabindex="-1">
-                    Trips
-                </button>
-            </div>
-            <div id="dataControlsPanel" class="menu-tabpanel active" role="tabpanel" aria-labelledby="dataControlsTab">
-                <button class="overlay-button" onclick="document.getElementById('timelineFile').click()">Import Timeline Data</button>
-                <button class="overlay-button" onclick="addManualPoint()">Add a Location Manually</button>
-                <button class="overlay-button" onclick="clearMap()">Clear Map</button>
-                <button class="overlay-button" onclick="refreshMap()">Refresh Map</button>
-                <button class="overlay-button" onclick="viewArchivedPoints()">View Archived Points</button>
-                <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
-                <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
-                <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
-                <div class="date-filter-group" id="dateFilters" role="group" aria-labelledby="dateFiltersTitle">
-                    <label for="filterStartDate">
-                        <span>Start Date</span>
-                        <input type="date" id="filterStartDate" name="filterStartDate">
-                    </label>
-                    <label for="filterEndDate">
-                        <span>End Date</span>
-                        <input type="date" id="filterEndDate" name="filterEndDate">
-                    </label>
-                    <div class="date-filter-actions">
-                        <button type="button" class="date-filter-clear" id="clearDateFilters">Clear Dates</button>
-                    </div>
+            <button class="overlay-button" onclick="document.getElementById('timelineFile').click()">Import Timeline Data</button>
+            <button class="overlay-button" onclick="addManualPoint()">Add a Location Manually</button>
+            <button class="overlay-button" onclick="clearMap()">Clear Map</button>
+            <button class="overlay-button" onclick="refreshMap()">Refresh Map</button>
+            <button class="overlay-button" onclick="viewArchivedPoints()">View Archived Points</button>
+            <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
+            <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
+            <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
+            <div class="date-filter-group" id="dateFilters" role="group" aria-labelledby="dateFiltersTitle">
+                <label for="filterStartDate">
+                    <span>Start Date</span>
+                    <input type="date" id="filterStartDate" name="filterStartDate">
+                </label>
+                <label for="filterEndDate">
+                    <span>End Date</span>
+                    <input type="date" id="filterEndDate" name="filterEndDate">
+                </label>
+                <div class="date-filter-actions">
+                    <button type="button" class="date-filter-clear" id="clearDateFilters">Clear Dates</button>
                 </div>
             </div>
-            <div id="tripsPanel" class="menu-tabpanel" role="tabpanel" aria-labelledby="tripsTab" hidden>
-                <div class="trips-empty-state">
-                    <p>Plan and review your adventures here. Trips will appear once timeline data has been processed.</p>
-                </div>
-            </div>
+            <button type="button" class="overlay-button overlay-button-trips" id="tripsButton">Trips</button>
         </div>
     </div>
     <div id="status"></div>
@@ -654,6 +600,7 @@
 const MAPBOX_TOKEN = "{{ mapbox_token }}";
 const MENU_ICON_PATH = "{{ url_for('static', filename='assets/menu-icon.svg') }}";
 const CLOSE_ICON_PATH = "{{ url_for('static', filename='assets/close-icon.svg') }}";
+const DATA_CONTROLS_LABEL = 'Data Controls';
 let map;
 let markerCluster;
 let manualPointForm;
@@ -1562,92 +1509,6 @@ async function deleteMarker(markerId, markerInstance, triggerButton) {
     }
 }
 
-function getActivePanelLabel(menu) {
-    if (!menu) { return 'Data Controls'; }
-    const activeTab = menu.querySelector('.menu-tab[aria-selected="true"]');
-    if (activeTab) {
-        const text = activeTab.textContent || '';
-        const trimmed = text.trim();
-        if (trimmed.length > 0) { return trimmed; }
-    }
-    return 'Data Controls';
-}
-
-function activateMenuTab(tab) {
-    if (!tab) { return; }
-    const menu = tab.closest('.menu-container');
-    const panelId = tab.getAttribute('aria-controls');
-    const tabs = menu ? Array.from(menu.querySelectorAll('.menu-tab')) : [];
-    const panels = menu ? Array.from(menu.querySelectorAll('.menu-tabpanel')) : [];
-
-    tabs.forEach((button) => {
-        const isActive = button === tab;
-        button.setAttribute('aria-selected', String(isActive));
-        if (isActive) {
-            button.classList.add('active');
-            button.removeAttribute('tabindex');
-        } else {
-            button.classList.remove('active');
-            button.setAttribute('tabindex', '-1');
-        }
-    });
-
-    panels.forEach((panel) => {
-        if (!panel) { return; }
-        const isTarget = panel.id === panelId;
-        if (isTarget) {
-            panel.classList.add('active');
-            panel.removeAttribute('hidden');
-        } else {
-            panel.classList.remove('active');
-            panel.setAttribute('hidden', '');
-        }
-    });
-
-    if (menu) {
-        applyMenuState(menu, menu.classList.contains('open'));
-    }
-}
-
-function handleMenuTabKeydown(event) {
-    const { key } = event;
-    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(key)) { return; }
-    const currentTab = event.currentTarget;
-    const menu = currentTab ? currentTab.closest('.menu-container') : null;
-    if (!menu) { return; }
-    const tabs = Array.from(menu.querySelectorAll('.menu-tab'));
-    const currentIndex = tabs.indexOf(currentTab);
-    if (currentIndex === -1) { return; }
-
-    event.preventDefault();
-    let nextIndex = currentIndex;
-    if (key === 'Home') { nextIndex = 0; }
-    else if (key === 'End') { nextIndex = tabs.length - 1; }
-    else if (key === 'ArrowLeft') { nextIndex = (currentIndex - 1 + tabs.length) % tabs.length; }
-    else if (key === 'ArrowRight') { nextIndex = (currentIndex + 1) % tabs.length; }
-
-    const nextTab = tabs[nextIndex];
-    if (nextTab) {
-        nextTab.focus();
-        activateMenuTab(nextTab);
-    }
-}
-
-function initializeMenuTabs() {
-    const menu = document.querySelector('.menu-container');
-    if (!menu) { return; }
-    const tabs = Array.from(menu.querySelectorAll('.menu-tab'));
-    if (!tabs.length) { return; }
-
-    tabs.forEach((tab) => {
-        tab.addEventListener('click', () => activateMenuTab(tab));
-        tab.addEventListener('keydown', handleMenuTabKeydown);
-    });
-
-    const selected = tabs.find((tab) => tab.getAttribute('aria-selected') === 'true') || tabs[0];
-    activateMenuTab(selected);
-}
-
 document.addEventListener('DOMContentLoaded', async () => {
     ensureManualPointModal();
     ensureAliasModal();
@@ -1686,7 +1547,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
     initMap();
-    initializeMenuTabs();
+    const tripsButton = document.getElementById('tripsButton');
+    if (tripsButton) {
+        tripsButton.addEventListener('click', handleTripsClick);
+    }
     const menu = document.querySelector('.menu-container');
     if (menu) { applyMenuState(menu, menu.classList.contains('open')); }
     document.addEventListener('keydown', (event) => {
@@ -1707,6 +1571,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 });
 
+function handleTripsClick(event) {
+    if (event && typeof event.preventDefault === 'function') {
+        event.preventDefault();
+    }
+    showStatus('Trips feature is coming soon!');
+}
+
 function toggleMenu() {
     const menu = document.querySelector('.menu-container');
     if (!menu) { return; }
@@ -1719,7 +1590,7 @@ function applyMenuState(menu, isOpen) {
     const icon = trigger ? trigger.querySelector('.menu-toggle-icon img') : null;
     const label = trigger ? trigger.querySelector('.menu-toggle-text') : null;
     const controls = menu.querySelector('.overlay-controls');
-    const panelLabel = getActivePanelLabel(menu);
+    const panelLabel = DATA_CONTROLS_LABEL;
 
     if (trigger) {
         trigger.setAttribute('aria-expanded', String(isOpen));
