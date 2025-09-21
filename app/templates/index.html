@@ -489,6 +489,7 @@
             <button class="overlay-button" onclick="clearMap()">Clear Map</button>
             <button class="overlay-button" onclick="refreshMap()">Refresh Map</button>
             <button class="overlay-button" onclick="viewArchivedPoints()">View Archived Points</button>
+            <button class="overlay-button" type="button" onclick="openTrips()">Trips</button>
             <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
             <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
             <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
@@ -1269,6 +1270,10 @@ function viewArchivedPoints() {
     if (!controller) { return; }
     controller.open();
     loadArchivedPointsList();
+}
+
+function openTrips() {
+    showStatus('Trips feature coming soon!');
 }
 
 async function loadArchivedPointsList() {
