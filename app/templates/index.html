@@ -1301,6 +1301,54 @@ function createPopupContent(markerData) {
     ].filter(Boolean).join('');
 }
 
+function attachMarkerPopupActions(marker, markerData) {
+    if (!marker || typeof marker.on !== 'function') { return; }
+
+    marker.on('popupopen', () => {
+        const popupInstance = typeof marker.getPopup === 'function' ? marker.getPopup() : null;
+        const popupElement = popupInstance && typeof popupInstance.getElement === 'function'
+            ? popupInstance.getElement()
+            : null;
+        if (!popupElement) { return; }
+
+        const markerId = markerData && markerData.id ? markerData.id : '';
+        const tripButton = popupElement.querySelector('.marker-action-trip');
+        if (tripButton && markerData && markerId) {
+            tripButton.onclick = (event) => {
+                event.preventDefault();
+                openTripAssignmentModal(markerData, { triggerButton: tripButton });
+            };
+        }
+
+        const archiveButton = popupElement.querySelector('.marker-action-archive');
+        if (archiveButton && markerId) {
+            archiveButton.onclick = (event) => {
+                event.preventDefault();
+                archiveMarker(markerId, marker, archiveButton);
+            };
+        }
+
+        const renameButton = popupElement.querySelector('.marker-action-alias');
+        if (renameButton && markerData && markerId) {
+            renameButton.onclick = (event) => {
+                event.preventDefault();
+                openAliasModal(markerData, {
+                    triggerButton: renameButton,
+                    isArchived: Boolean(markerData.archived),
+                });
+            };
+        }
+
+        const deleteButton = popupElement.querySelector('.marker-action-delete');
+        if (deleteButton && markerId) {
+            deleteButton.onclick = (event) => {
+                event.preventDefault();
+                deleteMarker(markerId, marker, deleteButton);
+            };
+        }
+    });
+}
+
 function getSourceTypeLabel(type) {
     if (!type) { return ''; }
     if (Object.prototype.hasOwnProperty.call(SOURCE_TYPE_LABELS, type)) {
@@ -2563,6 +2611,47 @@ function deactivateTripMapMode(options = {}) {
     }
 }
 
+function createTripMarkerData(location) {
+    if (!location || typeof location !== 'object') { return null; }
+
+    const latitudeNumber = Number(location.latitude);
+    const longitudeNumber = Number(location.longitude);
+    if (!Number.isFinite(latitudeNumber) || !Number.isFinite(longitudeNumber)) { return null; }
+
+    const idRaw = location.place_id ?? '';
+    const id = typeof idRaw === 'string' ? idRaw.trim() : String(idRaw || '').trim();
+
+    const nameRaw = location.name ?? '';
+    const name = typeof nameRaw === 'string' ? nameRaw.trim() : String(nameRaw || '').trim();
+
+    const aliasRaw = location.alias ?? '';
+    const alias = typeof aliasRaw === 'string' ? aliasRaw.trim() : String(aliasRaw || '').trim();
+
+    const displayRaw = location.display_name ?? '';
+    let displayName = typeof displayRaw === 'string' ? displayRaw.trim() : String(displayRaw || '').trim();
+    if (!displayName) {
+        displayName = alias || name || 'Unknown location';
+    }
+
+    const dateRaw = location.date ?? location.start_date ?? location.end_date ?? '';
+    const date = typeof dateRaw === 'string' ? dateRaw.trim() : String(dateRaw || '').trim();
+
+    const sourceTypeRaw = location.source_type ?? '';
+    const sourceType = typeof sourceTypeRaw === 'string' ? sourceTypeRaw.trim() : String(sourceTypeRaw || '').trim();
+
+    return {
+        id,
+        lat: latitudeNumber,
+        lng: longitudeNumber,
+        place: name || displayName,
+        alias,
+        display_name: displayName,
+        date,
+        source_type: sourceType,
+        archived: Boolean(location.archived),
+    };
+}
+
 function showTripLocationsOnMap(locations, options = {}) {
     const { adjustView = true } = options || {};
     const layer = activateTripMapMode();
@@ -2574,29 +2663,38 @@ function showTripLocationsOnMap(locations, options = {}) {
         direction: 'top',
         offset: [0, -24],
         className: 'trip-marker-tooltip',
-        sticky: true,
     };
 
     const points = [];
 
     (Array.isArray(locations) ? locations : []).forEach((location) => {
-        if (!location || typeof location !== 'object') { return; }
-        const lat = Number(location.latitude);
-        const lng = Number(location.longitude);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) { return; }
-        const latLng = L.latLng(lat, lng);
-        const title = location.display_name || location.alias || location.name || '';
+        const markerData = createTripMarkerData(location);
+        if (!markerData) { return; }
+
+        const latLng = L.latLng(markerData.lat, markerData.lng);
+        const title = markerData.display_name || markerData.alias || markerData.place || '';
         const marker = L.marker(latLng, {
             icon: highlightIcon,
             title: title || undefined,
             riseOnHover: true,
             keyboard: false,
         });
+
         if (title) {
             marker.bindTooltip(title, tooltipOptions);
         }
+
+        const popupContent = createPopupContent(markerData);
+        if (popupContent) {
+            marker.bindPopup(popupContent);
+            attachMarkerPopupActions(marker, markerData);
+        }
+
         layer.addLayer(marker);
-        const markerKey = location.key || location.place_id;
+
+        const markerKey = (location && typeof location.key === 'string' && location.key)
+            ? location.key
+            : (location && typeof location.place_id === 'string' ? location.place_id : '');
         if (markerKey) {
             tripMarkerLookup.set(markerKey, marker);
         }
@@ -2650,8 +2748,16 @@ function focusMapOnTripLocation(location) {
 
     if (markerKey) {
         const marker = tripMarkerLookup.get(markerKey);
-        if (marker && typeof marker.openTooltip === 'function') {
-            marker.openTooltip();
+        if (marker) {
+            const popupInstance = typeof marker.getPopup === 'function' ? marker.getPopup() : null;
+            if (popupInstance && typeof marker.openPopup === 'function') {
+                if (typeof marker.closeTooltip === 'function') {
+                    marker.closeTooltip();
+                }
+                marker.openPopup();
+            } else if (typeof marker.openTooltip === 'function') {
+                marker.openTooltip();
+            }
         }
     }
 
@@ -2742,44 +2848,12 @@ async function loadMarkers() {
             });
 
             const popupContent = createPopupContent(m);
-            marker.bindPopup(popupContent).addTo(markerCluster);
+            if (popupContent) {
+                marker.bindPopup(popupContent);
+                attachMarkerPopupActions(marker, m);
+            }
 
-            marker.on('popupopen', () => {
-                const popupElement = marker.getPopup() ? marker.getPopup().getElement() : null;
-                if (!popupElement) { return; }
-
-                const tripButton = popupElement.querySelector('.marker-action-trip');
-                if (tripButton) {
-                    tripButton.onclick = (event) => {
-                        event.preventDefault();
-                        openTripAssignmentModal(m, { triggerButton: tripButton });
-                    };
-                }
-
-                const archiveButton = popupElement.querySelector('.marker-action-archive');
-                if (archiveButton) {
-                    archiveButton.onclick = (event) => {
-                        event.preventDefault();
-                        archiveMarker(m.id, marker, archiveButton);
-                    };
-                }
-
-                const renameButton = popupElement.querySelector('.marker-action-alias');
-                if (renameButton) {
-                    renameButton.onclick = (event) => {
-                        event.preventDefault();
-                        openAliasModal(m, { triggerButton: renameButton, isArchived: false });
-                    };
-                }
-
-                const deleteButton = popupElement.querySelector('.marker-action-delete');
-                if (deleteButton) {
-                    deleteButton.onclick = (event) => {
-                        event.preventDefault();
-                        deleteMarker(m.id, marker, deleteButton);
-                    };
-                }
-            });
+            marker.addTo(markerCluster);
         });
         // Done loading
         hideLoading();
