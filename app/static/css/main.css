@@ -160,6 +160,10 @@ button, input, select { font-family: inherit; }
                     max-height: min(96vh, 768px);
                     overflow-y: auto; }
 
+.overlay-controls[data-active-panel="menuPanelTrips"] {
+    max-height: min(96vh, 960px);
+}
+
 .overlay-tabs-wrapper {  display: flex;
                         align-items: center;
                         gap: 6px;
