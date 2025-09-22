@@ -30,31 +30,21 @@
             filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.25));
         }
 
-        .menu-container {   position: absolute; 
-                            top: 0; 
-                            right: 0; 
-                            height: 100%; 
-                            width: min(18vw, 90vw); 
-                            z-index: 1000; 
-                            background-color: rgba(255,255,255,0.96); 
-                            padding: 24px 24px 24px 16px; 
-                            border-radius: 24px 0 0 24px; 
-                            box-shadow: -8px 0 24px rgba(0,0,0,0.18); 
-                            display: flex; 
-                            flex-direction: column; 
-                            gap: 16px; 
-                            transform: translateX(calc(100% - 80px)); 
-                            transition: transform 0.35s ease, box-shadow 0.35s ease, padding 0.35s ease; 
-                            backdrop-filter: blur(14px); 
-                            overflow: hidden; }
-        
-        .menu-container.open {  transform: translateX(0); 
-                                box-shadow: -12px 0 32px rgba(0,0,0,0.25); 
-                                padding-left: 24px; }
+        .menu-container {   position: absolute;
+                            top: 24px;
+                            right: 24px;
+                            z-index: 1000;
+                            display: flex;
+                            flex-direction: column;
+                            align-items: flex-end;
+                            gap: 16px;
+                            width: auto; }
 
-        .menu-toggle {  align-self: flex-start; 
-                        cursor: pointer; 
-                        user-select: none; 
+        .menu-container.open {  gap: 20px; }
+
+        .menu-toggle {  align-self: flex-end;
+                        cursor: pointer;
+                        user-select: none;
                         padding: 18px 12px; 
                         background: rgba(255,255,255,0.95); 
                         border-radius: 18px; 
@@ -106,20 +96,28 @@
                                             box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
         .menu-container.open .menu-toggle .menu-toggle-text { font-size: 14px; }
 
-        .overlay-controls { display: flex; 
-                            flex-direction: column; 
-                            align-items: flex-end;
-                            gap: 12px; 
-                            opacity: 0; 
-                            transform: translateX(16px); 
-                            transition: opacity 0.25s ease 0.1s, transform 0.25s ease 0.1s; 
-                            overflow-y: auto; 
-                            max-height: calc(100% - 80px); 
-                            padding-right: 4px; 
-                            pointer-events: none; }
+        .overlay-controls { display: flex;
+                            flex-direction: column;
+                            align-items: stretch;
+                            gap: 12px;
+                            opacity: 0;
+                            transform: translateY(-8px) scale(0.98);
+                            transform-origin: top right;
+                            transition: opacity 0.25s ease, transform 0.25s ease;
+                            pointer-events: none;
+                            background: rgba(255,255,255,0.96);
+                            border-radius: 20px;
+                            padding: 24px 24px 20px;
+                            box-shadow: 0 12px 32px rgba(0,0,0,0.22);
+                            backdrop-filter: blur(14px);
+                            width: min(360px, calc(100vw - 64px));
+                            max-height: min(80vh, 640px);
+                            overflow-y: auto; }
 
 
-        .menu-container.open .overlay-controls { opacity: 1; transform: translateX(0); pointer-events: auto; }
+        .menu-container.open .overlay-controls { opacity: 1;
+                                                transform: translateY(0) scale(1);
+                                                pointer-events: auto; }
 
         .overlay-button {   background: rgba(255,255,255,0.95); 
                             color: #333; 
