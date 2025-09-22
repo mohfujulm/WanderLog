@@ -99,7 +99,7 @@
         .overlay-controls { display: flex;
                             flex-direction: column;
                             align-items: stretch;
-                            gap: 12px;
+                            gap: 16px;
                             opacity: 0;
                             transform: translateY(-8px) scale(0.98);
                             transform-origin: top right;
@@ -113,6 +113,59 @@
                             width: min(360px, calc(100vw - 64px));
                             max-height: min(80vh, 640px);
                             overflow-y: auto; }
+
+        .overlay-tabs {    display: flex;
+                            align-items: center;
+                            justify-content: stretch;
+                            gap: 6px;
+                            background: rgba(243, 244, 246, 0.7);
+                            padding: 6px;
+                            border-radius: 18px; }
+
+        .overlay-tab {     flex: 1 1 0;
+                            border: none;
+                            background: transparent;
+                            border-radius: 12px;
+                            padding: 10px 16px;
+                            font-size: 13px;
+                            font-weight: 600;
+                            letter-spacing: 0.08em;
+                            text-transform: uppercase;
+                            cursor: pointer;
+                            color: #4b5563;
+                            transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+                            text-align: center; }
+
+        .overlay-tab:hover { background: rgba(255,255,255,0.8); }
+
+        .overlay-tab:focus-visible { outline: 2px solid rgba(0,120,212,0.65); outline-offset: 2px; }
+
+        .overlay-tab[aria-selected="true"] { background: #111827;
+                                            color: #fff;
+                                            box-shadow: 0 6px 18px rgba(17,24,39,0.18);
+                                            transform: translateY(-1px); }
+
+        .overlay-tab-panel {   display: flex;
+                                flex-direction: column;
+                                gap: 12px; }
+
+        .overlay-tab-panel[hidden] { display: none; }
+
+        .trips-placeholder {    display: flex;
+                                flex-direction: column;
+                                gap: 8px;
+                                padding: 18px 16px;
+                                border-radius: 14px;
+                                background: rgba(249,250,251,0.92);
+                                color: #1f2937;
+                                text-align: right; }
+
+        .trips-placeholder h3 { font-size: 16px;
+                                letter-spacing: 0.06em;
+                                text-transform: uppercase; }
+
+        .trips-placeholder p {  font-size: 13px;
+                                line-height: 1.5; }
 
 
         .menu-container.open .overlay-controls { opacity: 1;
@@ -482,25 +535,38 @@
             <span class="menu-toggle-text">Menu</span>
         </button>
         <div class="overlay-controls" id="menuControls" aria-hidden="true" inert>
-            <button class="overlay-button" onclick="document.getElementById('timelineFile').click()">Import Timeline Data</button>
-            <button class="overlay-button" onclick="addManualPoint()">Add a Location Manually</button>
-            <button class="overlay-button" onclick="clearMap()">Clear Map</button>
-            <button class="overlay-button" onclick="refreshMap()">Refresh Map</button>
-            <button class="overlay-button" onclick="viewArchivedPoints()">View Archived Points</button>
-            <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
-            <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
-            <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
-            <div class="date-filter-group" id="dateFilters" role="group" aria-labelledby="dateFiltersTitle">
-                <label for="filterStartDate">
-                    <span>Start Date</span>
-                    <input type="date" id="filterStartDate" name="filterStartDate">
-                </label>
-                <label for="filterEndDate">
-                    <span>End Date</span>
-                    <input type="date" id="filterEndDate" name="filterEndDate">
-                </label>
-                <div class="date-filter-actions">
-                    <button type="button" class="date-filter-clear" id="clearDateFilters">Clear Dates</button>
+            <div class="overlay-tabs" role="tablist" aria-label="Menu sections">
+                <button type="button" class="overlay-tab" role="tab" id="menuTabControls" aria-selected="true" aria-controls="menuPanelControls">Map</button>
+                <button type="button" class="overlay-tab" role="tab" id="menuTabTrips" aria-selected="false" aria-controls="menuPanelTrips" tabindex="-1">Trips</button>
+            </div>
+            <div id="menuPanelControls" class="overlay-tab-panel" role="tabpanel" aria-labelledby="menuTabControls">
+                <button class="overlay-button" onclick="document.getElementById('timelineFile').click()">Import Timeline Data</button>
+                <button class="overlay-button" onclick="addManualPoint()">Add a Location Manually</button>
+                <button class="overlay-button" onclick="clearMap()">Clear Map</button>
+                <button class="overlay-button" onclick="refreshMap()">Refresh Map</button>
+                <button class="overlay-button" onclick="viewArchivedPoints()">View Archived Points</button>
+                <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
+                <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
+                <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
+                <div class="date-filter-group" id="dateFilters" role="group" aria-labelledby="dateFiltersTitle">
+                    <label for="filterStartDate">
+                        <span>Start Date</span>
+                        <input type="date" id="filterStartDate" name="filterStartDate">
+                    </label>
+                    <label for="filterEndDate">
+                        <span>End Date</span>
+                        <input type="date" id="filterEndDate" name="filterEndDate">
+                    </label>
+                    <div class="date-filter-actions">
+                        <button type="button" class="date-filter-clear" id="clearDateFilters">Clear Dates</button>
+                    </div>
+                </div>
+            </div>
+            <div id="menuPanelTrips" class="overlay-tab-panel" role="tabpanel" aria-labelledby="menuTabTrips" hidden>
+                <div class="trips-placeholder">
+                    <h3>Trips</h3>
+                    <p>Plan, revisit, and organize journeys right here soon.</p>
+                    <p>We're sketching ideas for this space — stay tuned!</p>
                 </div>
             </div>
         </div>
@@ -1493,6 +1559,69 @@ document.addEventListener('DOMContentLoaded', async () => {
     ensureManualPointModal();
     ensureAliasModal();
     ensureArchivedPointsModal();
+    const menuControls = document.getElementById('menuControls');
+    if (menuControls) {
+        const tabs = Array.from(menuControls.querySelectorAll('[role="tab"]'));
+        const panels = Array.from(menuControls.querySelectorAll('[role="tabpanel"]'));
+
+        const findPanelForTab = (tab) => {
+            if (!tab) { return null; }
+            const controlsId = tab.getAttribute('aria-controls');
+            if (!controlsId) { return null; }
+            return panels.find((panel) => panel.id === controlsId) || null;
+        };
+
+        const activateTab = (nextTab) => {
+            if (!nextTab) { return; }
+            tabs.forEach((tab) => {
+                const isActive = tab === nextTab;
+                tab.setAttribute('aria-selected', String(isActive));
+                tab.setAttribute('tabindex', isActive ? '0' : '-1');
+                const panel = findPanelForTab(tab);
+                if (panel) {
+                    panel.hidden = !isActive;
+                }
+            });
+        };
+
+        const focusTab = (tab) => {
+            if (!tab) { return; }
+            activateTab(tab);
+            tab.focus();
+        };
+
+        const focusTabByOffset = (currentIndex, offset) => {
+            if (!tabs.length) { return; }
+            const nextIndex = (currentIndex + offset + tabs.length) % tabs.length;
+            const nextTab = tabs[nextIndex];
+            focusTab(nextTab);
+        };
+
+        tabs.forEach((tab, index) => {
+            tab.addEventListener('click', () => {
+                if (tab.getAttribute('aria-selected') === 'true') { return; }
+                activateTab(tab);
+            });
+            tab.addEventListener('keydown', (event) => {
+                if (event.key === 'ArrowRight') {
+                    event.preventDefault();
+                    focusTabByOffset(index, 1);
+                } else if (event.key === 'ArrowLeft') {
+                    event.preventDefault();
+                    focusTabByOffset(index, -1);
+                } else if (event.key === 'Home') {
+                    event.preventDefault();
+                    focusTab(tabs[0]);
+                } else if (event.key === 'End') {
+                    event.preventDefault();
+                    focusTab(tabs[tabs.length - 1]);
+                }
+            });
+        });
+
+        const initiallySelected = tabs.find((tab) => tab.getAttribute('aria-selected') === 'true') || tabs[0];
+        activateTab(initiallySelected);
+    }
     try {
         const response = await fetch('/api/source_types');
         const types = await response.json();
