@@ -463,6 +463,33 @@ def api_assign_trip():
     )
 
 
+@main.route('/api/trips/<trip_id>/locations/<place_id>', methods=['DELETE'])
+def api_remove_trip_location(trip_id: str, place_id: str):
+    """Remove ``place_id`` from the trip identified by ``trip_id``."""
+
+    trip_identifier = (trip_id or '').strip()
+    place_identifier = (place_id or '').strip()
+
+    if not trip_identifier or not place_identifier:
+        return jsonify(
+            status='error',
+            message='A valid trip and place ID are required.'
+        ), 400
+
+    try:
+        trip = trip_store.remove_place_from_trip(trip_identifier, place_identifier)
+    except KeyError:
+        return jsonify(status='error', message='Trip not found.'), 404
+    except ValueError as exc:
+        return jsonify(status='error', message=str(exc)), 400
+
+    return jsonify(
+        status='success',
+        message='Location removed from trip.',
+        trip=_serialise_trip(trip),
+    )
+
+
 @main.route('/api/map_data', methods=['GET', 'POST'])
 def api_map_data():
     """Return marker data for the current timeline.
@@ -513,7 +540,38 @@ def api_map_data():
     df = filter_dataframe_by_date_range(df, start_date=start_date, end_date=end_date)
 
     # Convert the filtered DataFrame into simple marker dictionaries
-    return jsonify(dataframe_to_markers(df))
+    markers = dataframe_to_markers(df)
+
+    if markers:
+        trips = trip_store.list_trips()
+        place_memberships: dict[str, list[dict]] = {}
+
+        for trip in trips:
+            if not isinstance(trip, dict):
+                continue
+
+            trip_id = str(trip.get('id') or '').strip()
+            if not trip_id:
+                continue
+
+            trip_name = str(trip.get('name') or '').strip() or 'Untitled Trip'
+            place_ids = trip.get('place_ids') or []
+
+            if not isinstance(place_ids, list):
+                continue
+
+            for raw_place_id in place_ids:
+                place_identifier = str(raw_place_id or '').strip()
+                if not place_identifier:
+                    continue
+                membership = place_memberships.setdefault(place_identifier, [])
+                membership.append({'id': trip_id, 'name': trip_name})
+
+        for marker in markers:
+            place_id = str(marker.get('id') or '').strip()
+            marker['trips'] = place_memberships.get(place_id, [])
+
+    return jsonify(markers)
 
 
 @main.route('/api/archived_markers', methods=['GET'])

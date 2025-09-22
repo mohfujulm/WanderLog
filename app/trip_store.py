@@ -185,6 +185,34 @@ def add_place_to_trip(trip_id: str, place_id: str) -> Trip:
     return trip
 
 
+def remove_place_from_trip(trip_id: str, place_id: str) -> Trip:
+    """Remove ``place_id`` from the trip identified by ``trip_id``."""
+
+    _ensure_cache()
+
+    trip = get_trip((trip_id or "").strip())
+    if trip is None:
+        raise KeyError("Trip not found.")
+
+    place_id_clean = (place_id or "").strip()
+    if not place_id_clean:
+        raise ValueError("A valid place ID is required.")
+
+    original_length = len(trip.place_ids)
+    if original_length == 0:
+        raise ValueError("This trip does not contain the specified location.")
+
+    filtered = [pid for pid in trip.place_ids if pid != place_id_clean]
+    if len(filtered) == original_length:
+        raise ValueError("This trip does not contain the specified location.")
+
+    trip.place_ids = filtered
+    trip.updated_at = _utcnow_iso()
+    save_trips()
+
+    return trip
+
+
 def update_trip_metadata(trip_id: str, *, name: Optional[str] = None) -> Trip:
     """Update metadata for the trip identified by ``trip_id``."""
 

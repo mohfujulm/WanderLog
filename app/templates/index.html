@@ -508,6 +508,34 @@
                                          line-height: 1.5;
                                          color: #6b7280; }
 
+        .trip-location-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 4px;
+        }
+
+        .trip-location-remove {
+            border: none;
+            border-radius: 999px;
+            padding: 6px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            background: #fee2e2;
+            color: #991b1b;
+            cursor: pointer;
+            transition: background 0.2s ease, transform 0.2s ease;
+        }
+
+        .trip-location-remove:hover:not(:disabled) {
+            background: #fecaca;
+            transform: translateY(-1px);
+        }
+
+        .trip-location-remove:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
         .trip-item {            display: flex;
                                 flex-direction: column;
                                 gap: 8px;
@@ -710,12 +738,18 @@
                             flex-direction: column; 
                             gap: 14px; }
 
-        .form-group {       display: flex; 
-                            flex-direction: column; 
+        .form-group {       display: flex;
+                            flex-direction: column;
                             gap: 6px; }
 
-        .form-group label { font-weight: 600; 
-                            font-size: 14px; 
+        .form-group-label {
+            font-weight: 600;
+            font-size: 13px;
+            color: #374151;
+        }
+
+        .form-group label { font-weight: 600;
+                            font-size: 14px;
                             color: #333; }
 
         .form-group input, .form-group select { padding: 10px;
@@ -728,6 +762,59 @@
             font-size: 12px;
             color: #555;
             line-height: 1.4;
+        }
+
+        .trip-membership-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 180px;
+            overflow-y: auto;
+        }
+
+        .trip-membership-list[hidden] {
+            display: none;
+        }
+
+        .trip-membership-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 10px 12px;
+            border-radius: 10px;
+            background: rgba(243,244,246,0.8);
+            border: 1px solid rgba(229,231,235,0.8);
+        }
+
+        .trip-membership-name {
+            font-size: 13px;
+            font-weight: 600;
+            color: #111827;
+            word-break: break-word;
+        }
+
+        .trip-membership-remove {
+            border: none;
+            border-radius: 999px;
+            padding: 6px 12px;
+            font-size: 12px;
+            font-weight: 600;
+            background: #fee2e2;
+            color: #991b1b;
+            cursor: pointer;
+            transition: background 0.2s ease, transform 0.2s ease;
+            white-space: nowrap;
+        }
+
+        .trip-membership-remove:hover:not(:disabled) {
+            background: #fecaca;
+            transform: translateY(-1px);
+        }
+
+        .trip-membership-remove:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
         }
 
         .alias-modal-original {
@@ -846,6 +933,24 @@
         .marker-popup-value {
             color: #1a1a1a;
             word-break: break-word;
+        }
+
+        .marker-popup-trips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .marker-popup-trip-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2px 10px;
+            border-radius: 999px;
+            background: rgba(59,130,246,0.1);
+            color: #1d4ed8;
+            font-size: 11px;
+            font-weight: 600;
         }
 
         .marker-actions {
@@ -1091,6 +1196,11 @@
                         Select an existing trip or enter a name to create a new one.
                     </p>
                 </div>
+                <div class="form-group" id="tripMembershipGroup">
+                    <span class="form-group-label">Assigned Trips</span>
+                    <div id="tripMembershipList" class="trip-membership-list" role="list" hidden></div>
+                    <p class="form-helper-text" id="tripMembershipEmpty">This location is not part of any trips yet.</p>
+                </div>
                 <div class="form-group">
                     <label for="newTripName">Create New Trip</label>
                     <input type="text" id="newTripName" name="new_trip_name" maxlength="120" autocomplete="off" placeholder="e.g. Summer Getaway">
@@ -1147,6 +1257,9 @@ let tripAssignmentPlaceId = null;
 let tripSelectElement = null;
 let newTripNameInput = null;
 let tripSelectHelper = null;
+let tripAssignmentMembershipList = null;
+let tripAssignmentMembershipEmpty = null;
+let tripAssignmentMemberships = [];
 let tripModalContext = { triggerButton: null };
 let tripListContainer = null;
 let tripListLoadingElement = null;
@@ -1285,14 +1398,27 @@ function createPopupContent(markerData) {
     const aliasRow = hasAlias
         ? `<div class="marker-popup-row"><span class="marker-popup-label">Place Name</span><span class="marker-popup-value">${place}</span></div>`
         : '';
+    const membershipsRaw = Array.isArray(markerData.trips) ? markerData.trips : [];
+    const membershipEntries = membershipsRaw
+        .map((entry) => normaliseTripMembership(entry))
+        .filter(Boolean);
+    const membershipBadges = membershipEntries.length
+        ? membershipEntries.map((trip) => `<span class="marker-popup-trip-pill">${escapeHtml(trip.name)}</span>`).join('')
+        : '';
+    const tripRow = membershipBadges
+        ? `<div class="marker-popup-row"><span class="marker-popup-label">Trips</span><span class="marker-popup-value marker-popup-trips">${membershipBadges}</span></div>`
+        : '';
+    const manageTripLabel = membershipEntries.length ? 'Manage Trips' : 'Add to Trip';
+
     const actions = hasId
-        ? `<div class="marker-actions"><button type="button" class="marker-action marker-action-trip">Add to Trip</button><button type="button" class="marker-action marker-action-alias">Rename</button><button type="button" class="marker-action marker-action-archive">Archive</button><button type="button" class="marker-action marker-action-delete">Delete</button></div>`
+        ? `<div class="marker-actions"><button type="button" class="marker-action marker-action-trip">${escapeHtml(manageTripLabel)}</button><button type="button" class="marker-action marker-action-alias">Rename</button><button type="button" class="marker-action marker-action-archive">Archive</button><button type="button" class="marker-action marker-action-delete">Delete</button></div>`
         : '';
 
     return [
         `<div class="marker-popup"${hasId ? ` data-marker-id="${safeId}"` : ''}>`,
         `<div class="marker-popup-row"><span class="marker-popup-label">${nameLabel}</span><span class="marker-popup-value">${displayName}</span></div>`,
         aliasRow,
+        tripRow,
         sourceRow,
         `<div class="marker-popup-row"><span class="marker-popup-label">Date Visited</span><span class="marker-popup-value">${date}</span></div>`,
         `<div class="marker-popup-row"><span class="marker-popup-label">Coordinates</span><span class="marker-popup-value">${coordinates}</span></div>`,
@@ -1686,6 +1812,7 @@ function createTripListItem(trip) {
     meta.appendChild(countSpan);
 
     item.appendChild(meta);
+
     return item;
 }
 
@@ -2365,6 +2492,31 @@ function createTripLocationListItem(location) {
     }
 
     item.appendChild(meta);
+
+    if (tripDetailState.selectedTripId && location.place_id) {
+        const actions = document.createElement('div');
+        actions.className = 'trip-location-actions';
+
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.className = 'trip-location-remove';
+        removeButton.textContent = 'Remove from Trip';
+        removeButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const tripId = tripDetailState.selectedTripId;
+            const placeId = location.place_id;
+            const locationLabel = location.display_name || location.alias || location.name || 'this location';
+            removeLocationFromTrip(tripId, placeId, {
+                triggerButton: removeButton,
+                confirmMessage: `Remove "${locationLabel}" from this trip?`,
+            });
+        });
+
+        actions.appendChild(removeButton);
+        item.appendChild(actions);
+    }
+
     return item;
 }
 
@@ -2487,9 +2639,108 @@ async function loadTripsPanelData() {
     }
 }
 
-function upsertTripInList(trip) {
+function normaliseTripMembership(entry) {
+    if (!entry || typeof entry !== 'object') { return null; }
+
+    const rawId = entry.id ?? entry.trip_id ?? '';
+    const id = typeof rawId === 'string' ? rawId.trim() : String(rawId || '').trim();
+    if (!id) { return null; }
+
+    const rawName = entry.name ?? entry.trip_name ?? '';
+    const name = typeof rawName === 'string' ? rawName.trim() : String(rawName || '').trim();
+
+    return { id, name: name || TRIP_NAME_FALLBACK };
+}
+
+function renderTripAssignmentMemberships() {
+    tripAssignmentMembershipList = tripAssignmentMembershipList || document.getElementById('tripMembershipList');
+    tripAssignmentMembershipEmpty = tripAssignmentMembershipEmpty || document.getElementById('tripMembershipEmpty');
+
+    if (!tripAssignmentMembershipList) { return; }
+
+    tripAssignmentMembershipList.innerHTML = '';
+
+    if (!Array.isArray(tripAssignmentMemberships) || tripAssignmentMemberships.length === 0) {
+        tripAssignmentMembershipList.hidden = true;
+        if (tripAssignmentMembershipEmpty) { tripAssignmentMembershipEmpty.hidden = false; }
+        if (tripAssignmentModalController && typeof tripAssignmentModalController.refreshFocusableElements === 'function') {
+            tripAssignmentModalController.refreshFocusableElements();
+        }
+        return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    tripAssignmentMemberships.forEach((trip) => {
+        if (!trip || !trip.id) { return; }
+        const item = document.createElement('div');
+        item.className = 'trip-membership-item';
+        item.setAttribute('role', 'listitem');
+
+        const nameElement = document.createElement('span');
+        nameElement.className = 'trip-membership-name';
+        nameElement.textContent = trip.name || TRIP_NAME_FALLBACK;
+        item.appendChild(nameElement);
+
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.className = 'trip-membership-remove';
+        removeButton.textContent = 'Remove';
+        removeButton.dataset.tripId = trip.id;
+        removeButton.dataset.tripName = trip.name || TRIP_NAME_FALLBACK;
+        item.appendChild(removeButton);
+
+        fragment.appendChild(item);
+    });
+
+    tripAssignmentMembershipList.appendChild(fragment);
+    tripAssignmentMembershipList.hidden = false;
+    if (tripAssignmentMembershipEmpty) { tripAssignmentMembershipEmpty.hidden = true; }
+
+    if (tripAssignmentModalController && typeof tripAssignmentModalController.refreshFocusableElements === 'function') {
+        tripAssignmentModalController.refreshFocusableElements();
+    }
+}
+
+function setTripAssignmentMemberships(memberships) {
+    if (!Array.isArray(memberships)) {
+        tripAssignmentMemberships = [];
+    } else {
+        tripAssignmentMemberships = memberships
+            .map((entry) => normaliseTripMembership(entry))
+            .filter(Boolean);
+    }
+
+    renderTripAssignmentMemberships();
+}
+
+function handleTripMembershipListClick(event) {
+    if (!tripAssignmentMembershipList) { return; }
+    const button = event.target ? event.target.closest('.trip-membership-remove') : null;
+    if (!button || !tripAssignmentMembershipList.contains(button)) { return; }
+
+    event.preventDefault();
+
+    const tripId = button.dataset.tripId ? button.dataset.tripId.trim() : '';
+    if (!tripId) { return; }
+    if (!tripAssignmentPlaceId) {
+        showStatus('This data point cannot be updated.', true);
+        return;
+    }
+
+    const tripName = button.dataset.tripName || '';
+    removeLocationFromTrip(tripId, tripAssignmentPlaceId, {
+        triggerButton: button,
+        confirmMessage: tripName
+            ? `Remove this location from "${tripName}"?`
+            : 'Remove this location from the trip?',
+    });
+}
+
+function upsertTripInList(trip, options = {}) {
     const normalised = normaliseTrip(trip);
     if (!normalised) { return; }
+
+    const { reloadDetail = true } = options || {};
 
     const existing = Array.isArray(tripListState.trips) ? [...tripListState.trips] : [];
     const index = existing.findIndex((entry) => entry.id === normalised.id);
@@ -2503,14 +2754,150 @@ function upsertTripInList(trip) {
     tripListState.trips = existing;
     tripLocationCache.delete(normalised.id);
     if (tripDetailState.selectedTripId === normalised.id) {
-        tripDetailState.trip = { ...normalised };
-        updateTripDetailHeader();
-        const requestId = tripDetailState.requestId + 1;
-        tripDetailState.requestId = requestId;
-        setTripDetailLoading(true);
-        loadTripDetailData(normalised.id, requestId);
+        if (reloadDetail) {
+            tripDetailState.trip = { ...normalised };
+            updateTripDetailHeader();
+            const requestId = tripDetailState.requestId + 1;
+            tripDetailState.requestId = requestId;
+            setTripDetailLoading(true);
+            loadTripDetailData(normalised.id, requestId);
+        } else {
+            tripDetailState.trip = { ...(tripDetailState.trip || {}), ...normalised };
+            updateTripDetailHeader();
+        }
     }
     renderTripList();
+}
+
+function applyTripLocationRemoval(tripId, placeId, options = {}) {
+    const cleanedTripId = tripId ? String(tripId).trim() : '';
+    const cleanedPlaceId = placeId ? String(placeId).trim() : '';
+
+    if (!cleanedTripId || !cleanedPlaceId) { return; }
+
+    const { tripData = null } = options || {};
+
+    const cacheEntry = tripLocationCache.get(cleanedTripId);
+    if (cacheEntry && Array.isArray(cacheEntry.locations)) {
+        const filteredLocations = cacheEntry.locations.filter((location) => {
+            if (!location || typeof location !== 'object') { return true; }
+            const rawId = location.place_id ?? location.id ?? location.key ?? '';
+            const value = typeof rawId === 'string' ? rawId : String(rawId || '');
+            return value.trim() !== cleanedPlaceId;
+        });
+
+        if (filteredLocations.length !== cacheEntry.locations.length) {
+            const updatedTrip = tripData ? { ...(cacheEntry.trip || {}), ...tripData } : cacheEntry.trip;
+            tripLocationCache.set(cleanedTripId, { trip: updatedTrip, locations: filteredLocations });
+        } else if (tripData) {
+            tripLocationCache.set(cleanedTripId, { trip: { ...(cacheEntry.trip || {}), ...tripData }, locations: cacheEntry.locations });
+        }
+    }
+
+    if (tripDetailState.selectedTripId === cleanedTripId) {
+        const currentLocations = Array.isArray(tripDetailState.locations) ? tripDetailState.locations : [];
+        const filtered = currentLocations.filter((location) => {
+            if (!location || typeof location !== 'object') { return true; }
+            const rawId = location.place_id ?? location.id ?? location.key ?? '';
+            const value = typeof rawId === 'string' ? rawId.trim() : String(rawId || '').trim();
+            return value !== cleanedPlaceId;
+        });
+
+        if (filtered.length !== currentLocations.length) {
+            tripDetailState.locations = filtered;
+            const detailTrip = tripDetailState.trip ? { ...tripDetailState.trip } : null;
+            if (detailTrip) {
+                detailTrip.location_count = filtered.length;
+                if (tripData && tripData.updated_at) {
+                    detailTrip.updated_at = tripData.updated_at;
+                } else {
+                    detailTrip.updated_at = new Date().toISOString();
+                }
+                tripDetailState.trip = detailTrip;
+            }
+            if (tripDetailState.activeLocationId) {
+                const stillActive = filtered.some((location) => location && location.key === tripDetailState.activeLocationId);
+                if (!stillActive) {
+                    tripDetailState.activeLocationId = null;
+                }
+            }
+            updateTripDetailHeader();
+            renderTripLocationList();
+            focusMapOnTripLocations();
+        } else if (tripData && tripDetailState.trip) {
+            tripDetailState.trip = { ...tripDetailState.trip, ...tripData };
+            updateTripDetailHeader();
+        }
+    }
+}
+
+async function removeLocationFromTrip(tripId, placeId, options = {}) {
+    const cleanedTripId = typeof tripId === 'string' ? tripId.trim() : String(tripId || '').trim();
+    const cleanedPlaceId = typeof placeId === 'string' ? placeId.trim() : String(placeId || '').trim();
+
+    if (!cleanedTripId || !cleanedPlaceId) {
+        showStatus('Trip or location could not be determined.', true);
+        return;
+    }
+
+    const {
+        triggerButton = null,
+        skipConfirm = false,
+        confirmMessage = 'Remove this location from the trip?',
+        onSuccess = null,
+    } = options || {};
+
+    if (!skipConfirm) {
+        if (!window.confirm(confirmMessage)) { return; }
+    }
+
+    if (triggerButton) { triggerButton.disabled = true; }
+    showLoading();
+
+    try {
+        const response = await fetch(`/api/trips/${encodeURIComponent(cleanedTripId)}/locations/${encodeURIComponent(cleanedPlaceId)}`, {
+            method: 'DELETE',
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || result.status === 'error') {
+            const message = (result && result.message) ? result.message : 'Failed to remove location from trip.';
+            throw new Error(message);
+        }
+
+        const tripData = result && typeof result === 'object' ? result.trip : null;
+
+        showStatus(result.message || 'Location removed from trip.');
+
+        if (tripData) {
+            upsertTripInList(tripData, { reloadDetail: false });
+        } else {
+            await loadTripsPanelData();
+        }
+
+        applyTripLocationRemoval(cleanedTripId, cleanedPlaceId, { tripData });
+
+        if (tripAssignmentPlaceId && tripAssignmentPlaceId === cleanedPlaceId) {
+            tripAssignmentMemberships = tripAssignmentMemberships.filter((entry) => entry && entry.id !== cleanedTripId);
+            renderTripAssignmentMemberships();
+        }
+
+        if (typeof onSuccess === 'function') {
+            try {
+                onSuccess(result);
+            } catch (callbackError) {
+                console.error('Trip removal success handler failed', callbackError);
+            }
+        }
+
+        await loadMarkers();
+    } catch (error) {
+        console.error('Failed to remove location from trip', error);
+        showStatus(error.message || 'Failed to remove location from trip.', true);
+    } finally {
+        hideLoading();
+        if (triggerButton) { triggerButton.disabled = false; }
+    }
 }
 
 function showLoading() { document.getElementById('loading').style.display = 'flex'; }
@@ -3184,6 +3571,8 @@ function ensureTripAssignmentModal() {
     tripSelectElement = document.getElementById('tripSelect');
     newTripNameInput = document.getElementById('newTripName');
     tripSelectHelper = document.getElementById('tripSelectHelper');
+    tripAssignmentMembershipList = document.getElementById('tripMembershipList');
+    tripAssignmentMembershipEmpty = document.getElementById('tripMembershipEmpty');
 
     const controller = createModalController('tripAssignmentModal', {
         getInitialFocus: () => {
@@ -3199,6 +3588,8 @@ function ensureTripAssignmentModal() {
             tripModalContext = { triggerButton: null };
             const form = tripAssignmentForm || document.getElementById('tripAssignmentForm');
             if (form) { form.reset(); }
+            tripAssignmentMemberships = [];
+            renderTripAssignmentMemberships();
         },
     });
 
@@ -3215,6 +3606,10 @@ function ensureTripAssignmentModal() {
 
     if (tripAssignmentForm) {
         tripAssignmentForm.addEventListener('submit', handleTripAssignmentSubmit);
+    }
+
+    if (tripAssignmentMembershipList) {
+        tripAssignmentMembershipList.addEventListener('click', handleTripMembershipListClick);
     }
 
     return tripAssignmentModalController;
@@ -3321,6 +3716,9 @@ async function openTripAssignmentModal(markerData, options = {}) {
     const triggerButton = options.triggerButton || null;
     tripModalContext = { triggerButton };
     tripAssignmentPlaceId = markerData.id;
+
+    const memberships = Array.isArray(markerData.trips) ? markerData.trips : [];
+    setTripAssignmentMemberships(memberships);
 
     tripAssignmentForm = tripAssignmentForm || document.getElementById('tripAssignmentForm');
     if (tripAssignmentForm) {
@@ -3432,6 +3830,7 @@ async function handleTripAssignmentSubmit(event) {
         if (tripAssignmentModalController) {
             tripAssignmentModalController.close();
         }
+        await loadMarkers();
     } catch (error) {
         encounteredError = true;
         console.error('Failed to add location to trip', error);
