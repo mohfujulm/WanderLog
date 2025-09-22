@@ -629,6 +629,31 @@
             </form>
         </div>
     </div>
+    <div id="tripAssignmentModal" class="modal-overlay" aria-hidden="true" hidden>
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="tripAssignmentTitle" tabindex="-1">
+            <h2 id="tripAssignmentTitle">Add to Trip</h2>
+            <form id="tripAssignmentForm">
+                <div class="form-group">
+                    <label for="tripSelect">Choose a Trip</label>
+                    <select id="tripSelect" name="trip_id">
+                        <option value="" disabled selected>Loading trips...</option>
+                    </select>
+                    <p class="form-helper-text" id="tripSelectHelper">
+                        Select an existing trip or enter a name to create a new one.
+                    </p>
+                </div>
+                <div class="form-group">
+                    <label for="newTripName">Create New Trip</label>
+                    <input type="text" id="newTripName" name="new_trip_name" maxlength="120" autocomplete="off" placeholder="e.g. Summer Getaway">
+                    <p class="form-helper-text">Enter a new trip name to create it and add this location.</p>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="modal-button secondary" id="tripAssignmentCancel">Cancel</button>
+                    <button type="submit" class="modal-button primary">Add to Trip</button>
+                </div>
+            </form>
+        </div>
+    </div>
     <div id="archivedPointsModal" class="modal-overlay" aria-hidden="true" hidden>
         <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="archivedPointsTitle" tabindex="-1">
             <h2 id="archivedPointsTitle">Archived Data Points</h2>
@@ -658,6 +683,13 @@ let aliasModalController = null;
 let aliasOriginalNameElement = null;
 let aliasTargetMarkerId = null;
 let aliasModalContext = { isArchived: false, triggerButton: null };
+let tripAssignmentModalController = null;
+let tripAssignmentForm = null;
+let tripAssignmentPlaceId = null;
+let tripSelectElement = null;
+let newTripNameInput = null;
+let tripSelectHelper = null;
+let tripModalContext = { triggerButton: null };
 
 const SOURCE_TYPE_LABELS = {
     google_timeline: 'Google Timeline',
@@ -671,6 +703,7 @@ const MARKER_ICON_PATHS = {
 };
 
 const MAX_ALIAS_LENGTH = 120;
+const MAX_TRIP_NAME_LENGTH = 120;
 
 const markerIconCache = new Map();
 
@@ -734,7 +767,7 @@ function createPopupContent(markerData) {
         ? `<div class="marker-popup-row"><span class="marker-popup-label">Place Name</span><span class="marker-popup-value">${place}</span></div>`
         : '';
     const actions = hasId
-        ? `<div class="marker-actions"><button type="button" class="marker-action marker-action-alias">Rename</button><button type="button" class="marker-action marker-action-archive">Archive</button><button type="button" class="marker-action marker-action-delete">Delete</button></div>`
+        ? `<div class="marker-actions"><button type="button" class="marker-action marker-action-trip">Add to Trip</button><button type="button" class="marker-action marker-action-alias">Rename</button><button type="button" class="marker-action marker-action-archive">Archive</button><button type="button" class="marker-action marker-action-delete">Delete</button></div>`
         : '';
 
     return [
@@ -866,6 +899,14 @@ async function loadMarkers() {
             marker.on('popupopen', () => {
                 const popupElement = marker.getPopup() ? marker.getPopup().getElement() : null;
                 if (!popupElement) { return; }
+
+                const tripButton = popupElement.querySelector('.marker-action-trip');
+                if (tripButton) {
+                    tripButton.onclick = (event) => {
+                        event.preventDefault();
+                        openTripAssignmentModal(m, { triggerButton: tripButton });
+                    };
+                }
 
                 const archiveButton = popupElement.querySelector('.marker-action-archive');
                 if (archiveButton) {
@@ -1211,6 +1252,276 @@ async function handleAliasSubmit(event) {
         if (submitButton) { submitButton.disabled = false; }
         if (cancelButton) { cancelButton.disabled = false; }
         if (triggerButton) { triggerButton.disabled = false; }
+    }
+}
+
+function ensureTripAssignmentModal() {
+    if (tripAssignmentModalController) { return tripAssignmentModalController; }
+
+    tripAssignmentForm = document.getElementById('tripAssignmentForm');
+    tripSelectElement = document.getElementById('tripSelect');
+    newTripNameInput = document.getElementById('newTripName');
+    tripSelectHelper = document.getElementById('tripSelectHelper');
+
+    const controller = createModalController('tripAssignmentModal', {
+        getInitialFocus: () => {
+            tripSelectElement = tripSelectElement || document.getElementById('tripSelect');
+            if (tripSelectElement && !tripSelectElement.disabled && tripSelectElement.options.length > 1) {
+                return tripSelectElement;
+            }
+            newTripNameInput = newTripNameInput || document.getElementById('newTripName');
+            return newTripNameInput || null;
+        },
+        onClose: () => {
+            tripAssignmentPlaceId = null;
+            tripModalContext = { triggerButton: null };
+            const form = tripAssignmentForm || document.getElementById('tripAssignmentForm');
+            if (form) { form.reset(); }
+        },
+    });
+
+    if (!controller) { return null; }
+    tripAssignmentModalController = controller;
+
+    const cancelButton = document.getElementById('tripAssignmentCancel');
+    if (cancelButton) {
+        cancelButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            tripAssignmentModalController.close();
+        });
+    }
+
+    if (tripAssignmentForm) {
+        tripAssignmentForm.addEventListener('submit', handleTripAssignmentSubmit);
+    }
+
+    return tripAssignmentModalController;
+}
+
+async function populateTripSelect() {
+    tripSelectElement = tripSelectElement || document.getElementById('tripSelect');
+    tripSelectHelper = tripSelectHelper || document.getElementById('tripSelectHelper');
+
+    if (!tripSelectElement) { return []; }
+
+    tripSelectElement.innerHTML = '';
+    const loadingOption = document.createElement('option');
+    loadingOption.value = '';
+    loadingOption.textContent = 'Loading trips...';
+    loadingOption.disabled = true;
+    loadingOption.selected = true;
+    tripSelectElement.appendChild(loadingOption);
+    tripSelectElement.disabled = true;
+    tripSelectElement.dataset.hasTrips = 'false';
+
+    try {
+        const response = await fetch('/api/trips');
+        if (!response.ok) {
+            throw new Error('Failed to load trips.');
+        }
+
+        const trips = await response.json();
+        const tripList = Array.isArray(trips) ? trips : [];
+
+        tripSelectElement.innerHTML = '';
+
+        if (tripList.length === 0) {
+            const emptyOption = document.createElement('option');
+            emptyOption.value = '';
+            emptyOption.textContent = 'No trips available';
+            emptyOption.disabled = true;
+            emptyOption.selected = true;
+            tripSelectElement.appendChild(emptyOption);
+            tripSelectElement.disabled = true;
+            tripSelectElement.dataset.hasTrips = 'false';
+            if (tripSelectHelper) {
+                tripSelectHelper.textContent = 'No trips yet. Enter a name below to create your first trip.';
+            }
+            return tripList;
+        }
+
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Select a trip';
+        placeholder.disabled = true;
+        placeholder.selected = true;
+        tripSelectElement.appendChild(placeholder);
+
+        tripList.forEach((trip) => {
+            const option = document.createElement('option');
+            option.value = trip.id || '';
+            if (!option.value) { return; }
+
+            const count = Number(trip.location_count);
+            let label = trip.name || 'Untitled Trip';
+            if (Number.isFinite(count) && count > 0) {
+                label += ` (${count})`;
+            }
+            option.textContent = label;
+            tripSelectElement.appendChild(option);
+        });
+
+        tripSelectElement.disabled = false;
+        tripSelectElement.dataset.hasTrips = 'true';
+        if (tripSelectHelper) {
+            tripSelectHelper.textContent = 'Select an existing trip or enter a name to create a new one.';
+        }
+
+        return tripList;
+    } catch (error) {
+        tripSelectElement.innerHTML = '';
+        const errorOption = document.createElement('option');
+        errorOption.value = '';
+        errorOption.textContent = 'Failed to load trips';
+        errorOption.disabled = true;
+        errorOption.selected = true;
+        tripSelectElement.appendChild(errorOption);
+        tripSelectElement.disabled = true;
+        tripSelectElement.dataset.hasTrips = 'false';
+        if (tripSelectHelper) {
+            tripSelectHelper.textContent = 'We could not load trips. Please try again.';
+        }
+        throw error;
+    }
+}
+
+async function openTripAssignmentModal(markerData, options = {}) {
+    if (!markerData || !markerData.id) {
+        showStatus('This data point cannot be added to a trip.', true);
+        return;
+    }
+
+    const controller = ensureTripAssignmentModal();
+    if (!controller) { return; }
+
+    const triggerButton = options.triggerButton || null;
+    tripModalContext = { triggerButton };
+    tripAssignmentPlaceId = markerData.id;
+
+    tripAssignmentForm = tripAssignmentForm || document.getElementById('tripAssignmentForm');
+    if (tripAssignmentForm) {
+        tripAssignmentForm.reset();
+    }
+
+    if (triggerButton) { triggerButton.disabled = true; }
+    showLoading();
+
+    try {
+        await populateTripSelect();
+        controller.open();
+        if (controller.refreshFocusableElements) {
+            controller.refreshFocusableElements();
+        }
+    } catch (error) {
+        console.error('Failed to open trip assignment modal', error);
+        tripAssignmentPlaceId = null;
+        tripModalContext = { triggerButton: null };
+        showStatus(error.message || 'Failed to load trips.', true);
+    } finally {
+        hideLoading();
+        if (triggerButton) { triggerButton.disabled = false; }
+    }
+}
+
+async function handleTripAssignmentSubmit(event) {
+    event.preventDefault();
+
+    tripAssignmentForm = tripAssignmentForm || document.getElementById('tripAssignmentForm');
+    if (!tripAssignmentForm) { return; }
+
+    if (!tripAssignmentPlaceId) {
+        showStatus('This data point cannot be added to a trip.', true);
+        return;
+    }
+
+    tripSelectElement = tripSelectElement || document.getElementById('tripSelect');
+    newTripNameInput = newTripNameInput || document.getElementById('newTripName');
+
+    const selectedTripId = tripSelectElement && !tripSelectElement.disabled
+        ? (tripSelectElement.value || '').trim()
+        : '';
+    const newTripNameValue = newTripNameInput
+        ? newTripNameInput.value.trim()
+        : '';
+
+    if (!selectedTripId && !newTripNameValue) {
+        showStatus('Select a trip or enter a new trip name.', true);
+        if (tripSelectElement && !tripSelectElement.disabled) {
+            tripSelectElement.focus();
+        } else if (newTripNameInput) {
+            newTripNameInput.focus();
+        }
+        return;
+    }
+
+    if (newTripNameValue && newTripNameValue.length > MAX_TRIP_NAME_LENGTH) {
+        showStatus(`Trip name must be ${MAX_TRIP_NAME_LENGTH} characters or fewer.`, true);
+        if (newTripNameInput) { newTripNameInput.focus(); }
+        return;
+    }
+
+    const submitButton = tripAssignmentForm.querySelector('button[type="submit"]');
+    const cancelButton = document.getElementById('tripAssignmentCancel');
+    const triggerButton = tripModalContext.triggerButton || null;
+
+    const previousSelectDisabled = tripSelectElement ? tripSelectElement.disabled : false;
+    const previousInputDisabled = newTripNameInput ? newTripNameInput.disabled : false;
+
+    if (submitButton) { submitButton.disabled = true; }
+    if (cancelButton) { cancelButton.disabled = true; }
+    if (tripSelectElement) { tripSelectElement.disabled = true; }
+    if (newTripNameInput) { newTripNameInput.disabled = true; }
+    if (triggerButton) { triggerButton.disabled = true; }
+
+    showLoading();
+
+    let encounteredError = false;
+
+    try {
+        const payload = { place_id: tripAssignmentPlaceId };
+        if (newTripNameValue) {
+            payload.new_trip_name = newTripNameValue;
+        } else {
+            payload.trip_id = selectedTripId;
+        }
+
+        const response = await fetch('/api/trips/assign', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || result.status === 'error') {
+            const message = (result && result.message)
+                ? result.message
+                : 'Failed to add to trip.';
+            throw new Error(message);
+        }
+
+        showStatus(result.message || 'Location added to trip.');
+        if (tripAssignmentModalController) {
+            tripAssignmentModalController.close();
+        }
+    } catch (error) {
+        encounteredError = true;
+        console.error('Failed to add location to trip', error);
+        showStatus(error.message || 'Failed to add to trip.', true);
+    } finally {
+        hideLoading();
+        if (submitButton) { submitButton.disabled = false; }
+        if (cancelButton) { cancelButton.disabled = false; }
+        if (tripSelectElement) { tripSelectElement.disabled = previousSelectDisabled; }
+        if (newTripNameInput) { newTripNameInput.disabled = previousInputDisabled; }
+        if (triggerButton) { triggerButton.disabled = false; }
+    }
+
+    if (encounteredError) {
+        if (newTripNameValue && newTripNameInput) {
+            newTripNameInput.focus();
+        } else if (tripSelectElement && !tripSelectElement.disabled) {
+            tripSelectElement.focus();
+        }
     }
 }
 
