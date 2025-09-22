@@ -8,12 +8,46 @@ from flask import Blueprint, jsonify, render_template, request
 
 from app.map_utils import dataframe_to_markers, filter_dataframe_by_date_range
 from app.utils.json_processing_functions import unique_visits_to_df
-from . import data_cache
+from . import data_cache, trip_store
 
 main = Blueprint("main", __name__)
 
 MAPBOX_ACCESS_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN")
 MAX_ALIAS_LENGTH = 120
+MAX_TRIP_NAME_LENGTH = 120
+
+
+def _serialise_trip(trip) -> dict:
+    """Return a JSON-serialisable dictionary for ``trip``."""
+
+    if trip is None:
+        return {}
+
+    if isinstance(trip, dict):
+        place_ids = trip.get('place_ids')
+        if isinstance(place_ids, list):
+            location_count = len(place_ids)
+        else:
+            location_count = 0
+        return {
+            'id': trip.get('id', ''),
+            'name': trip.get('name', ''),
+            'location_count': location_count,
+            'created_at': trip.get('created_at'),
+            'updated_at': trip.get('updated_at'),
+        }
+
+    place_ids = getattr(trip, 'place_ids', []) or []
+    location_count = len(place_ids) if isinstance(place_ids, list) else 0
+
+    return {
+        'id': getattr(trip, 'id', ''),
+        'name': getattr(trip, 'name', ''),
+        'location_count': location_count,
+        'created_at': getattr(trip, 'created_at', None),
+        'updated_at': getattr(trip, 'updated_at', None),
+    }
+
 
 @main.route('/')
 def index():
@@ -200,6 +234,106 @@ def api_source_types():
 
     types = sorted(df.get('Source Type').dropna().unique().tolist())
     return jsonify(types)
+
+
+@main.route('/api/trips', methods=['GET'])
+def api_list_trips():
+    """Return the list of available trips."""
+
+    trips = trip_store.list_trips()
+    return jsonify([_serialise_trip(trip) for trip in trips])
+
+
+@main.route('/api/trips', methods=['POST'])
+def api_create_trip():
+    """Create a new trip."""
+
+    payload = request.get_json(silent=True) or {}
+    name = payload.get('name') or payload.get('trip_name') or ''
+    name = str(name).strip()
+
+    if not name:
+        return jsonify(status='error', message='Trip name is required.'), 400
+
+    if len(name) > MAX_TRIP_NAME_LENGTH:
+        return jsonify(
+            status='error',
+            message=f'Trip name must be {MAX_TRIP_NAME_LENGTH} characters or fewer.'
+        ), 400
+
+    try:
+        trip = trip_store.create_trip(name)
+    except ValueError as exc:
+        return jsonify(status='error', message=str(exc)), 400
+
+    return jsonify(
+        status='success',
+        message='Trip created successfully.',
+        trip=_serialise_trip(trip),
+    ), 201
+
+
+@main.route('/api/trips/assign', methods=['POST'])
+def api_assign_trip():
+    """Assign a timeline data point to a trip."""
+
+    payload = request.get_json(silent=True) or {}
+    place_id = str(payload.get('place_id') or '').strip()
+
+    if not place_id:
+        return jsonify(status='error', message='A valid place ID is required.'), 400
+
+    df = data_cache.timeline_df
+    if df is None or df.empty or 'Place ID' not in df.columns:
+        return jsonify(status='error', message='Data point not found.'), 404
+
+    mask = df['Place ID'] == place_id
+    if not mask.any():
+        return jsonify(status='error', message='Data point not found.'), 404
+
+    trip_id = str(payload.get('trip_id') or '').strip()
+    new_trip_name = payload.get('new_trip_name') or payload.get('trip_name') or ''
+    new_trip_name = str(new_trip_name).strip()
+
+    created_new = False
+
+    if new_trip_name:
+        if len(new_trip_name) > MAX_TRIP_NAME_LENGTH:
+            return jsonify(
+                status='error',
+                message=f'Trip name must be {MAX_TRIP_NAME_LENGTH} characters or fewer.'
+            ), 400
+        try:
+            trip = trip_store.create_trip(new_trip_name)
+            created_new = True
+        except ValueError as exc:
+            return jsonify(status='error', message=str(exc)), 400
+    else:
+        if not trip_id:
+            return jsonify(
+                status='error',
+                message='Select an existing trip or provide a new trip name.'
+            ), 400
+
+        trip = trip_store.get_trip(trip_id)
+        if trip is None:
+            return jsonify(status='error', message='Trip not found.'), 404
+
+    try:
+        trip_identifier = trip.id if hasattr(trip, 'id') else trip.get('id')
+        trip = trip_store.add_place_to_trip(trip_identifier, place_id)
+    except KeyError:
+        return jsonify(status='error', message='Trip not found.'), 404
+    except ValueError as exc:
+        return jsonify(status='error', message=str(exc)), 400
+
+    message = 'Trip created and location added.' if created_new else 'Location added to trip.'
+    return jsonify(
+        status='success',
+        message=message,
+        trip=_serialise_trip(trip),
+        created=created_new,
+    )
 
 
 @main.route('/api/map_data', methods=['GET', 'POST'])
