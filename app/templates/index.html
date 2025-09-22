@@ -30,6 +30,63 @@
             filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.25));
         }
 
+        .leaflet-marker-icon.trip-marker-icon {
+            position: relative;
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 35% 35%, rgba(255, 255, 255, 0.95), rgba(255, 125, 0, 0.95));
+            border: 4px solid rgba(255, 255, 255, 0.9);
+            box-shadow: 0 12px 28px rgba(255, 107, 0, 0.45);
+            overflow: hidden;
+            transform-origin: center;
+            transition: transform 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .leaflet-marker-icon.trip-marker-icon::after {
+            content: '';
+            position: absolute;
+            inset: 8px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ff7a18, #ffb347);
+            box-shadow: inset 0 0 10px rgba(255, 255, 255, 0.55);
+        }
+
+        .leaflet-marker-icon.trip-marker-icon::before {
+            content: '';
+            position: absolute;
+            bottom: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 18px;
+            height: 18px;
+            background: rgba(255, 125, 0, 0.65);
+            border-radius: 50%;
+            filter: blur(8px);
+        }
+
+        .leaflet-marker-icon.trip-marker-icon:hover,
+        .leaflet-marker-icon.trip-marker-icon.leaflet-interactive:focus {
+            transform: scale(1.06);
+            box-shadow: 0 16px 34px rgba(255, 107, 0, 0.55);
+        }
+
+        .leaflet-tooltip.trip-marker-tooltip {
+            background: rgba(17, 24, 39, 0.92);
+            color: #fff;
+            border: none;
+            border-radius: 999px;
+            padding: 6px 12px;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.3);
+        }
+
+        .leaflet-tooltip.trip-marker-tooltip::before {
+            display: none;
+        }
+
         .menu-container {   position: absolute;
                             top: 24px;
                             right: 24px;
@@ -313,7 +370,7 @@
 
         .trip-sort-direction {  border: none;
                                 border-radius: 12px;
-                                padding: 10px 16px;
+                                padding: 9px 14px;
                                 background: #111827;
                                 color: #fff;
                                 font-size: 12px;
@@ -321,7 +378,10 @@
                                 cursor: pointer;
                                 transition: background 0.2s ease, transform 0.2s ease;
                                 letter-spacing: 0.06em;
-                                text-transform: uppercase; }
+                                text-transform: uppercase;
+                                display: inline-flex;
+                                align-items: center;
+                                justify-content: center; }
 
         .trip-sort-direction:hover {   background: #1f2937;
                                         transform: translateY(-1px); }
@@ -1045,8 +1105,16 @@
 const MAPBOX_TOKEN = "{{ mapbox_token }}";
 const MENU_ICON_PATH = "{{ url_for('static', filename='assets/menu-icon.svg') }}";
 const CLOSE_ICON_PATH = "{{ url_for('static', filename='assets/close-icon.svg') }}";
+const MAP_DEFAULT_CENTER = [40.65997395108914, -73.71300111746832];
+const MAP_DEFAULT_ZOOM = 5;
+const TRIP_SINGLE_MARKER_ZOOM = 11;
+const TRIP_BOUNDS_PADDING = [80, 80];
 let map;
 let markerCluster;
+let tripMarkerLayer = null;
+let tripMarkerIconInstance = null;
+let isTripMapModeActive = false;
+let previousMapView = null;
 let manualPointForm;
 let manualPointModalController = null;
 let archivedPointsModalController = null;
@@ -1670,6 +1738,8 @@ function openTripDetail(tripId, triggerElement) {
     tripDetailState.locations = [];
     tripDetailState.trip = null;
 
+    activateTripMapMode();
+
     if (tripLocationSearchInput) { tripLocationSearchInput.value = ''; }
     if (tripLocationSortFieldSelect) { tripLocationSortFieldSelect.value = TRIP_LOCATION_SORT_FIELD_DATE; }
     updateTripLocationSortDirectionButton();
@@ -1700,6 +1770,7 @@ function openTripDetail(tripId, triggerElement) {
         tripDetailState.locations = locations;
         updateTripDetailHeader();
         renderTripLocationList();
+        focusMapOnTripLocations();
         setTripDetailLoading(false);
     } else {
         loadTripDetailData(tripId, requestId);
@@ -1754,6 +1825,8 @@ function closeTripDetail(options = {}) {
         tripDetailUpdatedElement.hidden = true;
         tripDetailUpdatedElement.textContent = '';
     }
+
+    deactivateTripMapMode();
 
     if (!skipRender) {
         renderTripList();
@@ -2201,10 +2274,12 @@ async function loadTripDetailData(tripId, requestId) {
         tripDetailState.locations = locations;
         updateTripDetailHeader();
         renderTripLocationList();
+        focusMapOnTripLocations();
     } catch (error) {
         if (tripDetailState.requestId !== activeRequestId || tripDetailState.selectedTripId !== tripId) { return; }
         console.error('Failed to load trip details', error);
         showTripLocationError(error.message || 'Failed to load trip.');
+        showTripLocationsOnMap([]);
     } finally {
         if (tripDetailState.requestId === activeRequestId && tripDetailState.selectedTripId === tripId) {
             setTripDetailLoading(false);
@@ -2267,9 +2342,154 @@ function showStatus(message, isError=false) {
     setTimeout(() => status.style.display = 'none', 4000);
 }
 
+function ensureTripMarkerLayer() {
+    if (!tripMarkerLayer) {
+        tripMarkerLayer = L.featureGroup();
+    }
+    return tripMarkerLayer;
+}
+
+function getTripHighlightIcon() {
+    if (tripMarkerIconInstance) { return tripMarkerIconInstance; }
+    tripMarkerIconInstance = L.divIcon({
+        className: 'trip-marker-icon',
+        iconSize: [48, 48],
+        iconAnchor: [24, 24],
+        popupAnchor: [0, -28],
+    });
+    return tripMarkerIconInstance;
+}
+
+function activateTripMapMode() {
+    const wasActive = isTripMapModeActive;
+    isTripMapModeActive = true;
+
+    const layer = ensureTripMarkerLayer();
+    layer.clearLayers();
+
+    if (!map) { return layer; }
+
+    if (!wasActive || !previousMapView) {
+        try {
+            previousMapView = { center: map.getCenter(), zoom: map.getZoom() };
+        } catch (error) {
+            previousMapView = null;
+        }
+    }
+
+    if (typeof map.closePopup === 'function') {
+        map.closePopup();
+    }
+
+    if (markerCluster && map.hasLayer(markerCluster)) {
+        map.removeLayer(markerCluster);
+    }
+
+    if (!map.hasLayer(layer)) {
+        layer.addTo(map);
+    }
+
+    return layer;
+}
+
+function deactivateTripMapMode(options = {}) {
+    const { reload = false } = options || {};
+    isTripMapModeActive = false;
+
+    if (!tripMarkerLayer) {
+        previousMapView = null;
+        if (reload && typeof loadMarkers === 'function') {
+            loadMarkers();
+        }
+        return;
+    }
+
+    tripMarkerLayer.clearLayers();
+
+    if (map && map.hasLayer(tripMarkerLayer)) {
+        map.removeLayer(tripMarkerLayer);
+    }
+
+    if (map && markerCluster && !map.hasLayer(markerCluster)) {
+        map.addLayer(markerCluster);
+    }
+
+    if (map && previousMapView) {
+        try {
+            map.flyTo(previousMapView.center, previousMapView.zoom, { duration: 0.5 });
+        } catch (error) {
+            map.setView(previousMapView.center, previousMapView.zoom);
+        }
+    }
+    previousMapView = null;
+
+    if (reload && typeof loadMarkers === 'function') {
+        loadMarkers();
+    }
+}
+
+function showTripLocationsOnMap(locations) {
+    const layer = activateTripMapMode();
+    if (!map) { return; }
+    if (!layer) { return; }
+
+    const highlightIcon = getTripHighlightIcon();
+    const tooltipOptions = {
+        direction: 'top',
+        offset: [0, -24],
+        className: 'trip-marker-tooltip',
+        sticky: true,
+    };
+
+    const points = [];
+
+    (Array.isArray(locations) ? locations : []).forEach((location) => {
+        if (!location || typeof location !== 'object') { return; }
+        const lat = Number(location.latitude);
+        const lng = Number(location.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) { return; }
+        const latLng = L.latLng(lat, lng);
+        const title = location.display_name || location.alias || location.name || '';
+        const marker = L.marker(latLng, {
+            icon: highlightIcon,
+            title: title || undefined,
+            riseOnHover: true,
+            keyboard: false,
+        });
+        if (title) {
+            marker.bindTooltip(title, tooltipOptions);
+        }
+        layer.addLayer(marker);
+        points.push(latLng);
+    });
+
+    if (!points.length) {
+        map.flyTo(MAP_DEFAULT_CENTER, MAP_DEFAULT_ZOOM, { duration: 0.5 });
+        return;
+    }
+
+    if (points.length === 1) {
+        map.flyTo(points[0], TRIP_SINGLE_MARKER_ZOOM, { duration: 0.7 });
+        return;
+    }
+
+    const bounds = L.latLngBounds(points);
+    map.flyToBounds(bounds, {
+        padding: TRIP_BOUNDS_PADDING,
+        duration: 0.75,
+        maxZoom: TRIP_SINGLE_MARKER_ZOOM,
+    });
+}
+
+function focusMapOnTripLocations() {
+    if (!tripDetailState.selectedTripId) { return; }
+    const locations = Array.isArray(tripDetailState.locations) ? tripDetailState.locations : [];
+    showTripLocationsOnMap(locations);
+}
+
 function initMap() {
     // Create a Leaflet map centered on a default view
-    map = L.map('map').setView([40.65997395108914, -73.71300111746832], 5);
+    map = L.map('map').setView(MAP_DEFAULT_CENTER, MAP_DEFAULT_ZOOM);
     // Add Mapbox tiles using the token passed from the backend
     L.tileLayer(`https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`, {
         maxZoom: 18,
@@ -2280,6 +2500,10 @@ function initMap() {
     map.addLayer(markerCluster);
     // Load existing markers once the map is ready
     loadMarkers();
+
+    if (isTripMapModeActive && tripDetailState.selectedTripId) {
+        focusMapOnTripLocations();
+    }
 }
 
 async function loadMarkers() {
