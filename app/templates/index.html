@@ -437,7 +437,23 @@
                                     border-radius: 16px;
                                     border: 1px solid rgba(229,231,235,0.85);
                                     box-shadow: 0 3px 12px rgba(15,23,42,0.08);
-                                    text-align: right; }
+                                    text-align: right;
+                                    cursor: pointer;
+                                    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; }
+
+        .trip-location-item:hover {    transform: translateY(-1px);
+                                        box-shadow: 0 6px 16px rgba(15,23,42,0.12); }
+
+        .trip-location-item:focus-visible {    outline: 2px solid rgba(17,24,39,0.65);
+                                                outline-offset: 3px; }
+
+        .trip-location-item-active {  border-color: rgba(17,24,39,0.6);
+                                        box-shadow: 0 8px 20px rgba(17,24,39,0.18);
+                                        background: rgba(17,24,39,0.05); }
+
+        .trip-location-item-active .trip-location-name {
+            color: #0f172a;
+        }
 
         .trip-location-item-missing {
             border-style: dashed;
@@ -1113,6 +1129,7 @@ let map;
 let markerCluster;
 let tripMarkerLayer = null;
 let tripMarkerIconInstance = null;
+const tripMarkerLookup = new Map();
 let isTripMapModeActive = false;
 let previousMapView = null;
 let manualPointForm;
@@ -1180,6 +1197,7 @@ const tripDetailState = {
     sortDirection: TRIP_SORT_DIRECTION_ASC,
     triggerElement: null,
     requestId: 0,
+    activeLocationId: null,
 };
 
 const tripLocationCache = new Map();
@@ -1695,6 +1713,11 @@ function initTripDetailPanel() {
         updateTripLocationSortDirectionButton();
     }
 
+    if (tripLocationListContainer) {
+        tripLocationListContainer.addEventListener('click', handleTripLocationListClick);
+        tripLocationListContainer.addEventListener('keydown', handleTripLocationListKeydown);
+    }
+
     tripDetailState.initialised = true;
 }
 
@@ -1723,6 +1746,33 @@ function handleTripListKeydown(event) {
     openTripDetail(tripId, target);
 }
 
+function handleTripLocationListClick(event) {
+    if (!tripLocationListContainer) { return; }
+    const target = event.target ? event.target.closest('.trip-location-item') : null;
+    if (!target || !tripLocationListContainer.contains(target)) { return; }
+    const locationId = target.dataset.locationId || '';
+    if (!locationId) { return; }
+    event.preventDefault();
+    focusTripLocationById(locationId, target);
+}
+
+function handleTripLocationListKeydown(event) {
+    if (!tripLocationListContainer) { return; }
+    if (event.defaultPrevented) { return; }
+    const key = event.key;
+    if (key !== 'Enter' && key !== ' ') { return; }
+    const target = event.target
+        ? (event.target.classList && event.target.classList.contains('trip-location-item')
+            ? event.target
+            : event.target.closest('.trip-location-item'))
+        : null;
+    if (!target || !tripLocationListContainer.contains(target)) { return; }
+    const locationId = target.dataset.locationId || '';
+    if (!locationId) { return; }
+    event.preventDefault();
+    focusTripLocationById(locationId, target);
+}
+
 function openTripDetail(tripId, triggerElement) {
     if (!tripId) { return; }
     if (!tripListState.initialised) { initTripsPanel(); }
@@ -1737,6 +1787,7 @@ function openTripDetail(tripId, triggerElement) {
     tripDetailState.sortDirection = TRIP_SORT_DIRECTION_ASC;
     tripDetailState.locations = [];
     tripDetailState.trip = null;
+    tripDetailState.activeLocationId = null;
 
     activateTripMapMode();
 
@@ -1799,6 +1850,7 @@ function closeTripDetail(options = {}) {
     tripDetailState.sortDirection = TRIP_SORT_DIRECTION_ASC;
     tripDetailState.requestId += 1;
     tripDetailState.triggerElement = null;
+    tripDetailState.activeLocationId = null;
 
     if (tripLocationSearchInput) { tripLocationSearchInput.value = ''; }
     if (tripLocationSortFieldSelect) { tripLocationSortFieldSelect.value = TRIP_LOCATION_SORT_FIELD_DATE; }
@@ -1992,6 +2044,13 @@ function renderTripLocationList() {
     const hasLocations = locations.length > 0;
     const searchTerm = tripDetailState.searchTerm;
 
+    if (tripDetailState.activeLocationId) {
+        const activeExists = locations.some((entry) => entry && entry.key === tripDetailState.activeLocationId);
+        if (!activeExists) {
+            tripDetailState.activeLocationId = null;
+        }
+    }
+
     let filtered = locations;
     if (searchTerm) {
         filtered = locations.filter((location) => createTripLocationSearchText(location).includes(searchTerm));
@@ -2022,6 +2081,7 @@ function renderTripLocationList() {
     tripLocationListContainer.appendChild(fragment);
     tripLocationListContainer.hidden = false;
     tripLocationListContainer.scrollTop = 0;
+    updateActiveTripLocationHighlight();
 }
 
 function compareTripLocations(a, b) {
@@ -2111,7 +2171,10 @@ function normaliseTripLocation(location, index) {
     const latitude = Number.isFinite(latitudeNumber) ? latitudeNumber : null;
     const longitude = Number.isFinite(longitudeNumber) ? longitudeNumber : null;
 
+    const key = placeId || `trip-location-${index}`;
+
     return {
+        key,
         place_id: placeId,
         name,
         alias,
@@ -2151,9 +2214,25 @@ function createTripLocationListItem(location) {
     const item = document.createElement('article');
     item.className = 'trip-location-item';
     item.setAttribute('role', 'listitem');
-    if (location.place_id) { item.dataset.placeId = location.place_id; }
+    item.tabIndex = 0;
+    if (location.key) { item.dataset.locationId = location.key; }
     if (location.missing) {
         item.classList.add('trip-location-item-missing');
+    }
+
+    if (tripDetailState.activeLocationId && location.key === tripDetailState.activeLocationId) {
+        item.classList.add('trip-location-item-active');
+    }
+
+    const hasCoordinates = typeof location.latitude === 'number'
+        && Number.isFinite(location.latitude)
+        && typeof location.longitude === 'number'
+        && Number.isFinite(location.longitude);
+    const accessibleName = location.display_name || location.alias || location.name || 'Unknown location';
+    if (location.missing || !hasCoordinates) {
+        item.setAttribute('aria-label', `${accessibleName}. Location details are unavailable on the map.`);
+    } else {
+        item.setAttribute('aria-label', `Focus map on ${accessibleName}`);
     }
 
     const title = document.createElement('div');
@@ -2239,6 +2318,60 @@ function createTripLocationListItem(location) {
 
     item.appendChild(meta);
     return item;
+}
+
+function findTripLocationById(placeId) {
+    if (!placeId) { return null; }
+    const locations = Array.isArray(tripDetailState.locations) ? tripDetailState.locations : [];
+    return locations.find((entry) => entry && entry.key === placeId) || null;
+}
+
+function updateActiveTripLocationHighlight() {
+    if (!tripLocationListContainer) { return; }
+    const activeId = tripDetailState.activeLocationId;
+    const items = tripLocationListContainer.querySelectorAll('.trip-location-item');
+    items.forEach((element) => {
+        if (activeId && element.dataset.locationId === activeId) {
+            element.classList.add('trip-location-item-active');
+        } else {
+            element.classList.remove('trip-location-item-active');
+        }
+    });
+}
+
+function focusTripLocationById(locationId, sourceElement) {
+    const location = findTripLocationById(locationId);
+    if (!location) {
+        showStatus('Details for this location are unavailable.', true);
+        return;
+    }
+
+    const hasCoordinates = typeof location.latitude === 'number'
+        && Number.isFinite(location.latitude)
+        && typeof location.longitude === 'number'
+        && Number.isFinite(location.longitude);
+
+    if (!hasCoordinates || location.missing) {
+        showStatus('Map location is unavailable for this place.', true);
+        return;
+    }
+
+    const moved = focusMapOnTripLocation(location);
+    if (!moved) {
+        showStatus('Map location is unavailable for this place.', true);
+        return;
+    }
+
+    tripDetailState.activeLocationId = location.key;
+    updateActiveTripLocationHighlight();
+
+    if (sourceElement && typeof sourceElement.focus === 'function') {
+        try {
+            sourceElement.focus({ preventScroll: true });
+        } catch (error) {
+            sourceElement.focus();
+        }
+    }
 }
 
 async function loadTripDetailData(tripId, requestId) {
@@ -2366,6 +2499,7 @@ function activateTripMapMode() {
 
     const layer = ensureTripMarkerLayer();
     layer.clearLayers();
+    tripMarkerLookup.clear();
 
     if (!map) { return layer; }
 
@@ -2405,6 +2539,7 @@ function deactivateTripMapMode(options = {}) {
     }
 
     tripMarkerLayer.clearLayers();
+    tripMarkerLookup.clear();
 
     if (map && map.hasLayer(tripMarkerLayer)) {
         map.removeLayer(tripMarkerLayer);
@@ -2428,7 +2563,8 @@ function deactivateTripMapMode(options = {}) {
     }
 }
 
-function showTripLocationsOnMap(locations) {
+function showTripLocationsOnMap(locations, options = {}) {
+    const { adjustView = true } = options || {};
     const layer = activateTripMapMode();
     if (!map) { return; }
     if (!layer) { return; }
@@ -2460,13 +2596,21 @@ function showTripLocationsOnMap(locations) {
             marker.bindTooltip(title, tooltipOptions);
         }
         layer.addLayer(marker);
+        const markerKey = location.key || location.place_id;
+        if (markerKey) {
+            tripMarkerLookup.set(markerKey, marker);
+        }
         points.push(latLng);
     });
 
     if (!points.length) {
-        map.flyTo(MAP_DEFAULT_CENTER, MAP_DEFAULT_ZOOM, { duration: 0.5 });
+        if (adjustView) {
+            map.flyTo(MAP_DEFAULT_CENTER, MAP_DEFAULT_ZOOM, { duration: 0.5 });
+        }
         return;
     }
+
+    if (!adjustView) { return; }
 
     if (points.length === 1) {
         map.flyTo(points[0], TRIP_SINGLE_MARKER_ZOOM, { duration: 0.7 });
@@ -2479,6 +2623,39 @@ function showTripLocationsOnMap(locations) {
         duration: 0.75,
         maxZoom: TRIP_SINGLE_MARKER_ZOOM,
     });
+}
+
+function focusMapOnTripLocation(location) {
+    if (!map) { return false; }
+    if (!location || typeof location !== 'object') { return false; }
+
+    const lat = Number(location.latitude);
+    const lng = Number(location.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) { return false; }
+
+    const markerKey = (typeof location.key === 'string' && location.key)
+        ? location.key
+        : (typeof location.place_id === 'string' ? location.place_id : '');
+    if (!isTripMapModeActive || !markerKey || !tripMarkerLookup.has(markerKey)) {
+        const allLocations = Array.isArray(tripDetailState.locations) ? tripDetailState.locations : [];
+        showTripLocationsOnMap(allLocations, { adjustView: false });
+    }
+
+    const targetLatLng = L.latLng(lat, lng);
+    try {
+        map.flyTo(targetLatLng, TRIP_SINGLE_MARKER_ZOOM, { duration: 0.7 });
+    } catch (error) {
+        map.setView(targetLatLng, TRIP_SINGLE_MARKER_ZOOM);
+    }
+
+    if (markerKey) {
+        const marker = tripMarkerLookup.get(markerKey);
+        if (marker && typeof marker.openTooltip === 'function') {
+            marker.openTooltip();
+        }
+    }
+
+    return true;
 }
 
 function focusMapOnTripLocations() {
