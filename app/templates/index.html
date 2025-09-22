@@ -1834,9 +1834,6 @@ function handleManageModeKeyDown(event) {
     const openModal = document.querySelector('.modal-overlay.open');
     if (openModal) { return; }
 
-    const menuElement = document.querySelector('.menu-container');
-    if (menuElement && menuElement.classList.contains('open')) { return; }
-
     exitManageMode();
     event.stopPropagation();
     event.preventDefault();
