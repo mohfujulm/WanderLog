@@ -1512,13 +1512,16 @@ const manageModeState = {
     active: false,
     selectedIds: new Set(),
     isDragging: false,
+    isMiddlePanning: false,
     dragStartLatLng: null,
     dragStartPoint: null,
     dragCurrentLatLng: null,
     dragCurrentPoint: null,
     dragMode: 'add',
     selectionRectangle: null,
+    middlePanLastPoint: null,
     mapHandlersAttached: false,
+    keyHandlerAttached: false,
     interactionState: {
         dragging: true,
         doubleClickZoom: true,
@@ -1789,6 +1792,11 @@ function initManageModeControls() {
         });
     }
 
+    if (!manageModeState.keyHandlerAttached) {
+        document.addEventListener('keydown', handleManageModeKeyDown);
+        manageModeState.keyHandlerAttached = true;
+    }
+
     updateManageModeToggleState();
     updateSelectionSummary();
 }
@@ -1816,6 +1824,24 @@ function setupManageModeMapInteractions() {
     manageModeState.mapHandlersAttached = true;
 }
 
+function handleManageModeKeyDown(event) {
+    if (!event || !isManageModeActive()) { return; }
+
+    const key = typeof event.key === 'string' ? event.key : (typeof event.code === 'string' ? event.code : '');
+    if (key !== 'Escape' && key !== 'Esc') { return; }
+    if (event.defaultPrevented) { return; }
+
+    const openModal = document.querySelector('.modal-overlay.open');
+    if (openModal) { return; }
+
+    const menuElement = document.querySelector('.menu-container');
+    if (menuElement && menuElement.classList.contains('open')) { return; }
+
+    exitManageMode();
+    event.stopPropagation();
+    event.preventDefault();
+}
+
 function enterManageMode() {
     if (!map) {
         showStatus('Map is still loading. Please try again.', true);
@@ -1829,6 +1855,8 @@ function enterManageMode() {
     manageModeState.active = true;
     manageModeState.dragCurrentLatLng = null;
     manageModeState.dragCurrentPoint = null;
+    manageModeState.isMiddlePanning = false;
+    manageModeState.middlePanLastPoint = null;
     if (map.dragging && typeof map.dragging.enabled === 'function') {
         manageModeState.interactionState.dragging = map.dragging.enabled();
         map.dragging.disable();
@@ -1861,8 +1889,10 @@ function exitManageMode() {
 
     manageModeState.active = false;
     manageModeState.isDragging = false;
+    manageModeState.isMiddlePanning = false;
     manageModeState.dragCurrentLatLng = null;
     manageModeState.dragCurrentPoint = null;
+    manageModeState.middlePanLastPoint = null;
 
     if (map) {
         if (map.dragging && typeof map.dragging.enable === 'function') {
@@ -2089,9 +2119,66 @@ function finalizeManageModeDrag(endLatLng, endPoint) {
     applySelectionBounds(bounds, manageModeState.dragMode);
 }
 
+function startManageModeMiddlePan(event) {
+    if (!map || manageModeState.isMiddlePanning) { return; }
+
+    manageModeState.isMiddlePanning = true;
+    manageModeState.middlePanLastPoint = event && event.containerPoint
+        ? { x: event.containerPoint.x, y: event.containerPoint.y }
+        : null;
+
+    if (event && event.originalEvent) {
+        if (typeof event.originalEvent.preventDefault === 'function') {
+            event.originalEvent.preventDefault();
+        }
+        if (typeof event.originalEvent.stopPropagation === 'function') {
+            event.originalEvent.stopPropagation();
+        }
+    }
+}
+
+function handleManageModeMiddlePanMove(event) {
+    if (!map || !manageModeState.isMiddlePanning || !event) { return; }
+
+    const currentPoint = event.containerPoint
+        ? { x: event.containerPoint.x, y: event.containerPoint.y }
+        : null;
+    if (!currentPoint) {
+        manageModeState.middlePanLastPoint = null;
+        return;
+    }
+
+    const previousPoint = manageModeState.middlePanLastPoint;
+    manageModeState.middlePanLastPoint = currentPoint;
+
+    if (!previousPoint) { return; }
+
+    const dx = previousPoint.x - currentPoint.x;
+    const dy = previousPoint.y - currentPoint.y;
+    if (dx === 0 && dy === 0) { return; }
+
+    map.panBy([dx, dy], { animate: false });
+
+    if (event.originalEvent && typeof event.originalEvent.preventDefault === 'function') {
+        event.originalEvent.preventDefault();
+    }
+}
+
+function endManageModeMiddlePan() {
+    if (!manageModeState.isMiddlePanning) { return; }
+    manageModeState.isMiddlePanning = false;
+    manageModeState.middlePanLastPoint = null;
+}
+
 function handleManageModeMouseDown(event) {
-    if (!isManageModeActive()) { return; }
-    if (!event || !event.originalEvent || event.originalEvent.button !== 0) { return; }
+    if (!isManageModeActive() || !event || !event.originalEvent) { return; }
+
+    if (event.originalEvent.button === 1) {
+        startManageModeMiddlePan(event);
+        return;
+    }
+
+    if (event.originalEvent.button !== 0) { return; }
 
     manageModeState.isDragging = true;
     manageModeState.dragStartLatLng = event.latlng || null;
@@ -2115,8 +2202,16 @@ function handleManageModeMouseDown(event) {
 }
 
 function handleManageModeMouseMove(event) {
-    if (!isManageModeActive() || !manageModeState.isDragging || !map) { return; }
-    if (!manageModeState.dragStartLatLng || !event || !event.latlng) { return; }
+    if (!isManageModeActive() || !map) { return; }
+
+    if (manageModeState.isMiddlePanning) {
+        handleManageModeMiddlePanMove(event);
+        return;
+    }
+
+    if (!manageModeState.isDragging || !manageModeState.dragStartLatLng || !event || !event.latlng) {
+        return;
+    }
 
     manageModeState.dragCurrentLatLng = event.latlng;
     manageModeState.dragCurrentPoint = event.containerPoint
@@ -2139,6 +2234,14 @@ function handleManageModeMouseMove(event) {
 }
 
 function handleManageModeMouseUp(event) {
+    if (manageModeState.isMiddlePanning) {
+        endManageModeMiddlePan();
+        if (event && event.originalEvent && typeof event.originalEvent.preventDefault === 'function') {
+            event.originalEvent.preventDefault();
+        }
+        return;
+    }
+
     if (!manageModeState.isDragging) { return; }
 
     let endLatLng = event && event.latlng ? event.latlng : null;
@@ -2164,6 +2267,10 @@ function handleManageModeMouseUp(event) {
 }
 
 function handleManageModeMouseLeave() {
+    if (manageModeState.isMiddlePanning) {
+        endManageModeMiddlePan();
+    }
+
     if (!manageModeState.isDragging) { return; }
     const fallbackLatLng = manageModeState.dragCurrentLatLng || manageModeState.dragStartLatLng;
     const fallbackPoint = manageModeState.dragCurrentPoint
