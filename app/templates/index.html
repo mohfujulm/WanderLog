@@ -168,16 +168,57 @@
                             box-shadow: 0 12px 32px rgba(0,0,0,0.22);
                             backdrop-filter: blur(14px);
                             width: min(360px, calc(100vw - 64px));
-                            max-height: min(80vh, 640px);
+                            max-height: min(96vh, 768px);
                             overflow-y: auto; }
+
+        .overlay-tabs-wrapper {  display: flex;
+                                align-items: center;
+                                gap: 6px;
+                                background: rgba(243, 244, 246, 0.7);
+                                padding: 6px;
+                                border-radius: 18px;
+                                flex-wrap: wrap;
+                                width: 100%; }
 
         .overlay-tabs {    display: flex;
                             align-items: center;
                             justify-content: stretch;
                             gap: 6px;
-                            background: rgba(243, 244, 246, 0.7);
-                            padding: 6px;
-                            border-radius: 18px; }
+                            flex: 1 1 auto; }
+
+        .overlay-manage-toggle {  border: none;
+                                    background: transparent;
+                                    border-radius: 12px;
+                                    padding: 10px 16px;
+                                    font-size: 12px;
+                                    font-weight: 600;
+                                    letter-spacing: 0.08em;
+                                    text-transform: uppercase;
+                                    cursor: pointer;
+                                    color: #4b5563;
+                                    transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+                                    display: inline-flex;
+                                    align-items: center;
+                                    justify-content: center;
+                                    margin-left: auto;
+                                    white-space: nowrap; }
+
+        .overlay-manage-toggle:hover {   background: rgba(255,255,255,0.8);
+                                          color: #111827; }
+
+        .overlay-manage-toggle:focus-visible {    outline: 2px solid rgba(0,120,212,0.65);
+                                                  outline-offset: 2px; }
+
+        .overlay-manage-toggle-active {   background: #111827;
+                                          color: #fff;
+                                          box-shadow: 0 6px 18px rgba(17,24,39,0.18);
+                                          transform: translateY(-1px); }
+
+        .overlay-manage-toggle-active:hover {  background: #1f2937;
+                                                color: #fff; }
+
+        .overlay-manage-toggle-active:focus-visible {    outline: 2px solid rgba(255,255,255,0.6);
+                                                        outline-offset: 2px; }
 
         .overlay-tab {     flex: 1 1 0;
                             border: none;
@@ -396,7 +437,7 @@
         .trip-list {            display: flex;
                                 flex-direction: column;
                                 gap: 12px;
-                                max-height: 320px;
+                                max-height: 384px;
                                 overflow-y: auto;
                                 padding-right: 6px; }
 
@@ -421,7 +462,7 @@
         .trip-location-list {     display: flex;
                                     flex-direction: column;
                                     gap: 12px;
-                                    max-height: 320px;
+                                    max-height: 384px;
                                     overflow-y: auto;
                                     padding-right: 6px; }
 
@@ -1180,9 +1221,12 @@
             <span class="menu-toggle-text">Menu</span>
         </button>
         <div class="overlay-controls" id="menuControls" aria-hidden="true" inert>
-            <div class="overlay-tabs" role="tablist" aria-label="Menu sections">
-                <button type="button" class="overlay-tab" role="tab" id="menuTabTrips" aria-selected="false" aria-controls="menuPanelTrips" tabindex="-1">Trips</button>
-                <button type="button" class="overlay-tab" role="tab" id="menuTabControls" aria-selected="true" aria-controls="menuPanelControls">Settings</button>
+            <div class="overlay-tabs-wrapper">
+                <div class="overlay-tabs" role="tablist" aria-label="Menu sections">
+                    <button type="button" class="overlay-tab" role="tab" id="menuTabTrips" aria-selected="false" aria-controls="menuPanelTrips" tabindex="-1">Trips</button>
+                    <button type="button" class="overlay-tab" role="tab" id="menuTabControls" aria-selected="true" aria-controls="menuPanelControls">Settings</button>
+                </div>
+                <button type="button" class="overlay-manage-toggle" id="manageModeQuickToggle" data-manage-mode-toggle data-manage-mode-active-class="overlay-manage-toggle-active" data-manage-mode-label-default="Edit" data-manage-mode-label-active="Done" aria-pressed="false">Edit</button>
             </div>
             <div id="menuPanelControls" class="overlay-tab-panel" role="tabpanel" aria-labelledby="menuTabControls">
                 <button class="overlay-button" onclick="document.getElementById('timelineFile').click()">Import Timeline Data</button>
@@ -1190,7 +1234,7 @@
                 <button class="overlay-button" onclick="clearMap()">Clear Map</button>
                 <button class="overlay-button" onclick="refreshMap()">Refresh Map</button>
                 <button class="overlay-button" onclick="viewArchivedPoints()">View Archived Points</button>
-                <button class="overlay-button" type="button" id="manageModeToggle">Enter Manage Mode</button>
+                <button class="overlay-button" type="button" id="manageModeToggle" data-manage-mode-toggle data-manage-mode-active-class="overlay-button-active" data-manage-mode-label-default="Enter Manage Mode" data-manage-mode-label-active="Exit Manage Mode">Enter Manage Mode</button>
                 <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
                 <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
                 <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
@@ -1445,7 +1489,7 @@ let tripAssignmentMembershipEmpty = null;
 let tripAssignmentMemberships = [];
 let tripMembershipGroupElement = null;
 let tripModalContext = { triggerButton: null, mode: 'single', count: 0 };
-let manageModeToggleButton = null;
+let manageModeToggleButtons = [];
 let selectionToolbarElement = null;
 let selectionCountElement = null;
 let selectionClearButton = null;
@@ -1724,7 +1768,7 @@ function isManageModeActive() {
 }
 
 function initManageModeControls() {
-    manageModeToggleButton = document.getElementById('manageModeToggle');
+    manageModeToggleButtons = Array.from(document.querySelectorAll('[data-manage-mode-toggle]'));
     selectionToolbarElement = document.getElementById('selectionToolbar');
     selectionCountElement = document.getElementById('selectionCount');
     selectionClearButton = document.getElementById('selectionClearButton');
@@ -1734,12 +1778,19 @@ function initManageModeControls() {
     selectionArchiveButton = document.getElementById('selectionArchiveButton');
     selectionDeleteButton = document.getElementById('selectionDeleteButton');
 
-    if (manageModeToggleButton) {
-        manageModeToggleButton.addEventListener('click', (event) => {
-            event.preventDefault();
-            toggleManageMode();
+    if (manageModeToggleButtons.length > 0) {
+        manageModeToggleButtons.forEach((button) => {
+            if (!button.dataset.manageModeLabelDefault) {
+                button.dataset.manageModeLabelDefault = button.textContent.trim();
+            }
+
+            button.addEventListener('click', (event) => {
+                event.preventDefault();
+                toggleManageMode();
+            });
+            button.setAttribute('aria-pressed', 'false');
+            setManageModeButtonLabel(button, false);
         });
-        manageModeToggleButton.setAttribute('aria-pressed', 'false');
     }
 
     if (selectionClearButton) {
@@ -1801,12 +1852,25 @@ function initManageModeControls() {
     updateSelectionSummary();
 }
 
+function setManageModeButtonLabel(button, active) {
+    if (!button) { return; }
+    const defaultLabel = button.dataset.manageModeLabelDefault;
+    const activeLabel = button.dataset.manageModeLabelActive;
+    const label = active ? (activeLabel || defaultLabel) : (defaultLabel || activeLabel);
+    if (label && button.textContent !== label) {
+        button.textContent = label;
+    }
+}
+
 function updateManageModeToggleState() {
-    if (!manageModeToggleButton) { return; }
+    if (!Array.isArray(manageModeToggleButtons) || manageModeToggleButtons.length === 0) { return; }
     const active = isManageModeActive();
-    manageModeToggleButton.classList.toggle('overlay-button-active', active);
-    manageModeToggleButton.setAttribute('aria-pressed', active ? 'true' : 'false');
-    manageModeToggleButton.textContent = active ? 'Exit Manage Mode' : 'Enter Manage Mode';
+    manageModeToggleButtons.forEach((button) => {
+        const activeClass = button.dataset.manageModeActiveClass || 'overlay-button-active';
+        button.classList.toggle(activeClass, active);
+        button.setAttribute('aria-pressed', active ? 'true' : 'false');
+        setManageModeButtonLabel(button, active);
+    });
 }
 
 function setupManageModeMapInteractions() {
