@@ -1269,7 +1269,7 @@
                                     <span class="trip-sort-label">Sort by</span>
                                     <select id="tripSortField" name="tripSortField">
                                         <option value="name">Name</option>
-                                        <option value="updated_at">Date updated</option>
+                                        <option value="latest_location_date">Date</option>
                                     </select>
                                 </label>
                                 <button type="button" class="trip-sort-direction" id="tripSortDirection" aria-label="Sort descending">
@@ -1521,7 +1521,7 @@ let tripLocationErrorElement = null;
 let tripLocationEmptyElement = null;
 
 const TRIP_SORT_FIELD_NAME = 'name';
-const TRIP_SORT_FIELD_UPDATED = 'updated_at';
+const TRIP_SORT_FIELD_DATE = 'latest_location_date';
 const TRIP_SORT_DIRECTION_ASC = 'asc';
 const TRIP_SORT_DIRECTION_DESC = 'desc';
 const TRIP_NAME_FALLBACK = 'Untitled Trip';
@@ -2521,8 +2521,8 @@ function initTripsPanel() {
     if (tripSortFieldSelect) {
         tripSortFieldSelect.value = tripListState.sortField;
         tripSortFieldSelect.addEventListener('change', () => {
-            const value = tripSortFieldSelect.value === TRIP_SORT_FIELD_UPDATED
-                ? TRIP_SORT_FIELD_UPDATED
+            const value = tripSortFieldSelect.value === TRIP_SORT_FIELD_DATE
+                ? TRIP_SORT_FIELD_DATE
                 : TRIP_SORT_FIELD_NAME;
             tripListState.sortField = value;
             renderTripList();
@@ -2636,12 +2636,18 @@ function normaliseTrip(trip) {
         ? updatedAtRaw
         : (updatedAtRaw ? String(updatedAtRaw) : '');
 
+    const latestDateRaw = trip.latest_location_date ?? trip.latest_date ?? '';
+    const latestDate = typeof latestDateRaw === 'string'
+        ? latestDateRaw
+        : (latestDateRaw ? String(latestDateRaw) : '');
+
     return {
         id: identifier,
         name,
         location_count: locationCount,
         created_at: createdAt,
         updated_at: updatedAt,
+        latest_location_date: latestDate,
     };
 }
 
@@ -2708,8 +2714,8 @@ function renderTripList() {
 
 function compareTrips(a, b) {
     const direction = tripListState.sortDirection === TRIP_SORT_DIRECTION_DESC ? -1 : 1;
-    const field = tripListState.sortField === TRIP_SORT_FIELD_UPDATED
-        ? TRIP_SORT_FIELD_UPDATED
+    const field = tripListState.sortField === TRIP_SORT_FIELD_DATE
+        ? TRIP_SORT_FIELD_DATE
         : TRIP_SORT_FIELD_NAME;
 
     if (field === TRIP_SORT_FIELD_NAME) {
@@ -2732,10 +2738,47 @@ function compareTrips(a, b) {
 
 function getTripDateValue(trip) {
     if (!trip || typeof trip !== 'object') { return 0; }
-    const raw = trip.updated_at || trip.created_at || '';
+    const raw = trip.latest_location_date || trip.updated_at || trip.created_at || '';
     if (!raw) { return 0; }
     const timestamp = Date.parse(raw);
     return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function calculateTripLatestLocationDate(locations) {
+    if (!Array.isArray(locations) || !locations.length) { return ''; }
+
+    let latestTimestamp = Number.NEGATIVE_INFINITY;
+    let hasTimestamp = false;
+
+    locations.forEach((location) => {
+        if (!location || typeof location !== 'object') { return; }
+
+        const numericValue = Number(location.date_value);
+        if (Number.isFinite(numericValue)) {
+            if (!hasTimestamp || numericValue > latestTimestamp) {
+                latestTimestamp = numericValue;
+                hasTimestamp = true;
+            }
+            return;
+        }
+
+        const primary = location.date || location.start_date || location.end_date || '';
+        if (!primary) { return; }
+        const parsed = Date.parse(primary);
+        if (Number.isNaN(parsed)) { return; }
+        if (!hasTimestamp || parsed > latestTimestamp) {
+            latestTimestamp = parsed;
+            hasTimestamp = true;
+        }
+    });
+
+    if (!hasTimestamp) { return ''; }
+
+    try {
+        return new Date(latestTimestamp).toISOString().split('T')[0];
+    } catch (error) {
+        return '';
+    }
 }
 
 function formatTripLocationCount(value) {
@@ -2778,12 +2821,12 @@ function createTripListItem(trip) {
     const meta = document.createElement('div');
     meta.className = 'trip-item-meta';
 
-    const dateValue = trip.updated_at || trip.created_at || '';
+    const dateValue = trip.latest_location_date || trip.updated_at || trip.created_at || '';
     const dateLabel = formatTripDate(dateValue);
     if (dateLabel) {
         const dateSpan = document.createElement('span');
         dateSpan.className = 'trip-item-meta-entry';
-        dateSpan.append('Updated ');
+        //dateSpan.append('Date ');
         const timeElement = document.createElement('time');
         timeElement.dateTime = dateValue;
         timeElement.textContent = dateLabel;
@@ -2814,9 +2857,10 @@ function createTripSearchText(trip) {
     const parts = [];
     if (trip.name) { parts.push(String(trip.name)); }
     if (Number.isFinite(Number(trip.location_count))) { parts.push(String(trip.location_count)); }
+    if (trip.latest_location_date) { parts.push(String(trip.latest_location_date)); }
     if (trip.updated_at) { parts.push(String(trip.updated_at)); }
     if (trip.created_at) { parts.push(String(trip.created_at)); }
-    const formatted = formatTripDate(trip.updated_at || trip.created_at || '');
+    const formatted = formatTripDate(trip.latest_location_date || trip.updated_at || trip.created_at || '');
     if (formatted) { parts.push(formatted); }
     return parts.join(' ').toLowerCase();
 }
@@ -3117,12 +3161,14 @@ function updateTripDetailHeader() {
         tripDetailCountElement.textContent = formatTripLocationCount(count);
     }
     if (tripDetailUpdatedElement) {
-        const updatedValue = trip && (trip.updated_at || trip.created_at || '');
+        const updatedValue = trip && (
+            trip.latest_location_date || trip.updated_at || trip.created_at || ''
+        );
         const formatted = formatTripDate(updatedValue);
         if (formatted) {
             tripDetailUpdatedElement.hidden = false;
             tripDetailUpdatedElement.textContent = '';
-            tripDetailUpdatedElement.append('Updated ');
+            tripDetailUpdatedElement.append('Date ');
             const timeElement = document.createElement('time');
             timeElement.dateTime = updatedValue;
             timeElement.textContent = formatted;
@@ -3808,6 +3854,12 @@ function applyTripLocationRemoval(tripId, placeId, options = {}) {
             const detailTrip = tripDetailState.trip ? { ...tripDetailState.trip } : null;
             if (detailTrip) {
                 detailTrip.location_count = filtered.length;
+                const latestDateFromResponse = tripData && (tripData.latest_location_date || tripData.updated_at || '');
+                if (latestDateFromResponse) {
+                    detailTrip.latest_location_date = latestDateFromResponse;
+                } else {
+                    detailTrip.latest_location_date = calculateTripLatestLocationDate(filtered) || '';
+                }
                 if (tripData && tripData.updated_at) {
                     detailTrip.updated_at = tripData.updated_at;
                 } else {
