@@ -178,6 +178,146 @@ function escapeHtmlAttribute(value) {
     return escapeHtml(value).replace(/`/g, '&#96;');
 }
 
+function debounce(fn, wait = 0) {
+    let timeoutId = null;
+    return function debounced(...args) {
+        if (timeoutId !== null) {
+            clearTimeout(timeoutId);
+        }
+        timeoutId = setTimeout(() => {
+            timeoutId = null;
+            fn.apply(this, args);
+        }, wait);
+    };
+}
+
+function createValidatedDateParts(year, month, day) {
+    const y = Number(year);
+    const m = Number(month);
+    const d = Number(day);
+
+    if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) { return null; }
+    if (m < 1 || m > 12) { return null; }
+    if (d < 1 || d > 31) { return null; }
+
+    const date = new Date(Date.UTC(y, m - 1, d));
+    if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) { return null; }
+
+    return { year: y, month: m, day: d };
+}
+
+function convertTwoDigitYear(value) {
+    const yearNumber = Number(value);
+    if (!Number.isFinite(yearNumber)) { return yearNumber; }
+    if (!Number.isInteger(yearNumber) || yearNumber < 0 || yearNumber > 99) { return yearNumber; }
+
+    const currentYear = (new Date()).getFullYear();
+    const century = Math.floor(currentYear / 100) * 100;
+    let candidate = century + yearNumber;
+
+    if (candidate > currentYear + 50) {
+        candidate -= 100;
+    } else if (candidate < currentYear - 50) {
+        candidate += 100;
+    }
+
+    return candidate;
+}
+
+function parseFlexibleDateParts(value) {
+    const trimmed = typeof value === 'string' ? value.trim() : '';
+    if (!trimmed) { return null; }
+
+    const isoMatch = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (isoMatch) {
+        return createValidatedDateParts(isoMatch[1], isoMatch[2], isoMatch[3]);
+    }
+
+    const digitsOnly = trimmed.replace(/\D/g, '');
+    if (digitsOnly.length === 8 && digitsOnly.length === trimmed.length && /^\d{8}$/.test(digitsOnly)) {
+        return createValidatedDateParts(
+            digitsOnly.slice(0, 4),
+            digitsOnly.slice(4, 6),
+            digitsOnly.slice(6, 8),
+        );
+    }
+
+    const separated = trimmed.split(/[-./\\,\s]+/).filter(Boolean);
+    if (separated.length === 3) {
+        const [firstRaw, secondRaw, thirdRaw] = separated;
+        const first = Number(firstRaw);
+        const second = Number(secondRaw);
+        const third = Number(thirdRaw);
+
+        if ([first, second, third].some((part) => Number.isNaN(part))) { return null; }
+
+        if (firstRaw.length === 4) {
+            return createValidatedDateParts(first, second, third);
+        }
+
+        if (thirdRaw.length === 4) {
+            let month = first;
+            let day = second;
+
+            if (month > 12 && day <= 12) {
+                [day, month] = [month, day];
+            }
+
+            return createValidatedDateParts(third, month, day);
+        }
+
+        if (thirdRaw.length === 2) {
+            const year = convertTwoDigitYear(third);
+            let month = first;
+            let day = second;
+
+            if (month > 12 && day <= 12) {
+                [day, month] = [month, day];
+            }
+
+            return createValidatedDateParts(year, month, day);
+        }
+    }
+
+    const parsed = new Date(trimmed);
+    if (!Number.isNaN(parsed.getTime())) {
+        return createValidatedDateParts(
+            parsed.getFullYear(),
+            parsed.getMonth() + 1,
+            parsed.getDate(),
+        );
+    }
+
+    return null;
+}
+
+function normaliseDateInputValue(value) {
+    if (value === null || value === undefined) { return ''; }
+    const stringValue = typeof value === 'string' ? value : String(value);
+    const trimmed = stringValue.trim();
+    if (!trimmed) { return ''; }
+
+    const parts = parseFlexibleDateParts(trimmed);
+    if (!parts) { return null; }
+
+    const year = String(parts.year).padStart(4, '0');
+    const month = String(parts.month).padStart(2, '0');
+    const day = String(parts.day).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function updateDateInputValue(input) {
+    if (!input) { return ''; }
+    const normalised = normaliseDateInputValue(input.value);
+    if (normalised === null) { return null; }
+
+    if (normalised !== input.value) {
+        input.value = normalised;
+    }
+
+    return normalised;
+}
+
 function createPopupContent(markerData) {
     if (!markerData) { return ''; }
 
@@ -2814,8 +2954,16 @@ async function loadMarkers() {
     showLoading();
     const startDateInput = document.getElementById('filterStartDate');
     const endDateInput = document.getElementById('filterEndDate');
-    const startDate = startDateInput ? startDateInput.value : '';
-    const endDate = endDateInput ? endDateInput.value : '';
+    const startDateResult = startDateInput ? updateDateInputValue(startDateInput) : '';
+    const endDateResult = endDateInput ? updateDateInputValue(endDateInput) : '';
+
+    if (startDateResult === null || endDateResult === null) {
+        hideLoading();
+        return;
+    }
+
+    const startDate = startDateResult;
+    const endDate = endDateResult;
 
     if (startDate && endDate && startDate > endDate) {
         hideLoading();
@@ -4077,13 +4225,40 @@ document.addEventListener('DOMContentLoaded', async () => {
     const endDateInput = document.getElementById('filterEndDate');
     const clearDateButton = document.getElementById('clearDateFilters');
 
-    if (startDateInput) { startDateInput.addEventListener('change', loadMarkers); }
-    if (endDateInput) { endDateInput.addEventListener('change', loadMarkers); }
+    const applyDateFilters = () => {
+        const startValue = startDateInput ? updateDateInputValue(startDateInput) : '';
+        const endValue = endDateInput ? updateDateInputValue(endDateInput) : '';
+
+        if (startValue === null || endValue === null) { return; }
+
+        loadMarkers();
+    };
+
+    const debouncedApplyDateFilters = debounce(applyDateFilters, 400);
+
+    const handleDateInputEvent = (event) => {
+        const target = event && (event.currentTarget || event.target);
+        if (!target || typeof target.value === 'undefined') { return; }
+
+        const result = updateDateInputValue(target);
+        if (result === null) { return; }
+
+        debouncedApplyDateFilters();
+    };
+
+    if (startDateInput) {
+        startDateInput.addEventListener('input', handleDateInputEvent);
+        startDateInput.addEventListener('change', applyDateFilters);
+    }
+    if (endDateInput) {
+        endDateInput.addEventListener('input', handleDateInputEvent);
+        endDateInput.addEventListener('change', applyDateFilters);
+    }
     if (clearDateButton) {
         clearDateButton.addEventListener('click', () => {
             if (startDateInput) { startDateInput.value = ''; }
             if (endDateInput) { endDateInput.value = ''; }
-            loadMarkers();
+            applyDateFilters();
         });
     }
     initMap();
