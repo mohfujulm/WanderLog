@@ -17,11 +17,16 @@ MAX_ALIAS_LENGTH = 120
 MAX_TRIP_NAME_LENGTH = 120
 
 
-def _serialise_trip(trip) -> dict:
+def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
     """Return a JSON-serialisable dictionary for ``trip``."""
 
     if trip is None:
         return {}
+
+    latest_location_date = _determine_latest_location_date_for_trip(
+        trip,
+        place_date_lookup=place_date_lookup,
+    )
 
     if isinstance(trip, dict):
         place_ids = trip.get('place_ids')
@@ -35,6 +40,7 @@ def _serialise_trip(trip) -> dict:
             'location_count': location_count,
             'created_at': trip.get('created_at'),
             'updated_at': trip.get('updated_at'),
+            'latest_location_date': latest_location_date,
         }
 
     place_ids = getattr(trip, 'place_ids', []) or []
@@ -46,6 +52,7 @@ def _serialise_trip(trip) -> dict:
         'location_count': location_count,
         'created_at': getattr(trip, 'created_at', None),
         'updated_at': getattr(trip, 'updated_at', None),
+        'latest_location_date': latest_location_date,
     }
 
 
@@ -62,6 +69,132 @@ def _clean_string(value: object) -> str:
         return ""
 
     return str(value).strip()
+
+
+def _extract_trip_place_ids(trip):
+    """Return the cleaned place identifiers associated with ``trip``."""
+
+    if trip is None:
+        return []
+
+    if isinstance(trip, dict):
+        raw_place_ids = trip.get('place_ids') or []
+    else:
+        raw_place_ids = getattr(trip, 'place_ids', []) or []
+
+    identifiers: list[str] = []
+    for raw_identifier in raw_place_ids:
+        if raw_identifier is None:
+            continue
+        cleaned = str(raw_identifier).strip()
+        if cleaned:
+            identifiers.append(cleaned)
+
+    return identifiers
+
+
+def _parse_trip_date(value):
+    """Parse ``value`` into a :class:`~pandas.Timestamp` if possible."""
+
+    cleaned = _clean_string(value)
+    if not cleaned:
+        return None
+
+    try:
+        parsed = pd.to_datetime(cleaned, errors='coerce')
+    except Exception:
+        return None
+
+    if pd.isna(parsed):
+        return None
+
+    return parsed
+
+
+def _format_timestamp_for_response(timestamp) -> str:
+    """Return a normalised string representation for ``timestamp``."""
+
+    if timestamp is None:
+        return ""
+
+    try:
+        date_value = timestamp.date()
+    except AttributeError:
+        return ""
+
+    return date_value.isoformat()
+
+
+def _build_place_date_lookup(place_ids):
+    """Return a mapping of place IDs to their latest known date."""
+
+    identifiers = { _clean_string(identifier) for identifier in place_ids }
+    identifiers.discard("")
+    if not identifiers:
+        return {}
+
+    data_cache.ensure_archived_column()
+    df = data_cache.timeline_df
+
+    if df is None or df.empty or 'Place ID' not in df.columns:
+        return {}
+
+    matches = df[df['Place ID'].isin(identifiers)]
+    if matches.empty:
+        return {}
+
+    relevant_columns = [
+        column for column in ('date', 'End Date', 'Start Date') if column in matches.columns
+    ]
+    if not relevant_columns:
+        return {}
+
+    lookup: dict[str, pd.Timestamp] = {}
+
+    for _, row in matches.iterrows():
+        place_id = _clean_string(row.get('Place ID'))
+        if not place_id:
+            continue
+
+        latest_value = lookup.get(place_id)
+
+        for column in relevant_columns:
+            candidate = _parse_trip_date(row.get(column))
+            if candidate is None:
+                continue
+            if latest_value is None or candidate > latest_value:
+                latest_value = candidate
+
+        if latest_value is not None:
+            lookup[place_id] = latest_value
+
+    return lookup
+
+
+def _determine_latest_location_date_for_trip(trip, *, place_date_lookup=None):
+    """Return the most recent location date associated with ``trip``."""
+
+    place_ids = _extract_trip_place_ids(trip)
+    if not place_ids:
+        return None
+
+    lookup = place_date_lookup or _build_place_date_lookup(place_ids)
+    if not lookup:
+        return None
+
+    latest_value = None
+
+    for place_id in place_ids:
+        candidate = lookup.get(place_id)
+        if candidate is None:
+            continue
+        if latest_value is None or candidate > latest_value:
+            latest_value = candidate
+
+    if latest_value is None:
+        return None
+
+    return _format_timestamp_for_response(latest_value)
 
 
 def _serialise_trip_location(row, *, place_id: str = "", order: int = 0) -> dict:
@@ -414,7 +547,15 @@ def api_list_trips():
     """Return the list of available trips."""
 
     trips = trip_store.list_trips()
-    return jsonify([_serialise_trip(trip) for trip in trips])
+    place_ids = set()
+    for trip in trips:
+        place_ids.update(_extract_trip_place_ids(trip))
+
+    latest_dates = _build_place_date_lookup(place_ids)
+
+    return jsonify([
+        _serialise_trip(trip, place_date_lookup=latest_dates) for trip in trips
+    ])
 
 
 @main.route('/api/trips/<trip_id>', methods=['GET'])
