@@ -167,6 +167,152 @@
         .trips-placeholder p {  font-size: 13px;
                                 line-height: 1.5; }
 
+        .trip-panel {           display: flex;
+                                flex-direction: column;
+                                gap: 16px; }
+
+        .trip-panel-header {    display: flex;
+                                flex-direction: column;
+                                gap: 6px;
+                                text-align: right; }
+
+        .trip-panel-heading {   font-size: 18px;
+                                letter-spacing: 0.08em;
+                                text-transform: uppercase;
+                                color: #111827; }
+
+        .trip-panel-subtitle {  font-size: 13px;
+                                color: #6b7280;
+                                line-height: 1.4; }
+
+        .trip-controls {        display: flex;
+                                flex-direction: column;
+                                gap: 12px; }
+
+        .trip-search {          display: flex;
+                                flex-direction: column;
+                                gap: 6px;
+                                text-align: right; }
+
+        .trip-search-label {    font-size: 12px;
+                                text-transform: uppercase;
+                                letter-spacing: 0.08em;
+                                color: #4b5563;
+                                font-weight: 600; }
+
+        .trip-search input {    border: 1px solid #d1d5db;
+                                border-radius: 12px;
+                                padding: 10px 14px;
+                                font-size: 14px;
+                                background: rgba(255,255,255,0.95);
+                                text-align: right;
+                                transition: border-color 0.2s ease, box-shadow 0.2s ease; }
+
+        .trip-search input:focus {   outline: none;
+                                    border-color: #111827;
+                                    box-shadow: 0 0 0 3px rgba(17,24,39,0.15); }
+
+        .trip-sort {            display: flex;
+                                gap: 8px;
+                                justify-content: flex-end;
+                                align-items: stretch;
+                                flex-wrap: wrap; }
+
+        .trip-sort-field {      display: flex;
+                                flex-direction: column;
+                                gap: 6px;
+                                text-align: right; }
+
+        .trip-sort-label {      font-size: 12px;
+                                text-transform: uppercase;
+                                letter-spacing: 0.08em;
+                                color: #4b5563;
+                                font-weight: 600; }
+
+        .trip-sort select {     border: 1px solid #d1d5db;
+                                border-radius: 12px;
+                                padding: 10px 14px;
+                                font-size: 14px;
+                                background: rgba(255,255,255,0.95);
+                                text-align: right;
+                                min-width: 140px;
+                                transition: border-color 0.2s ease, box-shadow 0.2s ease; }
+
+        .trip-sort select:focus {   outline: none;
+                                    border-color: #111827;
+                                    box-shadow: 0 0 0 3px rgba(17,24,39,0.15); }
+
+        .trip-sort-direction {  border: none;
+                                border-radius: 12px;
+                                padding: 10px 16px;
+                                background: #111827;
+                                color: #fff;
+                                font-size: 13px;
+                                font-weight: 600;
+                                cursor: pointer;
+                                transition: background 0.2s ease, transform 0.2s ease;
+                                letter-spacing: 0.06em;
+                                text-transform: uppercase; }
+
+        .trip-sort-direction:hover {   background: #1f2937;
+                                        transform: translateY(-1px); }
+
+        .trip-sort-direction:focus-visible { outline: 2px solid rgba(17,24,39,0.65);
+                                            outline-offset: 2px; }
+
+        .trip-list-container {  display: flex;
+                                flex-direction: column;
+                                gap: 10px; }
+
+        .trip-list {            display: flex;
+                                flex-direction: column;
+                                gap: 12px;
+                                max-height: 320px;
+                                overflow-y: auto;
+                                padding-right: 6px; }
+
+        .trip-list[hidden] {    display: none; }
+
+        .trip-list-message {    font-size: 13px;
+                                color: #4b5563;
+                                text-align: right;
+                                line-height: 1.5;
+                                background: rgba(249,250,251,0.9);
+                                border-radius: 12px;
+                                padding: 14px 16px; }
+
+        .trip-list-message-error {  color: #b3261e;
+                                    background: rgba(254,242,242,0.85);
+                                    border: 1px solid rgba(179,38,30,0.25); }
+
+        .trip-item {            display: flex;
+                                flex-direction: column;
+                                gap: 8px;
+                                background: rgba(249,250,251,0.95);
+                                padding: 14px 16px;
+                                border-radius: 16px;
+                                border: 1px solid rgba(229,231,235,0.85);
+                                box-shadow: 0 3px 12px rgba(15,23,42,0.08);
+                                text-align: right; }
+
+        .trip-item-name {       font-size: 15px;
+                                font-weight: 600;
+                                color: #111827;
+                                word-break: break-word; }
+
+        .trip-item-meta {       display: flex;
+                                gap: 10px;
+                                justify-content: flex-end;
+                                flex-wrap: wrap;
+                                font-size: 12px;
+                                color: #4b5563; }
+
+        .trip-item-meta-entry { display: inline-flex;
+                                align-items: center;
+                                gap: 4px; }
+
+        .trip-item-meta-entry time {  color: inherit; }
+
 
         .menu-container.open .overlay-controls { opacity: 1;
                                                 transform: translateY(0) scale(1);
@@ -563,10 +709,35 @@
                 </div>
             </div>
             <div id="menuPanelTrips" class="overlay-tab-panel" role="tabpanel" aria-labelledby="menuTabTrips" hidden>
-                <div class="trips-placeholder">
-                    <h3>Trips</h3>
-                    <p>Plan, revisit, and organize journeys right here soon.</p>
-                    <p>We're sketching ideas for this space — stay tuned!</p>
+                <div class="trip-panel">
+                    <div class="trip-panel-header">
+                        <h3 class="trip-panel-heading">Trips</h3>
+                        <p class="trip-panel-subtitle">Browse every journey you've created and quickly locate the one you need.</p>
+                    </div>
+                    <div class="trip-controls">
+                        <label class="trip-search">
+                            <span class="trip-search-label">Search</span>
+                            <input type="search" id="tripSearchInput" name="tripSearch" placeholder="Search trips" autocomplete="off">
+                        </label>
+                        <div class="trip-sort" role="group" aria-label="Trip sorting">
+                            <label class="trip-sort-field" for="tripSortField">
+                                <span class="trip-sort-label">Sort by</span>
+                                <select id="tripSortField" name="tripSortField">
+                                    <option value="name">Name</option>
+                                    <option value="updated_at">Date updated</option>
+                                </select>
+                            </label>
+                            <button type="button" class="trip-sort-direction" id="tripSortDirection" aria-label="Sort descending">
+                                Ascending
+                            </button>
+                        </div>
+                    </div>
+                    <div class="trip-list-container">
+                        <div id="tripListLoading" class="trip-list-message" role="status" aria-live="polite" hidden>Loading trips...</div>
+                        <div id="tripListError" class="trip-list-message trip-list-message-error" role="alert" hidden></div>
+                        <div id="tripListEmpty" class="trip-list-message" aria-live="polite" hidden>No trips yet. Assign a location to begin your first journey.</div>
+                        <div id="tripList" class="trip-list" role="list" hidden></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -690,6 +861,35 @@ let tripSelectElement = null;
 let newTripNameInput = null;
 let tripSelectHelper = null;
 let tripModalContext = { triggerButton: null };
+let tripListContainer = null;
+let tripListLoadingElement = null;
+let tripListErrorElement = null;
+let tripListEmptyElement = null;
+let tripSearchInput = null;
+let tripSortFieldSelect = null;
+let tripSortDirectionButton = null;
+
+const TRIP_SORT_FIELD_NAME = 'name';
+const TRIP_SORT_FIELD_UPDATED = 'updated_at';
+const TRIP_SORT_DIRECTION_ASC = 'asc';
+const TRIP_SORT_DIRECTION_DESC = 'desc';
+const TRIP_NAME_FALLBACK = 'Untitled Trip';
+
+const tripListState = {
+    trips: [],
+    searchTerm: '',
+    sortField: TRIP_SORT_FIELD_NAME,
+    sortDirection: TRIP_SORT_DIRECTION_ASC,
+    initialised: false,
+};
+
+const tripDateFormatter = (() => {
+    try {
+        return new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    } catch (error) {
+        return null;
+    }
+})();
 
 const SOURCE_TYPE_LABELS = {
     google_timeline: 'Google Timeline',
@@ -808,6 +1008,332 @@ function getMarkerIcon(sourceType) {
 
     markerIconCache.set(iconUrl, icon);
     return icon;
+}
+
+function initTripsPanel() {
+    if (tripListState.initialised) { return; }
+
+    tripListContainer = document.getElementById('tripList');
+    tripListLoadingElement = document.getElementById('tripListLoading');
+    tripListErrorElement = document.getElementById('tripListError');
+    tripListEmptyElement = document.getElementById('tripListEmpty');
+    tripSearchInput = document.getElementById('tripSearchInput');
+    tripSortFieldSelect = document.getElementById('tripSortField');
+    tripSortDirectionButton = document.getElementById('tripSortDirection');
+
+    if (tripSearchInput) {
+        tripSearchInput.addEventListener('input', () => {
+            tripListState.searchTerm = tripSearchInput.value.trim().toLowerCase();
+            renderTripList();
+        });
+    }
+
+    if (tripSortFieldSelect) {
+        tripSortFieldSelect.value = tripListState.sortField;
+        tripSortFieldSelect.addEventListener('change', () => {
+            const value = tripSortFieldSelect.value === TRIP_SORT_FIELD_UPDATED
+                ? TRIP_SORT_FIELD_UPDATED
+                : TRIP_SORT_FIELD_NAME;
+            tripListState.sortField = value;
+            renderTripList();
+        });
+    }
+
+    if (tripSortDirectionButton) {
+        tripSortDirectionButton.addEventListener('click', () => {
+            tripListState.sortDirection = tripListState.sortDirection === TRIP_SORT_DIRECTION_ASC
+                ? TRIP_SORT_DIRECTION_DESC
+                : TRIP_SORT_DIRECTION_ASC;
+            updateTripSortDirectionButton();
+            renderTripList();
+        });
+        updateTripSortDirectionButton();
+    }
+
+    tripListState.initialised = true;
+}
+
+function updateTripSortDirectionButton() {
+    if (!tripSortDirectionButton) { return; }
+    const isAscending = tripListState.sortDirection !== TRIP_SORT_DIRECTION_DESC;
+    tripSortDirectionButton.textContent = isAscending ? 'Ascending' : 'Descending';
+    tripSortDirectionButton.setAttribute('aria-label', isAscending ? 'Sort descending' : 'Sort ascending');
+    tripSortDirectionButton.title = isAscending ? 'Switch to descending order' : 'Switch to ascending order';
+}
+
+function setTripListLoading(isLoading) {
+    if (!tripListState.initialised) { initTripsPanel(); }
+    if (tripListLoadingElement) {
+        tripListLoadingElement.hidden = !isLoading;
+    }
+    if (!isLoading) { return; }
+    if (tripListContainer) { tripListContainer.hidden = true; }
+    if (tripListEmptyElement) { tripListEmptyElement.hidden = true; }
+    if (tripListErrorElement) { tripListErrorElement.hidden = true; }
+}
+
+function clearTripListMessages() {
+    if (tripListEmptyElement) { tripListEmptyElement.hidden = true; }
+    if (tripListErrorElement) { tripListErrorElement.hidden = true; tripListErrorElement.textContent = ''; }
+}
+
+function hideTripListError() {
+    if (tripListErrorElement) {
+        tripListErrorElement.hidden = true;
+        tripListErrorElement.textContent = '';
+    }
+}
+
+function showTripListError(message) {
+    if (!tripListState.initialised) { initTripsPanel(); }
+    if (tripListLoadingElement) { tripListLoadingElement.hidden = true; }
+    if (tripListErrorElement) {
+        tripListErrorElement.textContent = message || 'Failed to load trips.';
+        tripListErrorElement.hidden = false;
+    }
+    if (tripListContainer) { tripListContainer.hidden = true; }
+    if (tripListEmptyElement) { tripListEmptyElement.hidden = true; }
+}
+
+function showTripListEmpty(message) {
+    if (!tripListState.initialised) { initTripsPanel(); }
+    if (tripListLoadingElement) { tripListLoadingElement.hidden = true; }
+    if (tripListEmptyElement) {
+        if (message) { tripListEmptyElement.textContent = message; }
+        tripListEmptyElement.hidden = false;
+    }
+    if (tripListContainer) { tripListContainer.hidden = true; }
+}
+
+function normaliseTripList(trips) {
+    if (!Array.isArray(trips)) { return []; }
+    return trips.map((trip) => normaliseTrip(trip)).filter(Boolean);
+}
+
+function normaliseTrip(trip) {
+    if (!trip || typeof trip !== 'object') { return null; }
+
+    const identifierRaw = trip.id ?? trip.trip_id ?? '';
+    const identifier = typeof identifierRaw === 'string'
+        ? identifierRaw.trim()
+        : String(identifierRaw || '').trim();
+    if (!identifier) { return null; }
+
+    const nameRaw = trip.name ?? '';
+    const name = typeof nameRaw === 'string'
+        ? (nameRaw.trim() || TRIP_NAME_FALLBACK)
+        : (String(nameRaw || '').trim() || TRIP_NAME_FALLBACK);
+
+    const locationRaw = trip.location_count ?? (Array.isArray(trip.place_ids) ? trip.place_ids.length : 0);
+    const locationNumber = Number(locationRaw);
+    const locationCount = Number.isFinite(locationNumber) && locationNumber >= 0
+        ? locationNumber
+        : 0;
+
+    const createdAtRaw = trip.created_at ?? '';
+    const createdAt = typeof createdAtRaw === 'string'
+        ? createdAtRaw
+        : (createdAtRaw ? String(createdAtRaw) : '');
+
+    const updatedAtRaw = trip.updated_at ?? '';
+    const updatedAt = typeof updatedAtRaw === 'string'
+        ? updatedAtRaw
+        : (updatedAtRaw ? String(updatedAtRaw) : '');
+
+    return {
+        id: identifier,
+        name,
+        location_count: locationCount,
+        created_at: createdAt,
+        updated_at: updatedAt,
+    };
+}
+
+function updateTripsPanel(trips) {
+    if (!tripListState.initialised) { initTripsPanel(); }
+    tripListState.trips = normaliseTripList(trips);
+    hideTripListError();
+    renderTripList();
+}
+
+function renderTripList() {
+    if (!tripListState.initialised) { initTripsPanel(); }
+    if (!tripListContainer) { return; }
+
+    const trips = Array.isArray(tripListState.trips) ? tripListState.trips : [];
+    const hasTrips = trips.length > 0;
+    const searchTerm = tripListState.searchTerm;
+
+    let filteredTrips = trips;
+    if (searchTerm) {
+        filteredTrips = trips.filter((trip) => createTripSearchText(trip).includes(searchTerm));
+    }
+
+    tripListContainer.innerHTML = '';
+
+    if (!hasTrips) {
+        showTripListEmpty('No trips yet. Assign a location to begin your first journey.');
+        return;
+    }
+
+    if (!filteredTrips.length) {
+        showTripListEmpty('No trips match your search.');
+        return;
+    }
+
+    clearTripListMessages();
+    if (tripListLoadingElement) { tripListLoadingElement.hidden = true; }
+
+    const sortedTrips = filteredTrips.slice().sort((a, b) => compareTrips(a, b));
+    const fragment = document.createDocumentFragment();
+    sortedTrips.forEach((trip) => {
+        const item = createTripListItem(trip);
+        if (item) { fragment.appendChild(item); }
+    });
+
+    tripListContainer.appendChild(fragment);
+    tripListContainer.hidden = false;
+    tripListContainer.scrollTop = 0;
+}
+
+function compareTrips(a, b) {
+    const direction = tripListState.sortDirection === TRIP_SORT_DIRECTION_DESC ? -1 : 1;
+    const field = tripListState.sortField === TRIP_SORT_FIELD_UPDATED
+        ? TRIP_SORT_FIELD_UPDATED
+        : TRIP_SORT_FIELD_NAME;
+
+    if (field === TRIP_SORT_FIELD_NAME) {
+        const nameA = (a && typeof a.name === 'string') ? a.name : '';
+        const nameB = (b && typeof b.name === 'string') ? b.name : '';
+        const comparison = nameA.localeCompare(nameB, undefined, { sensitivity: 'base' });
+        if (comparison !== 0) { return comparison * direction; }
+        const dateDifference = getTripDateValue(a) - getTripDateValue(b);
+        if (dateDifference !== 0) { return dateDifference * direction; }
+        return 0;
+    }
+
+    const dateDifference = getTripDateValue(a) - getTripDateValue(b);
+    if (dateDifference !== 0) { return dateDifference * direction; }
+
+    const nameA = (a && typeof a.name === 'string') ? a.name : '';
+    const nameB = (b && typeof b.name === 'string') ? b.name : '';
+    return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' }) * direction;
+}
+
+function getTripDateValue(trip) {
+    if (!trip || typeof trip !== 'object') { return 0; }
+    const raw = trip.updated_at || trip.created_at || '';
+    if (!raw) { return 0; }
+    const timestamp = Date.parse(raw);
+    return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function formatTripLocationCount(value) {
+    const count = Number(value);
+    if (!Number.isFinite(count) || count < 0) { return '0 locations'; }
+    return count === 1 ? '1 location' : `${count} locations`;
+}
+
+function formatTripDate(value) {
+    if (!value) { return ''; }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) { return ''; }
+    if (tripDateFormatter) { return tripDateFormatter.format(date); }
+    return date.toISOString().split('T')[0];
+}
+
+function createTripListItem(trip) {
+    if (!trip || typeof trip !== 'object') { return null; }
+
+    const item = document.createElement('article');
+    item.className = 'trip-item';
+    item.setAttribute('role', 'listitem');
+    item.dataset.tripId = trip.id;
+
+    const title = document.createElement('div');
+    title.className = 'trip-item-name';
+    title.textContent = trip.name || TRIP_NAME_FALLBACK;
+    item.appendChild(title);
+
+    const meta = document.createElement('div');
+    meta.className = 'trip-item-meta';
+
+    const dateValue = trip.updated_at || trip.created_at || '';
+    const dateLabel = formatTripDate(dateValue);
+    if (dateLabel) {
+        const dateSpan = document.createElement('span');
+        dateSpan.className = 'trip-item-meta-entry';
+        dateSpan.append('Updated ');
+        const timeElement = document.createElement('time');
+        timeElement.dateTime = dateValue;
+        timeElement.textContent = dateLabel;
+        try {
+            const dateObj = new Date(dateValue);
+            if (!Number.isNaN(dateObj.getTime())) {
+                timeElement.title = dateObj.toLocaleString();
+            }
+        } catch (error) {
+            // Ignore formatting errors
+        }
+        dateSpan.appendChild(timeElement);
+        meta.appendChild(dateSpan);
+    }
+
+    const countSpan = document.createElement('span');
+    countSpan.className = 'trip-item-meta-entry';
+    countSpan.textContent = formatTripLocationCount(trip.location_count);
+    meta.appendChild(countSpan);
+
+    item.appendChild(meta);
+    return item;
+}
+
+function createTripSearchText(trip) {
+    if (!trip || typeof trip !== 'object') { return ''; }
+    const parts = [];
+    if (trip.name) { parts.push(String(trip.name)); }
+    if (Number.isFinite(Number(trip.location_count))) { parts.push(String(trip.location_count)); }
+    if (trip.updated_at) { parts.push(String(trip.updated_at)); }
+    if (trip.created_at) { parts.push(String(trip.created_at)); }
+    const formatted = formatTripDate(trip.updated_at || trip.created_at || '');
+    if (formatted) { parts.push(formatted); }
+    return parts.join(' ').toLowerCase();
+}
+
+async function loadTripsPanelData() {
+    if (!tripListState.initialised) { initTripsPanel(); }
+    setTripListLoading(true);
+    hideTripListError();
+    try {
+        const response = await fetch('/api/trips');
+        if (!response.ok) {
+            throw new Error('Failed to load trips.');
+        }
+        const data = await response.json();
+        updateTripsPanel(Array.isArray(data) ? data : []);
+    } catch (error) {
+        console.error('Failed to load trips', error);
+        showTripListError(error.message || 'Failed to load trips.');
+    } finally {
+        setTripListLoading(false);
+    }
+}
+
+function upsertTripInList(trip) {
+    const normalised = normaliseTrip(trip);
+    if (!normalised) { return; }
+
+    const existing = Array.isArray(tripListState.trips) ? [...tripListState.trips] : [];
+    const index = existing.findIndex((entry) => entry.id === normalised.id);
+
+    if (index === -1) {
+        existing.push(normalised);
+    } else {
+        existing[index] = { ...existing[index], ...normalised };
+    }
+
+    tripListState.trips = existing;
+    renderTripList();
 }
 
 function showLoading() { document.getElementById('loading').style.display = 'flex'; }
@@ -1322,6 +1848,7 @@ async function populateTripSelect() {
 
         const trips = await response.json();
         const tripList = Array.isArray(trips) ? trips : [];
+        updateTripsPanel(tripList);
 
         tripSelectElement.innerHTML = '';
 
@@ -1381,6 +1908,7 @@ async function populateTripSelect() {
         if (tripSelectHelper) {
             tripSelectHelper.textContent = 'We could not load trips. Please try again.';
         }
+        showTripListError(error.message || 'Failed to load trips.');
         throw error;
     }
 }
@@ -1500,6 +2028,11 @@ async function handleTripAssignmentSubmit(event) {
         }
 
         showStatus(result.message || 'Location added to trip.');
+        if (result && result.trip) {
+            upsertTripInList(result.trip);
+        } else {
+            await loadTripsPanelData();
+        }
         if (tripAssignmentModalController) {
             tripAssignmentModalController.close();
         }
@@ -1870,6 +2403,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     ensureManualPointModal();
     ensureAliasModal();
     ensureArchivedPointsModal();
+    initTripsPanel();
+    await loadTripsPanelData();
     const menuControls = document.getElementById('menuControls');
     if (menuControls) {
         const tabs = Array.from(menuControls.querySelectorAll('[role="tab"]'));
