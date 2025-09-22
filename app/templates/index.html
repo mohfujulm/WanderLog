@@ -316,7 +316,7 @@
                                 padding: 10px 16px;
                                 background: #111827;
                                 color: #fff;
-                                font-size: 13px;
+                                font-size: 12px;
                                 font-weight: 600;
                                 cursor: pointer;
                                 transition: background 0.2s ease, transform 0.2s ease;
@@ -2100,7 +2100,7 @@ function createTripLocationListItem(location) {
         if (location.alias && location.name && location.alias !== location.name) {
             const originalRow = document.createElement('div');
             originalRow.className = 'trip-location-meta-entry';
-            originalRow.append('Place: ');
+            //originalRow.append('Place: ');
             const originalName = document.createElement('span');
             originalName.textContent = location.name;
             originalRow.appendChild(originalName);
@@ -2108,7 +2108,7 @@ function createTripLocationListItem(location) {
         } else if (location.name && (!location.display_name || location.display_name !== location.name)) {
             const nameRow = document.createElement('div');
             nameRow.className = 'trip-location-meta-entry';
-            nameRow.append('Place: ');
+            //nameRow.append('Place: ');
             const nameValue = document.createElement('span');
             nameValue.textContent = location.name;
             nameRow.appendChild(nameValue);
