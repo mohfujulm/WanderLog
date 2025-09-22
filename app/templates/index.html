@@ -1835,6 +1835,9 @@ function handleManageModeKeyDown(event) {
     if (openModal) { return; }
 
     exitManageMode();
+    if (typeof event.stopImmediatePropagation === 'function') {
+        event.stopImmediatePropagation();
+    }
     event.stopPropagation();
     event.preventDefault();
 }
