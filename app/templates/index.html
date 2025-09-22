@@ -52,32 +52,35 @@
                                 box-shadow: -12px 0 32px rgba(0,0,0,0.25); 
                                 padding-left: 24px; }
 
-        .menu-toggle {  align-self: flex-start; 
-                        cursor: pointer; 
-                        user-select: none; 
-                        padding: 18px 12px; 
-                        background: rgba(255,255,255,0.95); 
-                        border-radius: 18px; 
-                        box-shadow: 0 6px 18px rgba(0,0,0,0.12); 
-                        transition: background 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease; 
-                        border: none; 
-                        display: inline-flex; 
-                        flex-direction: row; 
-                        align-items: center; 
-                        justify-content: center; 
-                        gap: 8px; 
-                        text-transform: uppercase; 
-                        letter-spacing: 0.12em; 
-                        color: #333; 
-                        writing-mode: vertical-rl; 
-                        text-orientation: mixed; 
-                        font-weight: 500; }
+        .menu-toggle,
+        .menu-tab-button {  align-self: flex-start;
+                            cursor: pointer;
+                            user-select: none;
+                            padding: 18px 12px;
+                            background: rgba(255,255,255,0.95);
+                            border-radius: 18px;
+                            box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+                            transition: background 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
+                            border: none;
+                            display: inline-flex;
+                            flex-direction: row;
+                            align-items: center;
+                            justify-content: center;
+                            gap: 8px;
+                            text-transform: uppercase;
+                            letter-spacing: 0.12em;
+                            color: #333;
+                            writing-mode: vertical-rl;
+                            text-orientation: mixed;
+                            font-weight: 500; }
 
-        .menu-toggle:hover {    background: rgba(255,255,255,1); 
-                                transform: translateY(-2px); 
-                                box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
+        .menu-toggle:hover,
+        .menu-tab-button:hover {    background: rgba(255,255,255,1);
+                                    transform: translateY(-2px);
+                                    box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
 
-        .menu-toggle:focus { outline: 2px solid rgba(0,120,212,0.6); outline-offset: 2px; }
+        .menu-toggle:focus,
+        .menu-tab-button:focus { outline: 2px solid rgba(0,120,212,0.6); outline-offset: 2px; }
 
         .menu-toggle .menu-toggle-icon {    display: inline-flex; 
                                             align-items: center; 
@@ -93,18 +96,21 @@
                                                 object-fit: contain; 
                                                 display: block; }
 
-        .menu-toggle .menu-toggle-text { font-size: 12px; }
+        .menu-toggle .menu-toggle-text,
+        .menu-tab-button .menu-toggle-text { font-size: 12px; }
 
-        .menu-container.open .menu-toggle { align-self: flex-end; 
-                                            margin-left: auto; 
-                                            writing-mode: horizontal-tb; 
-                                            flex-direction: row; 
-                                            padding: 10px 16px; 
-                                            border-radius: 14px; 
-                                            gap: 8px; 
-                                            letter-spacing: 0.08em;
-                                            box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
-        .menu-container.open .menu-toggle .menu-toggle-text { font-size: 14px; }
+        .menu-container.open .menu-toggle,
+        .menu-container.open .menu-tab-button { align-self: flex-end;
+                                                margin-left: auto;
+                                                writing-mode: horizontal-tb;
+                                                flex-direction: row;
+                                                padding: 10px 16px;
+                                                border-radius: 14px;
+                                                gap: 8px;
+                                                letter-spacing: 0.08em;
+                                                box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
+        .menu-container.open .menu-toggle .menu-toggle-text,
+        .menu-container.open .menu-tab-button .menu-toggle-text { font-size: 14px; }
 
         .overlay-controls { display: flex; 
                             flex-direction: column; 
@@ -482,6 +488,9 @@
                 <img src="{{ url_for('static', filename='assets/menu-icon.svg') }}" alt="" aria-hidden="true">
             </span>
             <span class="menu-toggle-text">Menu</span>
+        </button>
+        <button class="menu-tab-button" type="button" onclick="openTrips()" aria-label="Trips (coming soon)" title="Trips (coming soon)">
+            <span class="menu-toggle-text">Trips</span>
         </button>
         <div class="overlay-controls" id="menuControls" aria-hidden="true" inert>
             <button class="overlay-button" onclick="document.getElementById('timelineFile').click()">Import Timeline Data</button>
