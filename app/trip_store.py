@@ -13,7 +13,7 @@ import json
 import os
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Iterable, List, Optional, Tuple
 from uuid import uuid4
 
 TRIPS_PATH = os.path.join("data", "trips.json")
@@ -164,8 +164,12 @@ def create_trip(name: str) -> Trip:
     return trip
 
 
-def add_place_to_trip(trip_id: str, place_id: str) -> Trip:
-    """Associate ``place_id`` with the trip identified by ``trip_id``."""
+def add_places_to_trip(trip_id: str, place_ids: Iterable[str]) -> Tuple[Trip, int]:
+    """Associate each ID in ``place_ids`` with the trip ``trip_id``.
+
+    Returns a tuple containing the updated :class:`Trip` instance and the
+    number of new locations that were appended to the trip.
+    """
 
     _ensure_cache()
 
@@ -173,15 +177,32 @@ def add_place_to_trip(trip_id: str, place_id: str) -> Trip:
     if trip is None:
         raise KeyError("Trip not found.")
 
-    place_id_clean = (place_id or "").strip()
-    if not place_id_clean:
-        raise ValueError("A valid place ID is required.")
+    added = 0
 
-    if place_id_clean not in trip.place_ids:
-        trip.place_ids.append(place_id_clean)
+    if place_ids is None:
+        place_ids_iterable: Iterable[str] = []
+    else:
+        place_ids_iterable = place_ids
+
+    for raw_place_id in place_ids_iterable:
+        place_id_clean = (raw_place_id or "").strip()
+        if not place_id_clean:
+            continue
+        if place_id_clean not in trip.place_ids:
+            trip.place_ids.append(place_id_clean)
+            added += 1
+
+    if added:
         trip.updated_at = _utcnow_iso()
         save_trips()
 
+    return trip, added
+
+
+def add_place_to_trip(trip_id: str, place_id: str) -> Trip:
+    """Associate ``place_id`` with the trip identified by ``trip_id``."""
+
+    trip, _ = add_places_to_trip(trip_id, [place_id])
     return trip
 
 
@@ -211,6 +232,61 @@ def remove_place_from_trip(trip_id: str, place_id: str) -> Trip:
     save_trips()
 
     return trip
+
+
+def remove_places_from_all_trips(place_ids: Iterable[str]) -> dict:
+    """Remove every ``place_id`` in ``place_ids`` from all trips.
+
+    Returns a dictionary summarising how many memberships were removed and
+    how many trips were updated.
+    """
+
+    _ensure_cache()
+
+    if place_ids is None:
+        cleaned_ids: list[str] = []
+    else:
+        cleaned_ids = [
+            (str(place_id).strip() if place_id is not None else "")
+            for place_id in place_ids
+        ]
+
+    cleaned_ids = [identifier for identifier in cleaned_ids if identifier]
+    if not cleaned_ids:
+        return {
+            "removed_memberships": 0,
+            "updated_trips": 0,
+            "processed_ids": [],
+        }
+
+    cleaned_set = set(cleaned_ids)
+    removed_memberships = 0
+    updated_trips = 0
+    save_required = False
+
+    for trip in _trips_cache or []:
+        if not trip.place_ids:
+            continue
+
+        original_length = len(trip.place_ids)
+        filtered = [pid for pid in trip.place_ids if pid not in cleaned_set]
+
+        if len(filtered) != original_length:
+            removed_count = original_length - len(filtered)
+            trip.place_ids = filtered
+            trip.updated_at = _utcnow_iso()
+            removed_memberships += removed_count
+            updated_trips += 1
+            save_required = True
+
+    if save_required:
+        save_trips()
+
+    return {
+        "removed_memberships": removed_memberships,
+        "updated_trips": updated_trips,
+        "processed_ids": cleaned_ids,
+    }
 
 
 def update_trip_metadata(trip_id: str, *, name: Optional[str] = None) -> Trip:
