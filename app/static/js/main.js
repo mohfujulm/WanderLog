@@ -5,8 +5,18 @@ const MENU_ICON_PATH = ASSET_CONFIG.menuIcon || '';
 const CLOSE_ICON_PATH = ASSET_CONFIG.closeIcon || '';
 const MAP_DEFAULT_CENTER = [40.65997395108914, -73.71300111746832];
 const MAP_DEFAULT_ZOOM = 5;
+const MAP_MIN_ZOOM = 2;
+const MAP_WORLD_BOUNDS = [[-85, -180], [85, 180]];
+const MAP_TILE_MAX_ZOOM = 18;
 const TRIP_SINGLE_MARKER_ZOOM = 11;
 const TRIP_BOUNDS_PADDING = [80, 80];
+const TRIP_CLUSTER_OPTIONS = {
+    showCoverageOnHover: false,
+    disableClusteringAtZoom: TRIP_SINGLE_MARKER_ZOOM,
+    chunkedLoading: true,
+    spiderfyOnMaxZoom: true,
+    spiderfyDistanceMultiplier: 1.2,
+};
 let map;
 let markerCluster;
 let tripMarkerLayer = null;
@@ -2515,7 +2525,7 @@ function showStatus(message, isError=false) {
 
 function ensureTripMarkerLayer() {
     if (!tripMarkerLayer) {
-        tripMarkerLayer = L.featureGroup();
+        tripMarkerLayer = L.markerClusterGroup(Object.assign({}, TRIP_CLUSTER_OPTIONS));
     }
     return tripMarkerLayer;
 }
@@ -2739,14 +2749,22 @@ function focusMapOnTripLocation(location) {
     if (markerKey) {
         const marker = tripMarkerLookup.get(markerKey);
         if (marker) {
-            const popupInstance = typeof marker.getPopup === 'function' ? marker.getPopup() : null;
-            if (popupInstance && typeof marker.openPopup === 'function') {
-                if (typeof marker.closeTooltip === 'function') {
-                    marker.closeTooltip();
+            const revealMarker = () => {
+                const popupInstance = typeof marker.getPopup === 'function' ? marker.getPopup() : null;
+                if (popupInstance && typeof marker.openPopup === 'function') {
+                    if (typeof marker.closeTooltip === 'function') {
+                        marker.closeTooltip();
+                    }
+                    marker.openPopup();
+                } else if (typeof marker.openTooltip === 'function') {
+                    marker.openTooltip();
                 }
-                marker.openPopup();
-            } else if (typeof marker.openTooltip === 'function') {
-                marker.openTooltip();
+            };
+
+            if (tripMarkerLayer && typeof tripMarkerLayer.zoomToShowLayer === 'function') {
+                tripMarkerLayer.zoomToShowLayer(marker, revealMarker);
+            } else {
+                revealMarker();
             }
         }
     }
@@ -2762,11 +2780,22 @@ function focusMapOnTripLocations() {
 
 function initMap() {
     // Create a Leaflet map centered on a default view
-    map = L.map('map').setView(MAP_DEFAULT_CENTER, MAP_DEFAULT_ZOOM);
+    const worldBounds = L.latLngBounds(MAP_WORLD_BOUNDS);
+    map = L.map('map', {
+        center: MAP_DEFAULT_CENTER,
+        zoom: MAP_DEFAULT_ZOOM,
+        minZoom: MAP_MIN_ZOOM,
+        maxBounds: worldBounds,
+        maxBoundsViscosity: 1.0,
+        worldCopyJump: false,
+    });
     // Add Mapbox tiles using the token passed from the backend
     L.tileLayer(`https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`, {
-        maxZoom: 18,
-        attribution: 'Mapbox'
+        maxZoom: MAP_TILE_MAX_ZOOM,
+        minZoom: MAP_MIN_ZOOM,
+        attribution: 'Mapbox',
+        noWrap: true,
+        bounds: worldBounds,
     }).addTo(map);
     // Cluster group keeps the map responsive when many markers are shown
     markerCluster = L.markerClusterGroup();
