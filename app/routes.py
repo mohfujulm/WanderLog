@@ -49,6 +49,89 @@ def _serialise_trip(trip) -> dict:
     }
 
 
+def _clean_string(value: object) -> str:
+    """Return a stripped string representation of ``value``."""
+
+    if value is None:
+        return ""
+
+    if isinstance(value, str):
+        return value.strip()
+
+    if pd.isna(value):  # type: ignore[arg-type]
+        return ""
+
+    return str(value).strip()
+
+
+def _serialise_trip_location(row, *, place_id: str = "", order: int = 0) -> dict:
+    """Return a JSON payload describing a trip location."""
+
+    place_identifier = _clean_string(place_id)
+    if not place_identifier and row is not None:
+        place_identifier = _clean_string(getattr(row, 'get', lambda *_: "")('Place ID'))
+
+    if row is None:
+        return {
+            'place_id': place_identifier,
+            'name': '',
+            'alias': '',
+            'display_name': 'Unknown location',
+            'start_date': '',
+            'end_date': '',
+            'date': '',
+            'source_type': '',
+            'archived': False,
+            'latitude': None,
+            'longitude': None,
+            'order': order,
+            'missing': True,
+        }
+
+    getter = getattr(row, 'get', None)
+    if callable(getter):
+        get_value = getter
+    else:  # pragma: no cover - defensive branch
+        get_value = lambda key, default=None: row[key] if key in row else default
+
+    name = _clean_string(get_value('Place Name', ''))
+    alias = _clean_string(get_value('Alias', ''))
+    display_name = _clean_string(get_value('display_name', '')) or alias or name or 'Unknown location'
+
+    start_date = _clean_string(get_value('Start Date', ''))
+    end_date = _clean_string(get_value('End Date', ''))
+    primary_date = _clean_string(get_value('date', '')) or start_date or end_date
+
+    source_type = _clean_string(get_value('Source Type', ''))
+    archived = bool(get_value('Archived', False))
+
+    def _to_float(value):
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None
+        return number
+
+    latitude = _to_float(get_value('Latitude', None))
+    longitude = _to_float(get_value('Longitude', None))
+
+    return {
+        'place_id': place_identifier,
+        'name': name,
+        'alias': alias,
+        'display_name': display_name or 'Unknown location',
+        'start_date': start_date,
+        'end_date': end_date,
+        'date': primary_date,
+        'source_type': source_type,
+        'archived': archived,
+        'latitude': latitude,
+        'longitude': longitude,
+        'order': order,
+        'missing': False,
+    }
+
+
 @main.route('/')
 def index():
     """Render the landing page."""
@@ -242,6 +325,50 @@ def api_list_trips():
 
     trips = trip_store.list_trips()
     return jsonify([_serialise_trip(trip) for trip in trips])
+
+
+@main.route('/api/trips/<trip_id>', methods=['GET'])
+def api_get_trip(trip_id: str):
+    """Return details for ``trip_id`` including its locations."""
+
+    identifier = (trip_id or "").strip()
+    trip = trip_store.get_trip(identifier)
+    if trip is None:
+        return jsonify(status='error', message='Trip not found.'), 404
+
+    serialised_trip = _serialise_trip(trip)
+    place_ids = getattr(trip, 'place_ids', []) or []
+    cleaned_ids = []
+    for raw_id in place_ids:
+        if raw_id is None:
+            continue
+        if isinstance(raw_id, str):
+            cleaned = raw_id.strip()
+        else:
+            cleaned = str(raw_id).strip()
+        if cleaned:
+            cleaned_ids.append(cleaned)
+
+    data_cache.ensure_archived_column()
+    df = data_cache.timeline_df
+
+    rows_by_place_id = {}
+    if df is not None and not df.empty and 'Place ID' in df.columns:
+        matches = df[df['Place ID'].isin(cleaned_ids)]
+        for _, entry in matches.iterrows():
+            pid = _clean_string(entry.get('Place ID'))
+            if pid and pid not in rows_by_place_id:
+                rows_by_place_id[pid] = entry
+
+    locations = [
+        _serialise_trip_location(rows_by_place_id.get(place_id), place_id=place_id, order=index)
+        for index, place_id in enumerate(cleaned_ids)
+    ]
+
+    return jsonify({
+        'trip': serialised_trip,
+        'locations': locations,
+    })
 
 
 @main.route('/api/trips', methods=['POST'])
