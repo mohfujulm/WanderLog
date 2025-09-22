@@ -610,12 +610,167 @@
                                  color: #444;
                                  text-align: right; }
 
-        .overlay-button:hover {     background: rgba(255,255,255,1); 
-                                    transform: translateY(-2px); 
+        .overlay-button:hover {     background: rgba(255,255,255,1);
+                                    transform: translateY(-2px);
                                     box-shadow: 4px 5px 0px 0px rgba(0, 0, 0, 0.15); }
 
-        .overlay-button:active {    transform: translateY(0); 
+        .overlay-button:active {    transform: translateY(0);
                                     box-shadow: 4px 5px 0px 0px rgba(0, 0, 0, 0.15); }
+
+        .overlay-button-active {
+            background: #111827;
+            color: #f9fafb;
+            box-shadow: 0 14px 32px rgba(15, 23, 42, 0.28);
+        }
+
+        .overlay-button-active:hover {
+            background: #1f2937;
+            box-shadow: 0 16px 36px rgba(15, 23, 42, 0.35);
+        }
+
+        .overlay-button-active:focus-visible {
+            outline: 2px solid rgba(255,255,255,0.6);
+            outline-offset: 2px;
+        }
+
+        .manage-mode-active {
+            cursor: crosshair !important;
+        }
+
+        .manage-mode-active .leaflet-interactive {
+            cursor: crosshair !important;
+        }
+
+        .selection-toolbar {
+            position: absolute;
+            left: 24px;
+            bottom: 24px;
+            z-index: 1500;
+            display: none;
+            flex-direction: column;
+            gap: 14px;
+            padding: 18px 20px 20px;
+            border-radius: 18px;
+            background: rgba(17, 24, 39, 0.92);
+            color: #f8fafc;
+            box-shadow: 0 20px 40px rgba(15, 23, 42, 0.45);
+            max-width: min(460px, calc(100vw - 48px));
+        }
+
+        .selection-toolbar.open {
+            display: flex;
+        }
+
+        .selection-summary {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .selection-count {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+        }
+
+        .selection-summary-actions {
+            display: inline-flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .selection-clear,
+        .selection-exit {
+            border: none;
+            background: transparent;
+            color: rgba(255,255,255,0.75);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 4px 10px;
+            border-radius: 999px;
+            transition: background 0.2s ease, color 0.2s ease;
+        }
+
+        .selection-clear:hover,
+        .selection-exit:hover {
+            background: rgba(255,255,255,0.12);
+            color: #fff;
+        }
+
+        .selection-clear:focus-visible,
+        .selection-exit:focus-visible {
+            outline: 2px solid rgba(255,255,255,0.35);
+            outline-offset: 2px;
+        }
+
+        .selection-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .selection-action-button {
+            flex: 1 1 180px;
+            border: none;
+            border-radius: 14px;
+            padding: 11px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+            color: #0f172a;
+        }
+
+        .selection-action-button:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 12px 24px rgba(15, 23, 42, 0.35);
+        }
+
+        .selection-action-button:focus-visible {
+            outline: 2px solid rgba(15,23,42,0.35);
+            outline-offset: 2px;
+        }
+
+        .selection-action-button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+
+        .selection-action-trip {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .selection-action-remove-trips {
+            background: #cffafe;
+            color: #0f766e;
+        }
+
+        .selection-action-archive {
+            background: #fef3c7;
+            color: #b45309;
+        }
+
+        .selection-action-delete {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+
+        .selection-hint {
+            font-size: 12px;
+            line-height: 1.4;
+            color: rgba(255,255,255,0.75);
+        }
+
+        .leaflet-marker-icon.marker-selected {
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.75), 0 12px 28px rgba(37, 99, 235, 0.35);
+            border-radius: 50%;
+        }
 
         .checkbox-group {               display: flex;
                                         flex-direction: column;
@@ -1035,6 +1190,7 @@
                 <button class="overlay-button" onclick="clearMap()">Clear Map</button>
                 <button class="overlay-button" onclick="refreshMap()">Refresh Map</button>
                 <button class="overlay-button" onclick="viewArchivedPoints()">View Archived Points</button>
+                <button class="overlay-button" type="button" id="manageModeToggle">Enter Manage Mode</button>
                 <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
                 <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
                 <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
@@ -1126,6 +1282,30 @@
         </div>
     </div>
     <div id="status"></div>
+    <div id="selectionToolbar" class="selection-toolbar" hidden aria-live="polite">
+        <div class="selection-summary">
+            <div class="selection-count"><span id="selectionCount">0</span> selected</div>
+            <div class="selection-summary-actions">
+                <button type="button" class="selection-clear" id="selectionClearButton">Clear selection</button>
+                <button type="button" class="selection-exit" id="selectionExitButton">Exit manage mode</button>
+            </div>
+        </div>
+        <div class="selection-actions" role="group" aria-label="Selection actions">
+            <button type="button" class="selection-action-button selection-action-trip" id="selectionAddToTripButton" disabled>
+                Add to Trip
+            </button>
+            <button type="button" class="selection-action-button selection-action-remove-trips" id="selectionRemoveTripsButton" disabled>
+                Remove from Trips
+            </button>
+            <button type="button" class="selection-action-button selection-action-archive" id="selectionArchiveButton" disabled>
+                Archive
+            </button>
+            <button type="button" class="selection-action-button selection-action-delete" id="selectionDeleteButton" disabled>
+                Delete
+            </button>
+        </div>
+        <p class="selection-hint">Drag on the map to select locations. Hold Alt while dragging to remove from the selection.</p>
+    </div>
     <div class="loading-overlay" id="loading">
         <div class="loading-spinner">
             <div class="spinner"></div>
@@ -1240,6 +1420,8 @@ let markerCluster;
 let tripMarkerLayer = null;
 let tripMarkerIconInstance = null;
 const tripMarkerLookup = new Map();
+const mapMarkerLookup = new Map();
+const mapMarkerData = new Map();
 let isTripMapModeActive = false;
 let previousMapView = null;
 let manualPointForm;
@@ -1253,14 +1435,25 @@ let aliasTargetMarkerId = null;
 let aliasModalContext = { isArchived: false, triggerButton: null };
 let tripAssignmentModalController = null;
 let tripAssignmentForm = null;
-let tripAssignmentPlaceId = null;
+let tripAssignmentTargetIds = [];
+let tripAssignmentTitleElement = null;
 let tripSelectElement = null;
 let newTripNameInput = null;
 let tripSelectHelper = null;
 let tripAssignmentMembershipList = null;
 let tripAssignmentMembershipEmpty = null;
 let tripAssignmentMemberships = [];
-let tripModalContext = { triggerButton: null };
+let tripMembershipGroupElement = null;
+let tripModalContext = { triggerButton: null, mode: 'single', count: 0 };
+let manageModeToggleButton = null;
+let selectionToolbarElement = null;
+let selectionCountElement = null;
+let selectionClearButton = null;
+let selectionExitButton = null;
+let selectionAddToTripButton = null;
+let selectionRemoveTripsButton = null;
+let selectionArchiveButton = null;
+let selectionDeleteButton = null;
 let tripListContainer = null;
 let tripListLoadingElement = null;
 let tripListErrorElement = null;
@@ -1314,6 +1507,26 @@ const tripDetailState = {
 };
 
 const tripLocationCache = new Map();
+
+const manageModeState = {
+    active: false,
+    selectedIds: new Set(),
+    isDragging: false,
+    dragStartLatLng: null,
+    dragStartPoint: null,
+    dragCurrentLatLng: null,
+    dragCurrentPoint: null,
+    dragMode: 'add',
+    selectionRectangle: null,
+    mapHandlersAttached: false,
+    interactionState: {
+        dragging: true,
+        doubleClickZoom: true,
+        boxZoom: true,
+    },
+};
+
+const MANAGE_MODE_DRAG_THRESHOLD = 5;
 
 const tripDateFormatter = (() => {
     try {
@@ -1501,6 +1714,615 @@ function getMarkerIcon(sourceType) {
 
     markerIconCache.set(iconUrl, icon);
     return icon;
+}
+
+function isManageModeActive() {
+    return Boolean(manageModeState && manageModeState.active);
+}
+
+function initManageModeControls() {
+    manageModeToggleButton = document.getElementById('manageModeToggle');
+    selectionToolbarElement = document.getElementById('selectionToolbar');
+    selectionCountElement = document.getElementById('selectionCount');
+    selectionClearButton = document.getElementById('selectionClearButton');
+    selectionExitButton = document.getElementById('selectionExitButton');
+    selectionAddToTripButton = document.getElementById('selectionAddToTripButton');
+    selectionRemoveTripsButton = document.getElementById('selectionRemoveTripsButton');
+    selectionArchiveButton = document.getElementById('selectionArchiveButton');
+    selectionDeleteButton = document.getElementById('selectionDeleteButton');
+
+    if (manageModeToggleButton) {
+        manageModeToggleButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            toggleManageMode();
+        });
+        manageModeToggleButton.setAttribute('aria-pressed', 'false');
+    }
+
+    if (selectionClearButton) {
+        selectionClearButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            clearSelectedMarkers();
+        });
+    }
+
+    if (selectionExitButton) {
+        selectionExitButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            exitManageMode();
+        });
+    }
+
+    if (selectionAddToTripButton) {
+        selectionAddToTripButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            handleSelectionAddToTrip();
+        });
+    }
+
+    if (selectionRemoveTripsButton) {
+        selectionRemoveTripsButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            handleSelectionRemoveFromTrips();
+        });
+    }
+
+    if (selectionArchiveButton) {
+        selectionArchiveButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            handleSelectionArchive();
+        });
+    }
+
+    if (selectionDeleteButton) {
+        selectionDeleteButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            handleSelectionDelete();
+        });
+    }
+
+    if (selectionToolbarElement) {
+        ['mousedown', 'touchstart', 'click'].forEach((eventName) => {
+            selectionToolbarElement.addEventListener(eventName, (event) => {
+                event.stopPropagation();
+            });
+        });
+    }
+
+    updateManageModeToggleState();
+    updateSelectionSummary();
+}
+
+function updateManageModeToggleState() {
+    if (!manageModeToggleButton) { return; }
+    const active = isManageModeActive();
+    manageModeToggleButton.classList.toggle('overlay-button-active', active);
+    manageModeToggleButton.setAttribute('aria-pressed', active ? 'true' : 'false');
+    manageModeToggleButton.textContent = active ? 'Exit Manage Mode' : 'Enter Manage Mode';
+}
+
+function setupManageModeMapInteractions() {
+    if (!map || manageModeState.mapHandlersAttached) { return; }
+
+    map.on('mousedown', handleManageModeMouseDown);
+    map.on('mousemove', handleManageModeMouseMove);
+    map.on('mouseup', handleManageModeMouseUp);
+
+    const container = map.getContainer();
+    if (container) {
+        container.addEventListener('mouseleave', handleManageModeMouseLeave);
+    }
+
+    manageModeState.mapHandlersAttached = true;
+}
+
+function enterManageMode() {
+    if (!map) {
+        showStatus('Map is still loading. Please try again.', true);
+        return;
+    }
+
+    if (isManageModeActive()) { return; }
+
+    setupManageModeMapInteractions();
+
+    manageModeState.active = true;
+    manageModeState.dragCurrentLatLng = null;
+    manageModeState.dragCurrentPoint = null;
+    if (map.dragging && typeof map.dragging.enabled === 'function') {
+        manageModeState.interactionState.dragging = map.dragging.enabled();
+        map.dragging.disable();
+    }
+    if (map.boxZoom && typeof map.boxZoom.enabled === 'function') {
+        manageModeState.interactionState.boxZoom = map.boxZoom.enabled();
+        map.boxZoom.disable();
+    }
+    if (map.doubleClickZoom && typeof map.doubleClickZoom.enabled === 'function') {
+        manageModeState.interactionState.doubleClickZoom = map.doubleClickZoom.enabled();
+        map.doubleClickZoom.disable();
+    }
+
+    const container = map.getContainer();
+    if (container) {
+        container.classList.add('manage-mode-active');
+    }
+
+    if (selectionToolbarElement) {
+        selectionToolbarElement.hidden = false;
+        selectionToolbarElement.classList.add('open');
+    }
+
+    updateManageModeToggleState();
+    updateSelectionSummary();
+}
+
+function exitManageMode() {
+    if (!isManageModeActive()) { return; }
+
+    manageModeState.active = false;
+    manageModeState.isDragging = false;
+    manageModeState.dragCurrentLatLng = null;
+    manageModeState.dragCurrentPoint = null;
+
+    if (map) {
+        if (map.dragging && typeof map.dragging.enable === 'function') {
+            if (manageModeState.interactionState.dragging) {
+                map.dragging.enable();
+            } else {
+                map.dragging.disable();
+            }
+        }
+        if (map.boxZoom && typeof map.boxZoom.enable === 'function') {
+            if (manageModeState.interactionState.boxZoom) {
+                map.boxZoom.enable();
+            } else {
+                map.boxZoom.disable();
+            }
+        }
+        if (map.doubleClickZoom && typeof map.doubleClickZoom.enable === 'function') {
+            if (manageModeState.interactionState.doubleClickZoom) {
+                map.doubleClickZoom.enable();
+            } else {
+                map.doubleClickZoom.disable();
+            }
+        }
+
+        if (manageModeState.selectionRectangle) {
+            map.removeLayer(manageModeState.selectionRectangle);
+            manageModeState.selectionRectangle = null;
+        }
+
+        const container = map.getContainer();
+        if (container) {
+            container.classList.remove('manage-mode-active');
+        }
+    }
+
+    if (selectionToolbarElement) {
+        selectionToolbarElement.classList.remove('open');
+        selectionToolbarElement.hidden = true;
+    }
+
+    clearSelectedMarkers();
+    updateManageModeToggleState();
+}
+
+function toggleManageMode() {
+    if (isManageModeActive()) {
+        exitManageMode();
+    } else {
+        enterManageMode();
+    }
+}
+
+function getSelectedMarkerIds() {
+    return Array.from(manageModeState.selectedIds || []);
+}
+
+function clearSelectedMarkers() {
+    if (!manageModeState.selectedIds) { return; }
+    manageModeState.selectedIds.forEach((id) => {
+        const marker = mapMarkerLookup.get(id);
+        if (marker) { removeHighlightFromMarker(marker); }
+    });
+    manageModeState.selectedIds.clear();
+    updateSelectionSummary();
+}
+
+function updateSelectionSummary() {
+    const count = manageModeState.selectedIds ? manageModeState.selectedIds.size : 0;
+    if (selectionCountElement) {
+        selectionCountElement.textContent = String(count);
+    }
+
+    const hasSelection = count > 0;
+    if (selectionAddToTripButton) { selectionAddToTripButton.disabled = !hasSelection; }
+    if (selectionRemoveTripsButton) { selectionRemoveTripsButton.disabled = !hasSelection; }
+    if (selectionArchiveButton) { selectionArchiveButton.disabled = !hasSelection; }
+    if (selectionDeleteButton) { selectionDeleteButton.disabled = !hasSelection; }
+}
+
+function setSelectionActionsDisabled(disabled) {
+    const hasSelection = manageModeState.selectedIds.size > 0;
+    [
+        selectionAddToTripButton,
+        selectionRemoveTripsButton,
+        selectionArchiveButton,
+        selectionDeleteButton,
+    ].forEach((button) => {
+        if (!button) { return; }
+        if (disabled) {
+            button.disabled = true;
+        } else {
+            button.disabled = !hasSelection;
+        }
+    });
+}
+
+function selectMarkerById(markerId) {
+    const id = typeof markerId === 'string' ? markerId.trim() : String(markerId || '').trim();
+    if (!id || manageModeState.selectedIds.has(id)) { return; }
+    manageModeState.selectedIds.add(id);
+    const marker = mapMarkerLookup.get(id);
+    if (marker) { highlightMarker(marker); }
+}
+
+function deselectMarkerById(markerId) {
+    const id = typeof markerId === 'string' ? markerId.trim() : String(markerId || '').trim();
+    if (!id || !manageModeState.selectedIds.has(id)) { return; }
+    manageModeState.selectedIds.delete(id);
+    const marker = mapMarkerLookup.get(id);
+    if (marker) { removeHighlightFromMarker(marker); }
+}
+
+function toggleMarkerSelectionById(markerId) {
+    if (!isManageModeActive()) { return; }
+    const id = typeof markerId === 'string' ? markerId.trim() : String(markerId || '').trim();
+    if (!id) { return; }
+    if (manageModeState.selectedIds.has(id)) {
+        deselectMarkerById(id);
+    } else {
+        selectMarkerById(id);
+    }
+    updateSelectionSummary();
+}
+
+function highlightMarker(marker) {
+    if (!marker) { return; }
+    const element = typeof marker.getElement === 'function' ? marker.getElement() : marker._icon;
+    if (element && element.classList) {
+        element.classList.add('marker-selected');
+    } else if (marker && typeof marker.once === 'function') {
+        marker.once('add', () => {
+            const el = typeof marker.getElement === 'function' ? marker.getElement() : marker._icon;
+            if (el && el.classList) {
+                el.classList.add('marker-selected');
+            }
+        });
+    }
+}
+
+function removeHighlightFromMarker(marker) {
+    if (!marker) { return; }
+    const element = typeof marker.getElement === 'function' ? marker.getElement() : marker._icon;
+    if (element && element.classList) {
+        element.classList.remove('marker-selected');
+    }
+}
+
+function refreshSelectionAfterDataLoad() {
+    if (!manageModeState.selectedIds || manageModeState.selectedIds.size === 0) {
+        updateSelectionSummary();
+        return;
+    }
+
+    const validIds = new Set(mapMarkerData.keys());
+    const idsToRemove = [];
+
+    manageModeState.selectedIds.forEach((id) => {
+        if (!validIds.has(id)) {
+            idsToRemove.push(id);
+            return;
+        }
+        const marker = mapMarkerLookup.get(id);
+        if (marker) { highlightMarker(marker); }
+    });
+
+    idsToRemove.forEach((id) => manageModeState.selectedIds.delete(id));
+    updateSelectionSummary();
+}
+
+function applySelectionBounds(bounds, mode = 'add') {
+    if (!bounds || typeof bounds.contains !== 'function') { return; }
+
+    const ids = [];
+    mapMarkerData.forEach((data, id) => {
+        if (!id) { return; }
+        const latitude = Number(data.lat ?? data.latitude);
+        const longitude = Number(data.lng ?? data.longitude);
+        if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) { return; }
+        const latLng = L.latLng(latitude, longitude);
+        if (bounds.contains(latLng)) {
+            ids.push(id);
+        }
+    });
+
+    if (!ids.length) { return; }
+
+    if (mode === 'remove') {
+        ids.forEach((id) => deselectMarkerById(id));
+    } else {
+        ids.forEach((id) => selectMarkerById(id));
+    }
+
+    updateSelectionSummary();
+}
+
+function finalizeManageModeDrag(endLatLng, endPoint) {
+    const startLatLng = manageModeState.dragStartLatLng;
+    const startPoint = manageModeState.dragStartPoint;
+
+    manageModeState.isDragging = false;
+    manageModeState.dragStartLatLng = null;
+    manageModeState.dragStartPoint = null;
+    manageModeState.dragCurrentLatLng = null;
+    manageModeState.dragCurrentPoint = null;
+
+    if (map && manageModeState.selectionRectangle) {
+        map.removeLayer(manageModeState.selectionRectangle);
+        manageModeState.selectionRectangle = null;
+    }
+
+    if (!startLatLng || !endLatLng) { return; }
+
+    if (startPoint && endPoint) {
+        const dx = Math.abs(endPoint.x - startPoint.x);
+        const dy = Math.abs(endPoint.y - startPoint.y);
+        if (dx < MANAGE_MODE_DRAG_THRESHOLD && dy < MANAGE_MODE_DRAG_THRESHOLD) {
+            return;
+        }
+    }
+
+    const bounds = L.latLngBounds(startLatLng, endLatLng);
+    if (!bounds.isValid()) { return; }
+
+    applySelectionBounds(bounds, manageModeState.dragMode);
+}
+
+function handleManageModeMouseDown(event) {
+    if (!isManageModeActive()) { return; }
+    if (!event || !event.originalEvent || event.originalEvent.button !== 0) { return; }
+
+    manageModeState.isDragging = true;
+    manageModeState.dragStartLatLng = event.latlng || null;
+    manageModeState.dragStartPoint = event.containerPoint
+        ? { x: event.containerPoint.x, y: event.containerPoint.y }
+        : null;
+    manageModeState.dragMode = event.originalEvent.altKey ? 'remove' : 'add';
+    manageModeState.dragCurrentLatLng = manageModeState.dragStartLatLng;
+    manageModeState.dragCurrentPoint = manageModeState.dragStartPoint
+        ? { ...manageModeState.dragStartPoint }
+        : null;
+
+    if (manageModeState.selectionRectangle && map) {
+        map.removeLayer(manageModeState.selectionRectangle);
+        manageModeState.selectionRectangle = null;
+    }
+
+    if (event.originalEvent.preventDefault) {
+        event.originalEvent.preventDefault();
+    }
+}
+
+function handleManageModeMouseMove(event) {
+    if (!isManageModeActive() || !manageModeState.isDragging || !map) { return; }
+    if (!manageModeState.dragStartLatLng || !event || !event.latlng) { return; }
+
+    manageModeState.dragCurrentLatLng = event.latlng;
+    manageModeState.dragCurrentPoint = event.containerPoint
+        ? { x: event.containerPoint.x, y: event.containerPoint.y }
+        : manageModeState.dragCurrentPoint;
+
+    const bounds = L.latLngBounds(manageModeState.dragStartLatLng, event.latlng);
+    if (!manageModeState.selectionRectangle) {
+        manageModeState.selectionRectangle = L.rectangle(bounds, {
+            color: '#2563eb',
+            weight: 1.2,
+            dashArray: '6',
+            fillOpacity: 0.08,
+            fillColor: '#60a5fa',
+            interactive: false,
+        }).addTo(map);
+    } else {
+        manageModeState.selectionRectangle.setBounds(bounds);
+    }
+}
+
+function handleManageModeMouseUp(event) {
+    if (!manageModeState.isDragging) { return; }
+
+    let endLatLng = event && event.latlng ? event.latlng : null;
+    if (!endLatLng && map && event && event.originalEvent) {
+        try {
+            endLatLng = map.mouseEventToLatLng(event.originalEvent);
+        } catch (error) {
+            endLatLng = null;
+        }
+    }
+    if (!endLatLng) {
+        endLatLng = manageModeState.dragCurrentLatLng || null;
+    }
+
+    let endPoint = event && event.containerPoint
+        ? { x: event.containerPoint.x, y: event.containerPoint.y }
+        : null;
+    if (!endPoint && manageModeState.dragCurrentPoint) {
+        endPoint = { ...manageModeState.dragCurrentPoint };
+    }
+
+    finalizeManageModeDrag(endLatLng, endPoint);
+}
+
+function handleManageModeMouseLeave() {
+    if (!manageModeState.isDragging) { return; }
+    const fallbackLatLng = manageModeState.dragCurrentLatLng || manageModeState.dragStartLatLng;
+    const fallbackPoint = manageModeState.dragCurrentPoint
+        ? { ...manageModeState.dragCurrentPoint }
+        : (manageModeState.dragStartPoint ? { ...manageModeState.dragStartPoint } : null);
+
+    finalizeManageModeDrag(fallbackLatLng, fallbackPoint);
+}
+
+function handleSelectionAddToTrip() {
+    if (!isManageModeActive()) { return; }
+    const ids = getSelectedMarkerIds();
+    if (!ids.length) {
+        showStatus('Select at least one location first.', true);
+        return;
+    }
+
+    const markers = ids
+        .map((id) => mapMarkerData.get(id))
+        .filter((entry) => entry && typeof entry === 'object');
+
+    if (!markers.length) {
+        showStatus('Selected locations are no longer available.', true);
+        clearSelectedMarkers();
+        return;
+    }
+
+    const triggerButton = selectionAddToTripButton || null;
+    openTripAssignmentModal(markers.length === 1 ? markers[0] : markers, { triggerButton });
+}
+
+async function handleSelectionRemoveFromTrips() {
+    if (!isManageModeActive()) { return; }
+    const ids = getSelectedMarkerIds();
+    if (!ids.length) {
+        showStatus('Select at least one location first.', true);
+        return;
+    }
+
+    const confirmationMessage = ids.length === 1
+        ? 'Remove this location from all trips?'
+        : `Remove ${ids.length} locations from all trips?`;
+
+    if (!window.confirm(confirmationMessage)) { return; }
+
+    setSelectionActionsDisabled(true);
+    showLoading();
+
+    try {
+        const response = await fetch('/api/trips/clear_memberships', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ place_ids: ids }),
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || result.status === 'error') {
+            const message = (result && result.message) ? result.message : 'Failed to update trips.';
+            throw new Error(message);
+        }
+
+        showStatus(result.message || 'Removed selection from trips.');
+        await loadTripsPanelData();
+        await loadMarkers();
+    } catch (error) {
+        console.error('Failed to clear trip memberships', error);
+        showStatus(error.message || 'Failed to update trips.', true);
+    } finally {
+        hideLoading();
+        setSelectionActionsDisabled(false);
+    }
+}
+
+async function handleSelectionArchive() {
+    if (!isManageModeActive()) { return; }
+    const ids = getSelectedMarkerIds();
+    if (!ids.length) {
+        showStatus('Select at least one location first.', true);
+        return;
+    }
+
+    const confirmMessage = ids.length === 1
+        ? 'Archive this data point?'
+        : `Archive ${ids.length} data points?`;
+
+    if (!window.confirm(confirmMessage)) { return; }
+
+    setSelectionActionsDisabled(true);
+    showLoading();
+
+    try {
+        const response = await fetch('/api/markers/bulk/archive', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ place_ids: ids, archived: true }),
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || result.status === 'error') {
+            const message = (result && result.message) ? result.message : 'Failed to archive data points.';
+            throw new Error(message);
+        }
+
+        showStatus(result.message || 'Data points archived successfully.');
+        await loadMarkers();
+
+        const archivedModalElement = document.getElementById('archivedPointsModal');
+        if (archivedModalElement && archivedModalElement.classList.contains('open')) {
+            await loadArchivedPointsList();
+        }
+    } catch (error) {
+        console.error('Failed to archive data points', error);
+        showStatus(error.message || 'Failed to archive data points.', true);
+    } finally {
+        hideLoading();
+        setSelectionActionsDisabled(false);
+    }
+}
+
+async function handleSelectionDelete() {
+    if (!isManageModeActive()) { return; }
+    const ids = getSelectedMarkerIds();
+    if (!ids.length) {
+        showStatus('Select at least one location first.', true);
+        return;
+    }
+
+    const confirmMessage = ids.length === 1
+        ? 'Deleting this data point is irreversible. Continue?'
+        : `Deleting ${ids.length} data points is irreversible. Continue?`;
+
+    if (!window.confirm(confirmMessage)) { return; }
+
+    setSelectionActionsDisabled(true);
+    showLoading();
+
+    try {
+        const response = await fetch('/api/markers/bulk/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ place_ids: ids }),
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || result.status === 'error') {
+            const message = (result && result.message) ? result.message : 'Failed to delete data points.';
+            throw new Error(message);
+        }
+
+        showStatus(result.message || 'Data points deleted successfully.');
+        clearSelectedMarkers();
+        await loadMarkers();
+    } catch (error) {
+        console.error('Failed to delete data points', error);
+        showStatus(error.message || 'Failed to delete data points.', true);
+    } finally {
+        hideLoading();
+        setSelectionActionsDisabled(false);
+    }
 }
 
 function initTripsPanel() {
@@ -2722,13 +3544,20 @@ function handleTripMembershipListClick(event) {
 
     const tripId = button.dataset.tripId ? button.dataset.tripId.trim() : '';
     if (!tripId) { return; }
-    if (!tripAssignmentPlaceId) {
+
+    if (!Array.isArray(tripAssignmentTargetIds) || tripAssignmentTargetIds.length !== 1) {
+        showStatus('Trip memberships can only be updated for a single location.', true);
+        return;
+    }
+
+    const targetPlaceId = tripAssignmentTargetIds[0];
+    if (!targetPlaceId) {
         showStatus('This data point cannot be updated.', true);
         return;
     }
 
     const tripName = button.dataset.tripName || '';
-    removeLocationFromTrip(tripId, tripAssignmentPlaceId, {
+    removeLocationFromTrip(tripId, targetPlaceId, {
         triggerButton: button,
         confirmMessage: tripName
             ? `Remove this location from "${tripName}"?`
@@ -2877,7 +3706,7 @@ async function removeLocationFromTrip(tripId, placeId, options = {}) {
 
         applyTripLocationRemoval(cleanedTripId, cleanedPlaceId, { tripData });
 
-        if (tripAssignmentPlaceId && tripAssignmentPlaceId === cleanedPlaceId) {
+        if (Array.isArray(tripAssignmentTargetIds) && tripAssignmentTargetIds.includes(cleanedPlaceId)) {
             tripAssignmentMemberships = tripAssignmentMemberships.filter((entry) => entry && entry.id !== cleanedTripId);
             renderTripAssignmentMemberships();
         }
@@ -3168,6 +3997,7 @@ function initMap() {
     // Cluster group keeps the map responsive when many markers are shown
     markerCluster = L.markerClusterGroup();
     map.addLayer(markerCluster);
+    setupManageModeMapInteractions();
     // Load existing markers once the map is ready
     loadMarkers();
 
@@ -3192,10 +4022,13 @@ async function loadMarkers() {
 
     // Remove any markers currently displayed
     markerCluster.clearLayers();
+    mapMarkerLookup.clear();
+    mapMarkerData.clear();
+
     // Collect the values of all checked source type filters
     const checked = Array.from(
         document.querySelectorAll('#sourceTypeFilters input:checked')
-    ).map(cb => cb.value);
+    ).map((cb) => cb.value);
 
     const payload = { source_types: checked };
     if (startDate) { payload.start_date = startDate; }
@@ -3206,12 +4039,12 @@ async function loadMarkers() {
         const response = await fetch('/api/map_data', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
         });
         // Parse the JSON response
         const markers = await response.json();
         // Add a Leaflet marker for each item returned
-        markers.forEach(m => {
+        markers.forEach((m) => {
             const lat = Number(m.lat);
             const lng = Number(m.lng);
             if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
@@ -3228,6 +4061,11 @@ async function loadMarkers() {
                 : String(placeRaw || '').trim();
             const markerTitle = displayNameClean || placeClean;
 
+            const markerIdRaw = m.id ?? m.place_id ?? '';
+            const markerId = typeof markerIdRaw === 'string'
+                ? markerIdRaw.trim()
+                : String(markerIdRaw || '').trim();
+
             const marker = L.marker([lat, lng], {
                 icon: getMarkerIcon(m.source_type),
                 title: markerTitle,
@@ -3240,11 +4078,47 @@ async function loadMarkers() {
                 attachMarkerPopupActions(marker, m);
             }
 
+            if (markerId) {
+                mapMarkerLookup.set(markerId, marker);
+                mapMarkerData.set(markerId, {
+                    ...m,
+                    id: markerId,
+                    lat,
+                    lng,
+                });
+                marker.on('add', () => {
+                    if (manageModeState.selectedIds.has(markerId)) {
+                        highlightMarker(marker);
+                    }
+                });
+                marker.on('remove', () => {
+                    removeHighlightFromMarker(marker);
+                });
+                marker.on('click', (event) => {
+                    if (!isManageModeActive()) { return; }
+                    if (event && event.originalEvent) {
+                        if (typeof event.originalEvent.preventDefault === 'function') {
+                            event.originalEvent.preventDefault();
+                        }
+                        if (typeof event.originalEvent.stopPropagation === 'function') {
+                            event.originalEvent.stopPropagation();
+                        }
+                    }
+                    toggleMarkerSelectionById(markerId);
+                });
+                marker.on('popupopen', () => {
+                    if (isManageModeActive() && typeof marker.closePopup === 'function') {
+                        marker.closePopup();
+                    }
+                });
+            }
+
             marker.addTo(markerCluster);
         });
         // Done loading
         hideLoading();
-    } catch(err) {
+        refreshSelectionAfterDataLoad();
+    } catch (err) {
         hideLoading();
         console.error(err);
     }
@@ -3573,6 +4447,7 @@ function ensureTripAssignmentModal() {
     tripSelectHelper = document.getElementById('tripSelectHelper');
     tripAssignmentMembershipList = document.getElementById('tripMembershipList');
     tripAssignmentMembershipEmpty = document.getElementById('tripMembershipEmpty');
+    tripMembershipGroupElement = document.getElementById('tripMembershipGroup');
 
     const controller = createModalController('tripAssignmentModal', {
         getInitialFocus: () => {
@@ -3584,11 +4459,15 @@ function ensureTripAssignmentModal() {
             return newTripNameInput || null;
         },
         onClose: () => {
-            tripAssignmentPlaceId = null;
-            tripModalContext = { triggerButton: null };
+            tripAssignmentTargetIds = [];
+            tripModalContext = { triggerButton: null, mode: 'single', count: 0 };
             const form = tripAssignmentForm || document.getElementById('tripAssignmentForm');
             if (form) { form.reset(); }
             tripAssignmentMemberships = [];
+            if (tripMembershipGroupElement) { tripMembershipGroupElement.hidden = false; }
+            if (tripAssignmentMembershipEmpty) {
+                tripAssignmentMembershipEmpty.textContent = 'This location is not part of any trips yet.';
+            }
             renderTripAssignmentMemberships();
         },
     });
@@ -3705,24 +4584,65 @@ async function populateTripSelect() {
 }
 
 async function openTripAssignmentModal(markerData, options = {}) {
-    if (!markerData || !markerData.id) {
-        showStatus('This data point cannot be added to a trip.', true);
-        return;
-    }
-
     const controller = ensureTripAssignmentModal();
     if (!controller) { return; }
 
     const triggerButton = options.triggerButton || null;
-    tripModalContext = { triggerButton };
-    tripAssignmentPlaceId = markerData.id;
+    const markers = Array.isArray(markerData) ? markerData : [markerData];
 
-    const memberships = Array.isArray(markerData.trips) ? markerData.trips : [];
-    setTripAssignmentMemberships(memberships);
+    const targetIds = markers
+        .map((entry) => {
+            if (!entry || typeof entry !== 'object') { return ''; }
+            const rawId = entry.id ?? entry.place_id ?? entry.key ?? '';
+            return typeof rawId === 'string' ? rawId.trim() : String(rawId || '').trim();
+        })
+        .filter((id, index, array) => id && array.indexOf(id) === index);
+
+    if (!targetIds.length) {
+        showStatus('Selected locations could not be determined.', true);
+        return;
+    }
+
+    const mode = targetIds.length === 1 ? 'single' : 'bulk';
+    tripModalContext = { triggerButton, mode, count: targetIds.length };
+    tripAssignmentTargetIds = targetIds;
 
     tripAssignmentForm = tripAssignmentForm || document.getElementById('tripAssignmentForm');
     if (tripAssignmentForm) {
         tripAssignmentForm.reset();
+    }
+
+    tripAssignmentTitleElement = tripAssignmentTitleElement || document.getElementById('tripAssignmentTitle');
+    if (tripAssignmentTitleElement) {
+        tripAssignmentTitleElement.textContent = mode === 'single'
+            ? 'Add to Trip'
+            : `Add ${targetIds.length} Locations to Trip`;
+    }
+
+    tripMembershipGroupElement = tripMembershipGroupElement || document.getElementById('tripMembershipGroup');
+    if (tripMembershipGroupElement) {
+        if (mode === 'single') {
+            tripMembershipGroupElement.hidden = false;
+        } else {
+            tripMembershipGroupElement.hidden = true;
+        }
+    }
+
+    tripAssignmentMembershipEmpty = tripAssignmentMembershipEmpty || document.getElementById('tripMembershipEmpty');
+    if (tripAssignmentMembershipEmpty) {
+        tripAssignmentMembershipEmpty.textContent = mode === 'single'
+            ? 'This location is not part of any trips yet.'
+            : 'Multiple locations selected. Trip memberships are not shown.';
+    }
+
+    if (mode === 'single') {
+        const primaryMarker = markers[0];
+        const memberships = Array.isArray(primaryMarker && primaryMarker.trips)
+            ? primaryMarker.trips
+            : [];
+        setTripAssignmentMemberships(memberships);
+    } else {
+        setTripAssignmentMemberships([]);
     }
 
     if (triggerButton) { triggerButton.disabled = true; }
@@ -3736,8 +4656,8 @@ async function openTripAssignmentModal(markerData, options = {}) {
         }
     } catch (error) {
         console.error('Failed to open trip assignment modal', error);
-        tripAssignmentPlaceId = null;
-        tripModalContext = { triggerButton: null };
+        tripAssignmentTargetIds = [];
+        tripModalContext = { triggerButton: null, mode: 'single', count: 0 };
         showStatus(error.message || 'Failed to load trips.', true);
     } finally {
         hideLoading();
@@ -3751,8 +4671,15 @@ async function handleTripAssignmentSubmit(event) {
     tripAssignmentForm = tripAssignmentForm || document.getElementById('tripAssignmentForm');
     if (!tripAssignmentForm) { return; }
 
-    if (!tripAssignmentPlaceId) {
-        showStatus('This data point cannot be added to a trip.', true);
+    const targetIds = Array.isArray(tripAssignmentTargetIds)
+        ? tripAssignmentTargetIds.filter((value) => {
+            if (typeof value === 'string') { return Boolean(value.trim()); }
+            return Boolean(String(value || '').trim());
+        })
+        : [];
+
+    if (!targetIds.length) {
+        showStatus('Selected locations cannot be added to a trip.', true);
         return;
     }
 
@@ -3800,14 +4727,18 @@ async function handleTripAssignmentSubmit(event) {
     let encounteredError = false;
 
     try {
-        const payload = { place_id: tripAssignmentPlaceId };
+        const isBulk = targetIds.length > 1;
+        const payload = isBulk ? { place_ids: targetIds } : { place_id: targetIds[0] };
+
         if (newTripNameValue) {
             payload.new_trip_name = newTripNameValue;
         } else {
             payload.trip_id = selectedTripId;
         }
 
-        const response = await fetch('/api/trips/assign', {
+        const endpoint = isBulk ? '/api/trips/assign_bulk' : '/api/trips/assign';
+
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
@@ -3821,7 +4752,10 @@ async function handleTripAssignmentSubmit(event) {
             throw new Error(message);
         }
 
-        showStatus(result.message || 'Location added to trip.');
+        const successMessage = result && result.message
+            ? result.message
+            : (isBulk ? 'Locations added to trip.' : 'Location added to trip.');
+        showStatus(successMessage);
         if (result && result.trip) {
             upsertTripInList(result.trip);
         } else {
@@ -4198,6 +5132,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     ensureManualPointModal();
     ensureAliasModal();
     ensureArchivedPointsModal();
+    initManageModeControls();
     initTripsPanel();
     await loadTripsPanelData();
     const menuControls = document.getElementById('menuControls');

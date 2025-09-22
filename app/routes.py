@@ -286,6 +286,53 @@ def api_archive_marker(place_id: str):
     return jsonify(status='success', message=f'Data point {action} successfully.')
 
 
+@main.route('/api/markers/bulk/archive', methods=['POST'])
+def api_bulk_archive_markers():
+    """Archive or unarchive multiple markers in a single request."""
+
+    df = data_cache.timeline_df
+    if df is None or df.empty or 'Place ID' not in df.columns:
+        return jsonify(status='error', message='No matching data points found.'), 404
+
+    payload = request.get_json(silent=True) or {}
+    place_ids_raw = payload.get('place_ids')
+    if not isinstance(place_ids_raw, (list, tuple, set)):
+        return jsonify(status='error', message='Provide a list of place IDs.'), 400
+
+    cleaned_ids = []
+    for raw_id in place_ids_raw:
+        if raw_id is None:
+            continue
+        if isinstance(raw_id, str):
+            cleaned = raw_id.strip()
+        else:
+            cleaned = str(raw_id).strip()
+        if cleaned:
+            cleaned_ids.append(cleaned)
+
+    if not cleaned_ids:
+        return jsonify(status='error', message='No valid place IDs were provided.'), 400
+
+    mask = df['Place ID'].isin(cleaned_ids)
+    matched_count = int(mask.sum())
+    if matched_count == 0:
+        return jsonify(status='error', message='No matching data points found.'), 404
+
+    archived_flag = bool(payload.get('archived', True))
+    df.loc[mask, 'Archived'] = archived_flag
+    data_cache.timeline_df = df
+    data_cache.ensure_archived_column()
+    data_cache.save_timeline_data()
+
+    action = 'archived' if archived_flag else 'unarchived'
+    return jsonify(
+        status='success',
+        message=f'{matched_count} data point(s) {action} successfully.',
+        updated=matched_count,
+        archived=archived_flag,
+    )
+
+
 @main.route('/api/markers/<place_id>', methods=['DELETE'])
 def api_delete_marker(place_id: str):
     """Delete a marker by ``place_id``."""
@@ -302,6 +349,49 @@ def api_delete_marker(place_id: str):
     data_cache.save_timeline_data()
 
     return jsonify(status='success', message='Data point deleted successfully.')
+
+
+@main.route('/api/markers/bulk/delete', methods=['POST'])
+def api_bulk_delete_markers():
+    """Delete multiple markers identified by their place IDs."""
+
+    df = data_cache.timeline_df
+    if df is None or df.empty or 'Place ID' not in df.columns:
+        return jsonify(status='error', message='No matching data points found.'), 404
+
+    payload = request.get_json(silent=True) or {}
+    place_ids_raw = payload.get('place_ids')
+    if not isinstance(place_ids_raw, (list, tuple, set)):
+        return jsonify(status='error', message='Provide a list of place IDs.'), 400
+
+    cleaned_ids = []
+    for raw_id in place_ids_raw:
+        if raw_id is None:
+            continue
+        if isinstance(raw_id, str):
+            cleaned = raw_id.strip()
+        else:
+            cleaned = str(raw_id).strip()
+        if cleaned:
+            cleaned_ids.append(cleaned)
+
+    if not cleaned_ids:
+        return jsonify(status='error', message='No valid place IDs were provided.'), 400
+
+    mask = df['Place ID'].isin(cleaned_ids)
+    matched_count = int(mask.sum())
+    if matched_count == 0:
+        return jsonify(status='error', message='No matching data points found.'), 404
+
+    data_cache.timeline_df = df.loc[~mask].reset_index(drop=True)
+    data_cache.ensure_archived_column()
+    data_cache.save_timeline_data()
+
+    return jsonify(
+        status='success',
+        message=f'Deleted {matched_count} data point(s).',
+        removed=matched_count,
+    )
 
 
 @main.route('/api/source_types', methods=['GET'])
@@ -463,6 +553,103 @@ def api_assign_trip():
     )
 
 
+@main.route('/api/trips/assign_bulk', methods=['POST'])
+def api_assign_trip_bulk():
+    """Assign multiple data points to a trip in a single request."""
+
+    payload = request.get_json(silent=True) or {}
+    place_ids_raw = payload.get('place_ids')
+
+    if not isinstance(place_ids_raw, (list, tuple, set)):
+        return jsonify(status='error', message='Provide a list of place IDs.'), 400
+
+    cleaned_ids = []
+    for raw_id in place_ids_raw:
+        if raw_id is None:
+            continue
+        if isinstance(raw_id, str):
+            cleaned = raw_id.strip()
+        else:
+            cleaned = str(raw_id).strip()
+        if cleaned:
+            cleaned_ids.append(cleaned)
+
+    if not cleaned_ids:
+        return jsonify(status='error', message='No valid place IDs were provided.'), 400
+
+    df = data_cache.timeline_df
+    if df is None or df.empty or 'Place ID' not in df.columns:
+        return jsonify(status='error', message='Data points not found.'), 404
+
+    try:
+        existing_ids_series = df['Place ID'].dropna().astype(str).str.strip()
+    except Exception:
+        existing_ids_series = pd.Series(dtype=str)
+
+    valid_ids = {value for value in existing_ids_series if value}
+    matched_ids: list[str] = []
+    for identifier in cleaned_ids:
+        if identifier in valid_ids and identifier not in matched_ids:
+            matched_ids.append(identifier)
+
+    if not matched_ids:
+        return jsonify(status='error', message='Data points not found.'), 404
+
+    trip_id = str(payload.get('trip_id') or '').strip()
+    new_trip_name = payload.get('new_trip_name') or payload.get('trip_name') or ''
+    new_trip_name = str(new_trip_name).strip()
+
+    created_new = False
+
+    try:
+        if new_trip_name:
+            if len(new_trip_name) > MAX_TRIP_NAME_LENGTH:
+                return jsonify(
+                    status='error',
+                    message=f'Trip name must be {MAX_TRIP_NAME_LENGTH} characters or fewer.'
+                ), 400
+            trip = trip_store.create_trip(new_trip_name)
+            created_new = True
+        else:
+            if not trip_id:
+                return jsonify(
+                    status='error',
+                    message='Select an existing trip or provide a new trip name.'
+                ), 400
+            trip = trip_store.get_trip(trip_id)
+            if trip is None:
+                return jsonify(status='error', message='Trip not found.'), 404
+
+        trip_identifier = trip.id if hasattr(trip, 'id') else trip.get('id')
+        trip, added_count = trip_store.add_places_to_trip(trip_identifier, matched_ids)
+    except KeyError:
+        return jsonify(status='error', message='Trip not found.'), 404
+    except ValueError as exc:
+        return jsonify(status='error', message=str(exc)), 400
+
+    selected_count = len(matched_ids)
+    skipped_count = max(selected_count - added_count, 0)
+
+    if created_new and added_count:
+        message = f'Trip created and {added_count} location(s) added.'
+    elif created_new:
+        message = 'Trip created successfully.'
+    elif added_count:
+        message = f'Added {added_count} location(s) to trip.'
+    else:
+        message = 'Selected locations were already part of the trip.'
+
+    return jsonify(
+        status='success',
+        message=message,
+        trip=_serialise_trip(trip),
+        created=created_new,
+        added=added_count,
+        skipped=skipped_count,
+        selected=selected_count,
+    )
+
+
 @main.route('/api/trips/<trip_id>/locations/<place_id>', methods=['DELETE'])
 def api_remove_trip_location(trip_id: str, place_id: str):
     """Remove ``place_id`` from the trip identified by ``trip_id``."""
@@ -487,6 +674,50 @@ def api_remove_trip_location(trip_id: str, place_id: str):
         status='success',
         message='Location removed from trip.',
         trip=_serialise_trip(trip),
+    )
+
+
+@main.route('/api/trips/clear_memberships', methods=['POST'])
+def api_clear_trip_memberships():
+    """Remove the selected locations from every trip."""
+
+    payload = request.get_json(silent=True) or {}
+    place_ids_raw = payload.get('place_ids')
+
+    if not isinstance(place_ids_raw, (list, tuple, set)):
+        return jsonify(status='error', message='Provide a list of place IDs.'), 400
+
+    cleaned_ids = []
+    for raw_id in place_ids_raw:
+        if raw_id is None:
+            continue
+        if isinstance(raw_id, str):
+            cleaned = raw_id.strip()
+        else:
+            cleaned = str(raw_id).strip()
+        if cleaned:
+            cleaned_ids.append(cleaned)
+
+    if not cleaned_ids:
+        return jsonify(status='error', message='No valid place IDs were provided.'), 400
+
+    result = trip_store.remove_places_from_all_trips(cleaned_ids)
+    removed = int(result.get('removed_memberships', 0))
+    updated_trips = int(result.get('updated_trips', 0))
+
+    if removed == 0:
+        message = 'Selected locations were not part of any trips.'
+    else:
+        trip_label = 'trip' if updated_trips == 1 else 'trips'
+        assignment_label = 'assignment' if removed == 1 else 'assignments'
+        message = f'Removed {removed} {assignment_label} across {updated_trips} {trip_label}.'
+
+    return jsonify(
+        status='success',
+        message=message,
+        removed=removed,
+        updated_trips=updated_trips,
+        processed_ids=result.get('processed_ids', cleaned_ids),
     )
 
 
