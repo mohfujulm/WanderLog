@@ -90,8 +90,8 @@ const TRIP_LOCATION_SORT_FIELD_NAME = 'name';
 const tripListState = {
     trips: [],
     searchTerm: '',
-    sortField: TRIP_SORT_FIELD_NAME,
-    sortDirection: TRIP_SORT_DIRECTION_ASC,
+    sortField: TRIP_SORT_FIELD_DATE,
+    sortDirection: TRIP_SORT_DIRECTION_DESC,
     initialised: false,
 };
 
@@ -3998,6 +3998,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const activateTab = (nextTab) => {
             if (!nextTab) { return; }
+            const activePanel = findPanelForTab(nextTab);
             tabs.forEach((tab) => {
                 const isActive = tab === nextTab;
                 tab.setAttribute('aria-selected', String(isActive));
@@ -4007,6 +4008,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                     panel.hidden = !isActive;
                 }
             });
+            if (activePanel) {
+                menuControls.dataset.activePanel = activePanel.id;
+            } else {
+                delete menuControls.dataset.activePanel;
+            }
         };
 
         const focusTab = (tab) => {
