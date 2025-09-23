@@ -15,6 +15,24 @@
 <body>
 <div id="map-container">
     <div id="map"></div>
+    <section id="filterWindow" class="filter-window" role="complementary" aria-labelledby="filtersTitle">
+        <h2 class="filter-window-title" id="filtersTitle">Filters</h2>
+        <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
+        <h3 class="filter-window-subtitle" id="dateFiltersTitle">Date Range</h3>
+        <div class="date-filter-group" id="dateFilters" role="group" aria-labelledby="dateFiltersTitle">
+            <label for="filterStartDate">
+                <span>Start Date</span>
+                <input type="date" id="filterStartDate" name="filterStartDate">
+            </label>
+            <label for="filterEndDate">
+                <span>End Date</span>
+                <input type="date" id="filterEndDate" name="filterEndDate">
+            </label>
+            <div class="date-filter-actions">
+                <button type="button" class="date-filter-clear" id="clearDateFilters">Clear Dates</button>
+            </div>
+        </div>
+    </section>
     <input type="file" id="timelineFile" accept=".json" hidden>
     <div class="menu-container" role="complementary" aria-label="Map controls panel">
         <button class="menu-toggle" id="menuToggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="menuControls">
@@ -38,22 +56,6 @@
                 <button class="overlay-button" type="button" id="refreshMapButton">Refresh Map</button>
                 <button class="overlay-button" type="button" id="viewArchivedPointsButton">View Archived Points</button>
                 <button class="overlay-button" type="button" id="manageModeToggle" data-manage-mode-toggle data-manage-mode-active-class="overlay-button-active" data-manage-mode-label-default="Enter Manage Mode" data-manage-mode-label-active="Exit Manage Mode">Enter Manage Mode</button>
-                <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
-                <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
-                <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
-                <div class="date-filter-group" id="dateFilters" role="group" aria-labelledby="dateFiltersTitle">
-                    <label for="filterStartDate">
-                        <span>Start Date</span>
-                        <input type="date" id="filterStartDate" name="filterStartDate">
-                    </label>
-                    <label for="filterEndDate">
-                        <span>End Date</span>
-                        <input type="date" id="filterEndDate" name="filterEndDate">
-                    </label>
-                    <div class="date-filter-actions">
-                        <button type="button" class="date-filter-clear" id="clearDateFilters">Clear Dates</button>
-                    </div>
-                </div>
             </div>
             <div id="menuPanelTrips" class="overlay-tab-panel" role="tabpanel" aria-labelledby="menuTabTrips" hidden>
                 <div class="trip-panel">
@@ -97,6 +99,9 @@
                             <div class="trip-detail-meta" aria-live="polite">
                                 <span id="tripDetailCount" class="trip-detail-meta-entry"></span>
                                 <span id="tripDetailUpdated" class="trip-detail-meta-entry" hidden></span>
+                            </div>
+                            <div class="trip-detail-actions">
+                                <button type="button" class="trip-detail-rename" id="tripDetailRenameButton" disabled>Rename Trip</button>
                             </div>
                         </div>
                         <div class="trip-detail-controls">
@@ -205,6 +210,25 @@
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="modal-button secondary" id="aliasCancel">Cancel</button>
+                    <button type="submit" class="modal-button primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div id="tripRenameModal" class="modal-overlay" aria-hidden="true" hidden>
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="tripRenameTitle" tabindex="-1">
+            <h2 id="tripRenameTitle">Rename Trip</h2>
+            <form id="tripRenameForm">
+                <div class="form-group">
+                    <label for="tripRenameName">Trip Name</label>
+                    <input type="text" id="tripRenameName" name="trip_name" maxlength="120" autocomplete="off" required>
+                    <p class="form-helper-text">
+                        Current name:
+                        <span id="tripRenameCurrentName" class="trip-rename-current"></span>
+                    </p>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="modal-button secondary" id="tripRenameCancel">Cancel</button>
                     <button type="submit" class="modal-button primary">Save</button>
                 </div>
             </form>

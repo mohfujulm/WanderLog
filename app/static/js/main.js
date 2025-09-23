@@ -35,6 +35,11 @@ let aliasModalController = null;
 let aliasOriginalNameElement = null;
 let aliasTargetMarkerId = null;
 let aliasModalContext = { isArchived: false, triggerButton: null };
+let tripRenameModalController = null;
+let tripRenameForm = null;
+let tripRenameNameInput = null;
+let tripRenameCurrentNameElement = null;
+let tripRenameContext = { tripId: null, triggerButton: null, initialName: '' };
 let tripAssignmentModalController = null;
 let tripAssignmentForm = null;
 let tripAssignmentTargetIds = [];
@@ -70,6 +75,7 @@ let tripDetailTitleElement = null;
 let tripDetailSubtitleElement = null;
 let tripDetailCountElement = null;
 let tripDetailUpdatedElement = null;
+let tripDetailRenameButton = null;
 let tripLocationSearchInput = null;
 let tripLocationSortFieldSelect = null;
 let tripLocationSortDirectionButton = null;
@@ -1575,6 +1581,7 @@ function initTripDetailPanel() {
     tripDetailSubtitleElement = document.getElementById('tripDetailSubtitle');
     tripDetailCountElement = document.getElementById('tripDetailCount');
     tripDetailUpdatedElement = document.getElementById('tripDetailUpdated');
+    tripDetailRenameButton = document.getElementById('tripDetailRenameButton');
     tripLocationSearchInput = document.getElementById('tripLocationSearchInput');
     tripLocationSortFieldSelect = document.getElementById('tripLocationSortField');
     tripLocationSortDirectionButton = document.getElementById('tripLocationSortDirection');
@@ -1594,6 +1601,13 @@ function initTripDetailPanel() {
         tripDetailBackButton.addEventListener('click', (event) => {
             if (event) { event.preventDefault(); }
             closeTripDetail();
+        });
+    }
+
+    if (tripDetailRenameButton) {
+        tripDetailRenameButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            openTripRenameModal({ triggerButton: tripDetailRenameButton });
         });
     }
 
@@ -1632,6 +1646,7 @@ function initTripDetailPanel() {
     }
 
     tripDetailState.initialised = true;
+    updateTripRenameButtonState();
 }
 
 function handleTripListClick(event) {
@@ -1791,6 +1806,8 @@ function closeTripDetail(options = {}) {
         tripDetailUpdatedElement.textContent = '';
     }
 
+    updateTripRenameButtonState();
+
     deactivateTripMapMode();
 
     if (!skipRender) {
@@ -1887,6 +1904,8 @@ function updateTripDetailHeader() {
             tripDetailUpdatedElement.textContent = '';
         }
     }
+
+    updateTripRenameButtonState();
 }
 
 function updateTripLocationSortDirectionButton() {
@@ -3389,6 +3408,202 @@ async function handleAliasSubmit(event) {
     }
 }
 
+function ensureTripRenameModal() {
+    if (tripRenameModalController) { return tripRenameModalController; }
+
+    tripRenameForm = document.getElementById('tripRenameForm');
+    tripRenameNameInput = document.getElementById('tripRenameName');
+    tripRenameCurrentNameElement = document.getElementById('tripRenameCurrentName');
+
+    const controller = createModalController('tripRenameModal', {
+        getInitialFocus: () => {
+            const form = tripRenameForm || document.getElementById('tripRenameForm');
+            if (form && form.elements && form.elements['trip_name']) {
+                return form.elements['trip_name'];
+            }
+            return document.getElementById('tripRenameName');
+        },
+        onClose: () => {
+            tripRenameContext = { tripId: null, triggerButton: null, initialName: '' };
+            const form = tripRenameForm || document.getElementById('tripRenameForm');
+            if (form) { form.reset(); }
+            tripRenameNameInput = document.getElementById('tripRenameName');
+            if (tripRenameNameInput) { tripRenameNameInput.value = ''; }
+            tripRenameCurrentNameElement = document.getElementById('tripRenameCurrentName');
+            if (tripRenameCurrentNameElement) { tripRenameCurrentNameElement.textContent = ''; }
+        },
+    });
+
+    if (!controller) { return null; }
+    tripRenameModalController = controller;
+
+    const cancelButton = document.getElementById('tripRenameCancel');
+    if (cancelButton) {
+        cancelButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            tripRenameModalController.close();
+        });
+    }
+
+    if (tripRenameForm) {
+        tripRenameForm.addEventListener('submit', handleTripRenameSubmit);
+    }
+
+    return tripRenameModalController;
+}
+
+function openTripRenameModal(options = {}) {
+    if (!tripDetailState || !tripDetailState.selectedTripId) {
+        showStatus('Select a trip to rename.', true);
+        return;
+    }
+
+    const controller = ensureTripRenameModal();
+    if (!controller) { return; }
+
+    const tripId = tripDetailState.selectedTripId;
+    const triggerButton = options && options.triggerButton ? options.triggerButton : null;
+
+    const fallbackTrip = tripDetailState.trip
+        || (Array.isArray(tripListState.trips)
+            ? tripListState.trips.find((entry) => entry && entry.id === tripId)
+            : null);
+
+    let currentName = fallbackTrip && typeof fallbackTrip.name === 'string'
+        ? fallbackTrip.name.trim()
+        : '';
+    if (!currentName) { currentName = TRIP_NAME_FALLBACK; }
+
+    tripRenameContext = {
+        tripId,
+        triggerButton,
+        initialName: currentName,
+    };
+
+    tripRenameForm = tripRenameForm || document.getElementById('tripRenameForm');
+    tripRenameNameInput = document.getElementById('tripRenameName');
+    if (tripRenameNameInput) {
+        tripRenameNameInput.value = currentName || '';
+        try {
+            const length = tripRenameNameInput.value.length;
+            tripRenameNameInput.setSelectionRange(0, length);
+        } catch (error) {
+            // Ignore selection errors
+        }
+    }
+
+    tripRenameCurrentNameElement = tripRenameCurrentNameElement || document.getElementById('tripRenameCurrentName');
+    if (tripRenameCurrentNameElement) {
+        tripRenameCurrentNameElement.textContent = currentName || TRIP_NAME_FALLBACK;
+    }
+
+    controller.open();
+    if (controller.refreshFocusableElements) {
+        controller.refreshFocusableElements();
+    }
+
+    if (tripRenameNameInput) {
+        try {
+            tripRenameNameInput.focus({ preventScroll: true });
+            tripRenameNameInput.select();
+        } catch (error) {
+            tripRenameNameInput.focus();
+            tripRenameNameInput.select();
+        }
+    }
+}
+
+async function handleTripRenameSubmit(event) {
+    event.preventDefault();
+
+    tripRenameForm = tripRenameForm || document.getElementById('tripRenameForm');
+    if (!tripRenameForm) { return; }
+
+    const tripId = tripRenameContext.tripId || tripDetailState.selectedTripId || '';
+    if (!tripId) {
+        showStatus('Select a trip to rename.', true);
+        return;
+    }
+
+    const nameField = tripRenameForm.elements['trip_name'] || document.getElementById('tripRenameName');
+    const proposedName = nameField ? nameField.value.trim() : '';
+
+    if (!proposedName) {
+        showStatus('Trip name is required.', true);
+        if (nameField) { nameField.focus(); }
+        return;
+    }
+
+    if (proposedName.length > MAX_TRIP_NAME_LENGTH) {
+        showStatus(`Trip name must be ${MAX_TRIP_NAME_LENGTH} characters or fewer.`, true);
+        if (nameField) { nameField.focus(); }
+        return;
+    }
+
+    if (tripRenameContext.initialName && proposedName === tripRenameContext.initialName) {
+        showStatus('Trip name is unchanged.');
+        if (tripRenameModalController) { tripRenameModalController.close(); }
+        return;
+    }
+
+    const submitButton = tripRenameForm.querySelector('button[type="submit"]');
+    const cancelButton = document.getElementById('tripRenameCancel');
+    const triggerButton = tripRenameContext.triggerButton || null;
+
+    if (submitButton) { submitButton.disabled = true; }
+    if (cancelButton) { cancelButton.disabled = true; }
+    if (triggerButton) { triggerButton.disabled = true; }
+
+    showLoading();
+
+    try {
+        const response = await fetch(`/api/trips/${encodeURIComponent(tripId)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: proposedName }),
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || (result && result.status === 'error')) {
+            const message = result && result.message ? result.message : 'Failed to rename trip.';
+            throw new Error(message);
+        }
+
+        const successMessage = result && result.message ? result.message : 'Trip renamed successfully.';
+        showStatus(successMessage);
+
+        if (tripRenameModalController) {
+            tripRenameModalController.close();
+        }
+
+        const payload = result && result.trip ? result.trip : { id: tripId, name: proposedName };
+        upsertTripInList(payload, { reloadDetail: false });
+    } catch (error) {
+        showStatus(error.message || 'Failed to rename trip.', true);
+        if (nameField) {
+            try {
+                nameField.focus({ preventScroll: true });
+                if (typeof nameField.select === 'function') { nameField.select(); }
+            } catch (focusError) {
+                nameField.focus();
+                if (typeof nameField.select === 'function') { nameField.select(); }
+            }
+        }
+    } finally {
+        hideLoading();
+        if (submitButton) { submitButton.disabled = false; }
+        if (cancelButton) { cancelButton.disabled = false; }
+        if (triggerButton) { triggerButton.disabled = false; }
+    }
+}
+
+function updateTripRenameButtonState() {
+    tripDetailRenameButton = tripDetailRenameButton || document.getElementById('tripDetailRenameButton');
+    if (!tripDetailRenameButton) { return; }
+    const hasTrip = Boolean(tripDetailState && tripDetailState.selectedTripId);
+    tripDetailRenameButton.disabled = !hasTrip;
+}
+
 function ensureTripAssignmentModal() {
     if (tripAssignmentModalController) { return tripAssignmentModalController; }
 
@@ -4270,6 +4485,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (manualModalElement && manualModalElement.classList.contains('open')) { return; }
         const aliasModalElement = document.getElementById('aliasModal');
         if (aliasModalElement && aliasModalElement.classList.contains('open')) { return; }
+        const tripRenameModalElement = document.getElementById('tripRenameModal');
+        if (tripRenameModalElement && tripRenameModalElement.classList.contains('open')) { return; }
         const archivedModalElement = document.getElementById('archivedPointsModal');
         if (archivedModalElement && archivedModalElement.classList.contains('open')) { return; }
 

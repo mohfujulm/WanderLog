@@ -631,6 +631,50 @@ def api_create_trip():
     ), 201
 
 
+@main.route('/api/trips/<trip_id>', methods=['PATCH'])
+def api_update_trip(trip_id: str):
+    """Update metadata for the selected trip."""
+
+    identifier = (trip_id or '').strip()
+    if not identifier:
+        return jsonify(status='error', message='Trip not found.'), 404
+
+    payload = request.get_json(silent=True) or {}
+    name_value = payload.get('name') or payload.get('trip_name') or ''
+    cleaned_name = str(name_value).strip()
+
+    if not cleaned_name:
+        return jsonify(status='error', message='Trip name is required.'), 400
+
+    if len(cleaned_name) > MAX_TRIP_NAME_LENGTH:
+        return jsonify(
+            status='error',
+            message=f'Trip name must be {MAX_TRIP_NAME_LENGTH} characters or fewer.'
+        ), 400
+
+    existing_trip = trip_store.get_trip(identifier)
+    if existing_trip is None:
+        return jsonify(status='error', message='Trip not found.'), 404
+
+    if hasattr(existing_trip, 'name') and existing_trip.name == cleaned_name:
+        return jsonify(
+            status='success',
+            message='Trip name is unchanged.',
+            trip=_serialise_trip(existing_trip),
+        )
+
+    try:
+        trip = trip_store.update_trip_metadata(identifier, name=cleaned_name)
+    except KeyError:
+        return jsonify(status='error', message='Trip not found.'), 404
+
+    return jsonify(
+        status='success',
+        message='Trip renamed successfully.',
+        trip=_serialise_trip(trip),
+    )
+
+
 @main.route('/api/trips/assign', methods=['POST'])
 def api_assign_trip():
     """Assign a timeline data point to a trip."""
