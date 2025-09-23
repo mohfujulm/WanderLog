@@ -70,6 +70,8 @@ let tripDetailTitleElement = null;
 let tripDetailSubtitleElement = null;
 let tripDetailCountElement = null;
 let tripDetailUpdatedElement = null;
+let tripDetailActionsElement = null;
+let tripDetailDeleteButton = null;
 let tripLocationSearchInput = null;
 let tripLocationSortFieldSelect = null;
 let tripLocationSortDirectionButton = null;
@@ -1575,6 +1577,8 @@ function initTripDetailPanel() {
     tripDetailSubtitleElement = document.getElementById('tripDetailSubtitle');
     tripDetailCountElement = document.getElementById('tripDetailCount');
     tripDetailUpdatedElement = document.getElementById('tripDetailUpdated');
+    tripDetailActionsElement = document.getElementById('tripDetailActions');
+    tripDetailDeleteButton = document.getElementById('tripDetailDelete');
     tripLocationSearchInput = document.getElementById('tripLocationSearchInput');
     tripLocationSortFieldSelect = document.getElementById('tripLocationSortField');
     tripLocationSortDirectionButton = document.getElementById('tripLocationSortDirection');
@@ -1595,6 +1599,15 @@ function initTripDetailPanel() {
             if (event) { event.preventDefault(); }
             closeTripDetail();
         });
+    }
+
+    if (tripDetailDeleteButton) {
+        tripDetailDeleteButton.addEventListener('click', handleTripDetailDeleteClick);
+        tripDetailDeleteButton.disabled = true;
+    }
+
+    if (tripDetailActionsElement) {
+        tripDetailActionsElement.hidden = true;
     }
 
     if (tripLocationSearchInput) {
@@ -1684,6 +1697,43 @@ function handleTripLocationListKeydown(event) {
     if (!locationId) { return; }
     event.preventDefault();
     focusTripLocationById(locationId, target);
+}
+
+async function handleTripDetailDeleteClick(event) {
+    if (event) { event.preventDefault(); }
+
+    const button = event ? (event.currentTarget || event.target) : null;
+
+    let tripId = '';
+    let tripName = TRIP_NAME_FALLBACK;
+
+    if (tripDetailState.trip && tripDetailState.trip.id) {
+        tripId = tripDetailState.trip.id;
+        if (tripDetailState.trip.name) { tripName = tripDetailState.trip.name; }
+    } else if (tripDetailState.selectedTripId) {
+        tripId = tripDetailState.selectedTripId;
+        const fallbackTrip = Array.isArray(tripListState.trips)
+            ? tripListState.trips.find((entry) => entry && entry.id === tripId)
+            : null;
+        if (fallbackTrip && fallbackTrip.name) {
+            tripName = fallbackTrip.name;
+        }
+    }
+
+    if (!tripId) {
+        showStatus('Trip could not be determined.', true);
+        return;
+    }
+
+    const displayName = tripName || TRIP_NAME_FALLBACK;
+    const confirmMessage = displayName
+        ? `Delete the trip “${displayName}”? This will remove it from all locations.`
+        : 'Delete this trip? This will remove it from all locations.';
+
+    await deleteTrip(tripId, {
+        triggerButton: button || null,
+        confirmMessage,
+    });
 }
 
 function openTripDetail(tripId, triggerElement) {
@@ -1886,6 +1936,38 @@ function updateTripDetailHeader() {
             tripDetailUpdatedElement.hidden = true;
             tripDetailUpdatedElement.textContent = '';
         }
+    }
+
+    updateTripDetailActions();
+}
+
+function updateTripDetailActions() {
+    initTripDetailPanel();
+    if (!tripDetailActionsElement || !tripDetailDeleteButton) { return; }
+
+    const trip = tripDetailState.trip;
+    const hasTrip = trip && trip.id;
+
+    if (hasTrip) {
+        const tripId = typeof trip.id === 'string' ? trip.id : String(trip.id || '');
+        const name = trip.name ? String(trip.name) : TRIP_NAME_FALLBACK;
+        const displayName = name || TRIP_NAME_FALLBACK;
+        tripDetailActionsElement.hidden = false;
+        tripDetailDeleteButton.disabled = false;
+        tripDetailDeleteButton.dataset.tripId = tripId;
+        if (displayName) {
+            tripDetailDeleteButton.setAttribute('aria-label', `Delete trip “${displayName}”`);
+            tripDetailDeleteButton.title = `Delete trip “${displayName}”`;
+        } else {
+            tripDetailDeleteButton.setAttribute('aria-label', 'Delete trip');
+            tripDetailDeleteButton.title = 'Delete trip';
+        }
+    } else {
+        tripDetailActionsElement.hidden = true;
+        tripDetailDeleteButton.disabled = true;
+        delete tripDetailDeleteButton.dataset.tripId;
+        tripDetailDeleteButton.removeAttribute('aria-label');
+        tripDetailDeleteButton.removeAttribute('title');
     }
 }
 
@@ -2516,6 +2598,89 @@ function upsertTripInList(trip, options = {}) {
     renderTripList();
 }
 
+function removeTripFromList(tripId, options = {}) {
+    const cleanedTripId = typeof tripId === 'string' ? tripId.trim() : String(tripId || '').trim();
+    if (!cleanedTripId) { return false; }
+
+    const { skipRender = false } = options || {};
+
+    const existingTrips = Array.isArray(tripListState.trips) ? tripListState.trips : [];
+    const filteredTrips = existingTrips.filter((entry) => entry && entry.id !== cleanedTripId);
+
+    if (filteredTrips.length === existingTrips.length) { return false; }
+
+    tripListState.trips = filteredTrips;
+    tripLocationCache.delete(cleanedTripId);
+
+    if (tripDetailState.selectedTripId === cleanedTripId) {
+        closeTripDetail({ restoreFocus: true, skipRender: true });
+    } else {
+        updateTripDetailActions();
+    }
+
+    if (Array.isArray(tripAssignmentMemberships) && tripAssignmentMemberships.length > 0) {
+        const updatedMemberships = tripAssignmentMemberships.filter((entry) => entry && entry.id !== cleanedTripId);
+        if (updatedMemberships.length !== tripAssignmentMemberships.length) {
+            tripAssignmentMemberships = updatedMemberships;
+            renderTripAssignmentMemberships();
+        }
+    }
+
+    tripSelectElement = tripSelectElement || document.getElementById('tripSelect');
+    tripSelectHelper = tripSelectHelper || document.getElementById('tripSelectHelper');
+
+    if (tripSelectElement) {
+        let selectedRemoved = false;
+        let optionRemoved = false;
+
+        Array.from(tripSelectElement.options || []).forEach((option) => {
+            if (option.value === cleanedTripId) {
+                if (option.selected) { selectedRemoved = true; }
+                option.remove();
+                optionRemoved = true;
+            }
+        });
+
+        if (optionRemoved) {
+            const allOptions = Array.from(tripSelectElement.options || []);
+            const tripOptions = allOptions.filter((option) => option.value);
+
+            if (tripOptions.length === 0) {
+                tripSelectElement.innerHTML = '';
+                const emptyOption = document.createElement('option');
+                emptyOption.value = '';
+                emptyOption.textContent = 'No trips available';
+                emptyOption.disabled = true;
+                emptyOption.selected = true;
+                tripSelectElement.appendChild(emptyOption);
+                tripSelectElement.disabled = true;
+                tripSelectElement.dataset.hasTrips = 'false';
+                if (tripSelectHelper) {
+                    tripSelectHelper.textContent = 'No trips yet. Enter a name below to create your first trip.';
+                }
+            } else {
+                tripSelectElement.disabled = false;
+                tripSelectElement.dataset.hasTrips = 'true';
+                if (selectedRemoved) {
+                    const placeholderOption = allOptions.find((option) => option.value === '');
+                    if (placeholderOption) {
+                        placeholderOption.selected = true;
+                    } else {
+                        const firstEnabled = tripOptions.find((option) => !option.disabled) || tripOptions[0];
+                        if (firstEnabled) { firstEnabled.selected = true; }
+                    }
+                }
+            }
+        }
+    }
+
+    if (!skipRender) {
+        renderTripList();
+    }
+
+    return true;
+}
+
 function applyTripLocationRemoval(tripId, placeId, options = {}) {
     const cleanedTripId = tripId ? String(tripId).trim() : '';
     const cleanedPlaceId = placeId ? String(placeId).trim() : '';
@@ -2581,6 +2746,63 @@ function applyTripLocationRemoval(tripId, placeId, options = {}) {
             tripDetailState.trip = { ...tripDetailState.trip, ...tripData };
             updateTripDetailHeader();
         }
+    }
+}
+
+async function deleteTrip(tripId, options = {}) {
+    const cleanedTripId = typeof tripId === 'string' ? tripId.trim() : String(tripId || '').trim();
+    if (!cleanedTripId) {
+        showStatus('Trip could not be determined.', true);
+        return;
+    }
+
+    const {
+        triggerButton = null,
+        confirmMessage = 'Delete this trip? This will remove it from all locations.',
+        skipConfirm = false,
+        onSuccess = null,
+    } = options || {};
+
+    if (!skipConfirm) {
+        if (!window.confirm(confirmMessage)) { return; }
+    }
+
+    if (triggerButton) { triggerButton.disabled = true; }
+    showLoading();
+
+    try {
+        const response = await fetch(`/api/trips/${encodeURIComponent(cleanedTripId)}`, {
+            method: 'DELETE',
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || result.status === 'error') {
+            const message = (result && result.message) ? result.message : 'Failed to delete trip.';
+            throw new Error(message);
+        }
+
+        removeTripFromList(cleanedTripId);
+        showStatus(result.message || 'Trip deleted successfully.');
+
+        if (typeof onSuccess === 'function') {
+            try {
+                onSuccess(result);
+            } catch (callbackError) {
+                console.error('Trip deletion success handler failed', callbackError);
+            }
+        }
+
+        try {
+            await loadMarkers();
+        } catch (markerError) {
+            console.error('Failed to refresh markers after trip deletion', markerError);
+        }
+    } catch (error) {
+        console.error('Failed to delete trip', error);
+        showStatus(error.message || 'Failed to delete trip.', true);
+    } finally {
+        hideLoading();
+        if (triggerButton) { triggerButton.disabled = false; }
     }
 }
 

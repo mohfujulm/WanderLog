@@ -234,6 +234,27 @@ def remove_place_from_trip(trip_id: str, place_id: str) -> Trip:
     return trip
 
 
+def delete_trip(trip_id: str) -> Trip:
+    """Remove the trip identified by ``trip_id`` from storage."""
+
+    _ensure_cache()
+
+    identifier = (trip_id or "").strip()
+    if not identifier:
+        raise ValueError("A valid trip ID is required.")
+
+    if not _trips_cache:
+        raise KeyError("Trip not found.")
+
+    for index, trip in enumerate(_trips_cache):
+        if trip.id == identifier:
+            removed_trip = _trips_cache.pop(index)
+            save_trips()
+            return removed_trip
+
+    raise KeyError("Trip not found.")
+
+
 def remove_places_from_all_trips(place_ids: Iterable[str]) -> dict:
     """Remove every ``place_id`` in ``place_ids`` from all trips.
 

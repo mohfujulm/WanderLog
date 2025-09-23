@@ -341,6 +341,41 @@ button, input, select { font-family: inherit; }
 
 .trip-detail-meta-entry time { color: inherit; }
 
+.trip-detail-actions {   display: flex;
+                        justify-content: flex-end; }
+
+.trip-detail-actions[hidden] {
+    display: none;
+}
+
+.trip-detail-delete {    border: none;
+                        border-radius: 999px;
+                        padding: 8px 18px;
+                        font-size: 12px;
+                        font-weight: 600;
+                        letter-spacing: 0.08em;
+                        text-transform: uppercase;
+                        background: #fee2e2;
+                        color: #991b1b;
+                        cursor: pointer;
+                        transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease; }
+
+.trip-detail-delete:hover:not(:disabled) {
+    background: #fecaca;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(153, 27, 27, 0.2);
+}
+
+.trip-detail-delete:focus-visible {
+    outline: 2px solid rgba(153, 27, 27, 0.65);
+    outline-offset: 2px;
+}
+
+.trip-detail-delete:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .trip-detail-controls { display: flex;
                         flex-direction: column;
                         gap: 12px; }

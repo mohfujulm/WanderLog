@@ -602,6 +602,28 @@ def api_get_trip(trip_id: str):
     })
 
 
+@main.route('/api/trips/<trip_id>', methods=['DELETE'])
+def api_delete_trip(trip_id: str):
+    """Delete the trip identified by ``trip_id``."""
+
+    identifier = (trip_id or '').strip()
+    if not identifier:
+        return jsonify(status='error', message='A valid trip ID is required.'), 400
+
+    try:
+        trip = trip_store.delete_trip(identifier)
+    except ValueError as exc:
+        return jsonify(status='error', message=str(exc)), 400
+    except KeyError:
+        return jsonify(status='error', message='Trip not found.'), 404
+
+    return jsonify(
+        status='success',
+        message='Trip deleted successfully.',
+        trip=_serialise_trip(trip),
+    )
+
+
 @main.route('/api/trips', methods=['POST'])
 def api_create_trip():
     """Create a new trip."""
