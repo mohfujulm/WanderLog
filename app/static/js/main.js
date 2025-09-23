@@ -4272,6 +4272,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (aliasModalElement && aliasModalElement.classList.contains('open')) { return; }
         const archivedModalElement = document.getElementById('archivedPointsModal');
         if (archivedModalElement && archivedModalElement.classList.contains('open')) { return; }
+
+        if (tripDetailState && tripDetailState.selectedTripId !== null) {
+            event.preventDefault();
+            closeTripDetail();
+            if (typeof event.stopImmediatePropagation === 'function') {
+                event.stopImmediatePropagation();
+            }
+            if (typeof event.stopPropagation === 'function') {
+                event.stopPropagation();
+            }
+            return;
+        }
+
         const menu = document.querySelector('.menu-container');
         if (menu && menu.classList.contains('open')) {
             event.preventDefault();
