@@ -254,6 +254,35 @@
             </div>
         </div>
     </div>
+    <div id="tripDescriptionModal" class="modal-overlay" aria-hidden="true" hidden>
+        <div class="modal-content trip-description-modal" role="dialog" aria-modal="true" aria-labelledby="tripDescriptionTitle" tabindex="-1">
+            <button type="button" class="modal-close-button" id="tripDescriptionClose" aria-label="Close trip notes">
+                <span aria-hidden="true">&times;</span>
+            </button>
+            <div class="trip-description-header">
+                <h2 id="tripDescriptionTitle">Trip notes</h2>
+                <p class="trip-description-meta" id="tripDescriptionUpdated" hidden>
+                    Last updated
+                    <time id="tripDescriptionUpdatedTime"></time>
+                </p>
+            </div>
+            <p class="trip-description-intro">
+                Keep notes about this journey so you always remember the highlights. Updates are saved for this trip only.
+            </p>
+            <form id="tripDescriptionForm" novalidate>
+                <div class="form-group">
+                    <label for="tripDescriptionInput">Description</label>
+                    <textarea id="tripDescriptionInput" name="description" rows="10" maxlength="2000" placeholder="Describe this trip"></textarea>
+                    <p class="form-helper-text">You can write up to 2,000 characters. Markdown formatting isn't supported.</p>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="modal-button secondary" id="tripDescriptionCancel">Cancel</button>
+                    <button type="submit" class="modal-button primary" id="tripDescriptionSave" disabled>Save</button>
+                </div>
+            </form>
+            <div id="tripDescriptionStatus" class="trip-description-status" role="status" aria-live="polite" hidden></div>
+        </div>
+    </div>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" defer></script>

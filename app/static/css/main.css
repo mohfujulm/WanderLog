@@ -976,11 +976,20 @@ button, input, select { font-family: inherit; }
                     font-size: 14px;
                     color: #333; }
 
-.form-group input, .form-group select { padding: 10px;
-                                        border: 1px solid #ccc;
-                                        border-radius: 8px;
-                                        font-size: 14px;
-                                        width: 100%; }
+.form-group input,
+.form-group select,
+.form-group textarea { padding: 10px;
+                       border: 1px solid #ccc;
+                       border-radius: 8px;
+                       font-size: 14px;
+                       width: 100%;
+                       font-family: inherit; }
+
+.form-group textarea {
+    resize: vertical;
+    min-height: 160px;
+    line-height: 1.5;
+}
 
 .form-helper-text {
     font-size: 12px;
@@ -1066,6 +1075,91 @@ button, input, select { font-family: inherit; }
 .modal-button.primary { background: #0078d4; color: #fff; }
 .modal-button.primary:hover { background: #0062ad; transform: translateY(-1px); }
 .modal-button:focus { outline: 2px solid #0078d4; outline-offset: 2px; }
+
+.trip-description-modal {
+    width: min(520px, 100%);
+    position: relative;
+    padding-top: 40px;
+}
+
+.modal-close-button {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    border: none;
+    background: transparent;
+    color: #4b5563;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 50%;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.modal-close-button:hover,
+.modal-close-button:focus {
+    background: rgba(229, 231, 235, 0.7);
+    color: #111827;
+    outline: none;
+}
+
+.modal-close-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.modal-close-button:focus-visible {
+    outline: 2px solid #0078d4;
+    outline-offset: 2px;
+}
+
+.modal-close-button span {
+    display: block;
+    transform: translateY(-1px);
+}
+
+.trip-description-header {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-right: 36px;
+}
+
+.trip-description-intro {
+    font-size: 13px;
+    color: #4b5563;
+    line-height: 1.5;
+    margin: 0;
+}
+
+.trip-description-meta {
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.trip-description-meta time {
+    font-weight: 600;
+    color: #374151;
+}
+
+.trip-description-modal form.is-saving {
+    opacity: 0.75;
+}
+
+.trip-description-status {
+    font-size: 13px;
+    color: #1f2937;
+    margin-top: 4px;
+}
+
+.trip-description-status.trip-description-status-error {
+    color: #b91c1c;
+}
+
+.trip-description-status[hidden] {
+    display: none;
+}
 
 .archived-list {
     display: flex;

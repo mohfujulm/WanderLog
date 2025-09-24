@@ -45,6 +45,16 @@ let tripSelectHelper = null;
 let tripAssignmentMembershipList = null;
 let tripAssignmentMembershipEmpty = null;
 let tripAssignmentMemberships = [];
+let tripDescriptionModalController = null;
+let tripDescriptionForm = null;
+let tripDescriptionField = null;
+let tripDescriptionStatusElement = null;
+let tripDescriptionTitleElement = null;
+let tripDescriptionUpdatedElement = null;
+let tripDescriptionUpdatedTimeElement = null;
+let tripDescriptionSaveButton = null;
+let tripDescriptionCancelButton = null;
+let tripDescriptionCloseButton = null;
 let tripMembershipGroupElement = null;
 let tripModalContext = { triggerButton: null, mode: 'single', count: 0 };
 let manageModeToggleButtons = [];
@@ -111,6 +121,15 @@ const tripDetailState = {
 };
 
 const tripLocationCache = new Map();
+
+const tripDescriptionState = {
+    tripId: null,
+    requestId: 0,
+    isSaving: false,
+    isDirty: false,
+    lastAppliedDescription: '',
+    triggerElement: null,
+};
 
 const manageModeState = {
     active: false,
@@ -1366,6 +1385,25 @@ function normaliseTrip(trip) {
     };
 }
 
+function getTripFromState(tripId) {
+    const cleanedTripId = typeof tripId === 'string'
+        ? tripId.trim()
+        : String(tripId || '').trim();
+    if (!cleanedTripId) { return null; }
+
+    if (tripDetailState.trip && tripDetailState.trip.id === cleanedTripId) {
+        return { ...tripDetailState.trip };
+    }
+
+    const existingTrips = Array.isArray(tripListState.trips) ? tripListState.trips : [];
+    const match = existingTrips.find((entry) => entry && entry.id === cleanedTripId);
+    if (match) {
+        return { ...match };
+    }
+
+    return null;
+}
+
 function updateTripsPanel(trips) {
     if (!tripListState.initialised) { initTripsPanel(); }
     const normalisedTrips = normaliseTripList(trips);
@@ -1508,6 +1546,23 @@ function formatTripDate(value) {
     if (Number.isNaN(date.getTime())) { return ''; }
     if (tripDateFormatter) { return tripDateFormatter.format(date); }
     return date.toISOString().split('T')[0];
+}
+
+function formatTripUpdatedTimestamp(value) {
+    if (!value) { return ''; }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) { return ''; }
+    try {
+        return date.toLocaleString(undefined, {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+        });
+    } catch (error) {
+        return date.toISOString();
+    }
 }
 
 function createTripListItem(trip) {
@@ -1666,7 +1721,7 @@ function handleTripListClick(event) {
     const tripId = target.dataset.tripId || '';
     if (!tripId) { return; }
     event.preventDefault();
-    openTripInNewWindow(tripId);
+    openTripDescriptionModal(tripId, { triggerElement: target });
     openTripDetail(tripId, target);
 }
 
@@ -1682,7 +1737,7 @@ function handleTripListKeydown(event) {
     const tripId = target.dataset.tripId || '';
     if (!tripId) { return; }
     event.preventDefault();
-    openTripInNewWindow(tripId);
+    openTripDescriptionModal(tripId, { triggerElement: target });
     openTripDetail(tripId, target);
 }
 
@@ -1750,34 +1805,318 @@ async function handleTripDetailDeleteClick(event) {
     });
 }
 
-function openTripInNewWindow(tripId) {
-    const cleanedTripId = tripId ? String(tripId).trim() : '';
-    if (!cleanedTripId) { return; }
-
-    const url = `/trips/${encodeURIComponent(cleanedTripId)}`;
-    const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
-    if (newWindow && typeof newWindow === 'object') {
-        try {
-            newWindow.opener = null;
-        } catch (error) {
-            // Ignore failures when clearing the opener reference.
-        }
+function updateTripDescriptionSaveButtonState() {
+    const disableSave = !tripDescriptionState.tripId
+        || tripDescriptionState.isSaving
+        || !tripDescriptionState.isDirty;
+    if (tripDescriptionSaveButton) {
+        tripDescriptionSaveButton.disabled = disableSave;
+    }
+    if (tripDescriptionCancelButton) {
+        tripDescriptionCancelButton.disabled = Boolean(tripDescriptionState.isSaving);
+    }
+    if (tripDescriptionCloseButton) {
+        tripDescriptionCloseButton.disabled = Boolean(tripDescriptionState.isSaving);
     }
 }
 
-function handleTripWindowMessage(event) {
-    if (!event) { return; }
+function showTripDescriptionStatus(message, isError = false) {
+    if (!tripDescriptionStatusElement) { return; }
 
-    if (event.origin && window.location && window.location.origin && event.origin !== window.location.origin) {
+    const text = message ? String(message) : '';
+    tripDescriptionStatusElement.textContent = text;
+    tripDescriptionStatusElement.hidden = text.length === 0;
+
+    if (isError) {
+        tripDescriptionStatusElement.classList.add('trip-description-status-error');
+    } else {
+        tripDescriptionStatusElement.classList.remove('trip-description-status-error');
+    }
+}
+
+function setTripDescriptionSaving(isSaving) {
+    const saving = Boolean(isSaving);
+    tripDescriptionState.isSaving = saving;
+    if (tripDescriptionForm) {
+        tripDescriptionForm.classList.toggle('is-saving', saving);
+    }
+    if (tripDescriptionField) {
+        tripDescriptionField.disabled = saving;
+    }
+    updateTripDescriptionSaveButtonState();
+}
+
+function populateTripDescriptionModal(trip, options = {}) {
+    const { preserveDirty = true } = options || {};
+    const name = trip && trip.name ? String(trip.name) : TRIP_NAME_FALLBACK;
+
+    if (tripDescriptionTitleElement) {
+        tripDescriptionTitleElement.textContent = name;
+    }
+
+    const description = trip && typeof trip.description === 'string'
+        ? trip.description
+        : '';
+    const timestamp = trip
+        ? (trip.updated_at || trip.latest_location_date || trip.created_at || '')
+        : '';
+
+    if (tripDescriptionUpdatedElement && tripDescriptionUpdatedTimeElement) {
+        const label = formatTripUpdatedTimestamp(timestamp);
+        if (label) {
+            tripDescriptionUpdatedElement.hidden = false;
+            tripDescriptionUpdatedTimeElement.textContent = label;
+            tripDescriptionUpdatedTimeElement.dateTime = timestamp;
+        } else {
+            tripDescriptionUpdatedElement.hidden = true;
+            tripDescriptionUpdatedTimeElement.textContent = '';
+            tripDescriptionUpdatedTimeElement.removeAttribute('dateTime');
+        }
+    }
+
+    const currentValue = tripDescriptionField ? tripDescriptionField.value : '';
+    tripDescriptionState.lastAppliedDescription = description;
+
+    const shouldUpdateField = !preserveDirty || !tripDescriptionState.isDirty;
+    if (tripDescriptionField && shouldUpdateField) {
+        tripDescriptionField.value = description;
+        tripDescriptionState.isDirty = false;
+    } else if (tripDescriptionField && currentValue === description) {
+        tripDescriptionState.isDirty = false;
+    }
+
+    updateTripDescriptionSaveButtonState();
+}
+
+async function refreshTripDescription(tripId, requestId) {
+    const cleanedTripId = typeof tripId === 'string'
+        ? tripId.trim()
+        : String(tripId || '').trim();
+    if (!cleanedTripId) { return; }
+
+    const activeRequestId = typeof requestId === 'number'
+        ? requestId
+        : tripDescriptionState.requestId + 1;
+    tripDescriptionState.requestId = activeRequestId;
+
+    try {
+        const response = await fetch(`/api/trips/${encodeURIComponent(cleanedTripId)}`);
+        const data = await response.json().catch(() => ({}));
+
+        if (tripDescriptionState.tripId !== cleanedTripId || tripDescriptionState.requestId !== activeRequestId) {
+            return;
+        }
+
+        if (!response.ok || (data && data.status === 'error')) {
+            const message = data && data.message ? data.message : 'Failed to load trip.';
+            showTripDescriptionStatus(message, true);
+            return;
+        }
+
+        const tripData = data && typeof data === 'object' && !Array.isArray(data)
+            ? (data.trip ?? data)
+            : {};
+
+        if (tripData && typeof tripData === 'object') {
+            populateTripDescriptionModal(tripData, { preserveDirty: true });
+            upsertTripInList(tripData, { reloadDetail: false });
+        }
+    } catch (error) {
+        if (tripDescriptionState.tripId !== cleanedTripId || tripDescriptionState.requestId !== activeRequestId) {
+            return;
+        }
+        console.error('Failed to refresh trip information', error);
+        showTripDescriptionStatus('Failed to refresh trip information.', true);
+    }
+}
+
+async function handleTripDescriptionSubmit(event) {
+    if (event) { event.preventDefault(); }
+
+    const tripId = tripDescriptionState.tripId ? String(tripDescriptionState.tripId).trim() : '';
+    if (!tripId) {
+        showTripDescriptionStatus('Trip could not be determined.', true);
         return;
     }
 
-    const data = event.data;
-    if (!data || typeof data !== 'object') { return; }
-
-    if (data.type === 'trip-updated' && data.trip) {
-        upsertTripInList(data.trip, { reloadDetail: false });
+    if (!tripDescriptionField) {
+        showTripDescriptionStatus('Description field is unavailable.', true);
+        return;
     }
+
+    if (!tripDescriptionState.isDirty) {
+        showTripDescriptionStatus('No changes to save.');
+        return;
+    }
+
+    const description = tripDescriptionField.value || '';
+
+    setTripDescriptionSaving(true);
+    showTripDescriptionStatus('');
+
+    try {
+        const response = await fetch(`/api/trips/${encodeURIComponent(tripId)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ description }),
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || (result && result.status === 'error')) {
+            const message = result && result.message ? result.message : 'Failed to save description.';
+            throw new Error(message);
+        }
+
+        const updatedTrip = result && result.trip ? result.trip : null;
+        if (updatedTrip && typeof updatedTrip === 'object') {
+            populateTripDescriptionModal(updatedTrip, { preserveDirty: false });
+            upsertTripInList(updatedTrip, { reloadDetail: false });
+        } else {
+            tripDescriptionState.lastAppliedDescription = description;
+            if (tripDescriptionField.value === description) {
+                tripDescriptionState.isDirty = false;
+            }
+        }
+
+        showTripDescriptionStatus(result && result.message ? result.message : 'Trip updated successfully.');
+    } catch (error) {
+        console.error('Failed to update trip description', error);
+        showTripDescriptionStatus(error.message || 'Failed to save description.', true);
+    } finally {
+        setTripDescriptionSaving(false);
+    }
+}
+
+function ensureTripDescriptionModal() {
+    if (tripDescriptionModalController) { return tripDescriptionModalController; }
+
+    tripDescriptionForm = document.getElementById('tripDescriptionForm');
+    tripDescriptionField = document.getElementById('tripDescriptionInput');
+    tripDescriptionStatusElement = document.getElementById('tripDescriptionStatus');
+    tripDescriptionTitleElement = document.getElementById('tripDescriptionTitle');
+    tripDescriptionUpdatedElement = document.getElementById('tripDescriptionUpdated');
+    tripDescriptionUpdatedTimeElement = document.getElementById('tripDescriptionUpdatedTime');
+    tripDescriptionSaveButton = document.getElementById('tripDescriptionSave');
+    tripDescriptionCancelButton = document.getElementById('tripDescriptionCancel');
+    tripDescriptionCloseButton = document.getElementById('tripDescriptionClose');
+
+    const controller = createModalController('tripDescriptionModal', {
+        getInitialFocus: () => tripDescriptionField || tripDescriptionSaveButton || null,
+        onClose: () => {
+            tripDescriptionState.requestId += 1;
+            tripDescriptionState.tripId = null;
+            tripDescriptionState.isDirty = false;
+            tripDescriptionState.isSaving = false;
+            tripDescriptionState.lastAppliedDescription = '';
+
+            if (tripDescriptionForm) {
+                tripDescriptionForm.classList.remove('is-saving');
+                tripDescriptionForm.reset();
+            }
+
+            if (tripDescriptionField) {
+                tripDescriptionField.disabled = false;
+            }
+
+            if (tripDescriptionUpdatedElement) {
+                tripDescriptionUpdatedElement.hidden = true;
+            }
+
+            if (tripDescriptionUpdatedTimeElement) {
+                tripDescriptionUpdatedTimeElement.textContent = '';
+                tripDescriptionUpdatedTimeElement.removeAttribute('dateTime');
+            }
+
+            showTripDescriptionStatus('');
+            updateTripDescriptionSaveButtonState();
+
+            const trigger = tripDescriptionState.triggerElement;
+            tripDescriptionState.triggerElement = null;
+            if (trigger && typeof trigger.focus === 'function') {
+                try {
+                    trigger.focus();
+                } catch (focusError) {
+                    // Ignore focus restoration issues.
+                }
+            }
+        },
+    });
+
+    if (!controller) { return null; }
+
+    tripDescriptionModalController = controller;
+
+    if (tripDescriptionCancelButton) {
+        tripDescriptionCancelButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            tripDescriptionModalController.close();
+        });
+    }
+
+    if (tripDescriptionCloseButton) {
+        tripDescriptionCloseButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            tripDescriptionModalController.close();
+        });
+    }
+
+    if (tripDescriptionForm) {
+        tripDescriptionForm.addEventListener('submit', handleTripDescriptionSubmit);
+    }
+
+    if (tripDescriptionField) {
+        tripDescriptionField.addEventListener('input', () => {
+            const currentValue = tripDescriptionField.value || '';
+            const lastValue = tripDescriptionState.lastAppliedDescription || '';
+            tripDescriptionState.isDirty = currentValue !== lastValue;
+            updateTripDescriptionSaveButtonState();
+            if (tripDescriptionStatusElement && !tripDescriptionStatusElement.hidden) {
+                showTripDescriptionStatus('');
+            }
+        });
+    }
+
+    updateTripDescriptionSaveButtonState();
+
+    return tripDescriptionModalController;
+}
+
+function openTripDescriptionModal(tripId, options = {}) {
+    const controller = ensureTripDescriptionModal();
+    if (!controller) { return; }
+
+    const cleanedTripId = typeof tripId === 'string'
+        ? tripId.trim()
+        : String(tripId || '').trim();
+    if (!cleanedTripId) { return; }
+
+    const { triggerElement = null } = options || {};
+
+    tripDescriptionState.tripId = cleanedTripId;
+    tripDescriptionState.isSaving = false;
+    tripDescriptionState.isDirty = false;
+    tripDescriptionState.lastAppliedDescription = '';
+    tripDescriptionState.triggerElement = triggerElement || null;
+
+    if (tripDescriptionForm) {
+        tripDescriptionForm.classList.remove('is-saving');
+        tripDescriptionForm.reset();
+    }
+
+    if (tripDescriptionField) {
+        tripDescriptionField.disabled = false;
+    }
+
+    showTripDescriptionStatus('');
+
+    const fallbackTrip = getTripFromState(cleanedTripId) || { id: cleanedTripId, name: TRIP_NAME_FALLBACK, description: '' };
+    populateTripDescriptionModal(fallbackTrip, { preserveDirty: false });
+
+    controller.open();
+    controller.refreshFocusableElements();
+
+    const requestId = tripDescriptionState.requestId + 1;
+    refreshTripDescription(cleanedTripId, requestId);
 }
 
 function openTripDetail(tripId, triggerElement) {
@@ -4344,8 +4683,6 @@ async function deleteMarker(markerId, markerInstance, triggerButton) {
         if (triggerButton) { triggerButton.disabled = false; }
     }
 }
-
-window.addEventListener('message', handleTripWindowMessage);
 
 document.addEventListener('DOMContentLoaded', async () => {
     ensureManualPointModal();

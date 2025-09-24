@@ -275,35 +275,6 @@ def index():
     return render_template("index.html", mapbox_token=MAPBOX_ACCESS_TOKEN)
 
 
-@main.route('/trips/<trip_id>')
-def trip_window(trip_id: str):
-    """Render a standalone view for the trip identified by ``trip_id``."""
-
-    identifier = (trip_id or '').strip()
-    if not identifier:
-        return render_template(
-            'trip_window.html',
-            trip=None,
-            trip_id='',
-            not_found=True,
-        ), 404
-
-    trip = trip_store.get_trip(identifier)
-    if trip is None:
-        return render_template(
-            'trip_window.html',
-            trip=None,
-            trip_id=identifier,
-            not_found=True,
-        ), 404
-
-    return render_template(
-        'trip_window.html',
-        trip=_serialise_trip(trip),
-        trip_id=identifier,
-        not_found=False,
-    )
-
 @main.route('/api/update_timeline', methods=['POST'])
 def api_update_timeline():
     """Process an uploaded Google Timeline JSON file and refresh the map."""
