@@ -45,7 +45,10 @@ let tripSelectHelper = null;
 let tripAssignmentMembershipList = null;
 let tripAssignmentMembershipEmpty = null;
 let tripAssignmentMemberships = [];
-let tripDescriptionModalController = null;
+let tripProfileOverlay = null;
+let tripProfilePanelElement = null;
+let tripProfileEscapeListener = null;
+let tripProfilePanelInitialised = false;
 let tripDescriptionForm = null;
 let tripDescriptionField = null;
 let tripDescriptionStatusElement = null;
@@ -1636,6 +1639,13 @@ function createTripSearchText(trip) {
 }
 
 function initTripDetailPanel() {
+    if (!tripProfileOverlay) {
+        tripProfileOverlay = document.getElementById('tripProfileOverlay');
+    }
+    if (!tripProfilePanelElement) {
+        tripProfilePanelElement = document.getElementById('tripProfilePanel');
+    }
+
     if (tripDetailState.initialised) { return; }
 
     tripDetailContainer = document.getElementById('tripDetailView');
@@ -1666,6 +1676,7 @@ function initTripDetailPanel() {
             if (event) { event.preventDefault(); }
             closeTripDetail();
         });
+        tripDescriptionCloseButton = tripDetailBackButton;
     }
 
     if (tripDetailDeleteButton) {
@@ -1721,7 +1732,7 @@ function handleTripListClick(event) {
     const tripId = target.dataset.tripId || '';
     if (!tripId) { return; }
     event.preventDefault();
-    openTripDescriptionModal(tripId, { triggerElement: target });
+    openTripProfile(tripId, { triggerElement: target });
     openTripDetail(tripId, target);
 }
 
@@ -1737,7 +1748,7 @@ function handleTripListKeydown(event) {
     const tripId = target.dataset.tripId || '';
     if (!tripId) { return; }
     event.preventDefault();
-    openTripDescriptionModal(tripId, { triggerElement: target });
+    openTripProfile(tripId, { triggerElement: target });
     openTripDetail(tripId, target);
 }
 
@@ -1846,7 +1857,32 @@ function setTripDescriptionSaving(isSaving) {
     updateTripDescriptionSaveButtonState();
 }
 
-function populateTripDescriptionModal(trip, options = {}) {
+function handleTripDescriptionCancel(event) {
+    if (event) { event.preventDefault(); }
+    initTripProfilePanel();
+
+    const lastValue = tripDescriptionState.lastAppliedDescription || '';
+    const wasDirty = Boolean(tripDescriptionState.isDirty);
+
+    if (tripDescriptionField) {
+        tripDescriptionField.value = lastValue;
+        try {
+            tripDescriptionField.focus({ preventScroll: true });
+        } catch (error) {
+            tripDescriptionField.focus();
+        }
+    }
+
+    tripDescriptionState.isDirty = false;
+    updateTripDescriptionSaveButtonState();
+
+    const statusMessage = wasDirty
+        ? (lastValue ? 'Reverted to last saved description.' : 'Cleared description changes.')
+        : '';
+    showTripDescriptionStatus(statusMessage);
+}
+
+function populateTripProfilePanel(trip, options = {}) {
     const { preserveDirty = true } = options || {};
     const name = trip && trip.name ? String(trip.name) : TRIP_NAME_FALLBACK;
 
@@ -1918,7 +1954,7 @@ async function refreshTripDescription(tripId, requestId) {
             : {};
 
         if (tripData && typeof tripData === 'object') {
-            populateTripDescriptionModal(tripData, { preserveDirty: true });
+            populateTripProfilePanel(tripData, { preserveDirty: true });
             upsertTripInList(tripData, { reloadDetail: false });
         }
     } catch (error) {
@@ -1969,7 +2005,7 @@ async function handleTripDescriptionSubmit(event) {
 
         const updatedTrip = result && result.trip ? result.trip : null;
         if (updatedTrip && typeof updatedTrip === 'object') {
-            populateTripDescriptionModal(updatedTrip, { preserveDirty: false });
+            populateTripProfilePanel(updatedTrip, { preserveDirty: false });
             upsertTripInList(updatedTrip, { reloadDetail: false });
         } else {
             tripDescriptionState.lastAppliedDescription = description;
@@ -1987,77 +2023,35 @@ async function handleTripDescriptionSubmit(event) {
     }
 }
 
-function ensureTripDescriptionModal() {
-    if (tripDescriptionModalController) { return tripDescriptionModalController; }
+function initTripProfilePanel() {
+    if (!tripProfileOverlay) {
+        tripProfileOverlay = document.getElementById('tripProfileOverlay');
+    }
+    if (!tripProfilePanelElement) {
+        tripProfilePanelElement = document.getElementById('tripProfilePanel');
+    }
 
     tripDescriptionForm = document.getElementById('tripDescriptionForm');
     tripDescriptionField = document.getElementById('tripDescriptionInput');
     tripDescriptionStatusElement = document.getElementById('tripDescriptionStatus');
-    tripDescriptionTitleElement = document.getElementById('tripDescriptionTitle');
     tripDescriptionUpdatedElement = document.getElementById('tripDescriptionUpdated');
     tripDescriptionUpdatedTimeElement = document.getElementById('tripDescriptionUpdatedTime');
     tripDescriptionSaveButton = document.getElementById('tripDescriptionSave');
     tripDescriptionCancelButton = document.getElementById('tripDescriptionCancel');
-    tripDescriptionCloseButton = document.getElementById('tripDescriptionClose');
+    tripDescriptionCloseButton = document.getElementById('tripDetailBack');
 
-    const controller = createModalController('tripDescriptionModal', {
-        getInitialFocus: () => tripDescriptionField || tripDescriptionSaveButton || null,
-        onClose: () => {
-            tripDescriptionState.requestId += 1;
-            tripDescriptionState.tripId = null;
-            tripDescriptionState.isDirty = false;
-            tripDescriptionState.isSaving = false;
-            tripDescriptionState.lastAppliedDescription = '';
-
-            if (tripDescriptionForm) {
-                tripDescriptionForm.classList.remove('is-saving');
-                tripDescriptionForm.reset();
-            }
-
-            if (tripDescriptionField) {
-                tripDescriptionField.disabled = false;
-            }
-
-            if (tripDescriptionUpdatedElement) {
-                tripDescriptionUpdatedElement.hidden = true;
-            }
-
-            if (tripDescriptionUpdatedTimeElement) {
-                tripDescriptionUpdatedTimeElement.textContent = '';
-                tripDescriptionUpdatedTimeElement.removeAttribute('dateTime');
-            }
-
-            showTripDescriptionStatus('');
-            updateTripDescriptionSaveButtonState();
-
-            const trigger = tripDescriptionState.triggerElement;
-            tripDescriptionState.triggerElement = null;
-            if (trigger && typeof trigger.focus === 'function') {
-                try {
-                    trigger.focus();
-                } catch (focusError) {
-                    // Ignore focus restoration issues.
-                }
-            }
-        },
-    });
-
-    if (!controller) { return null; }
-
-    tripDescriptionModalController = controller;
-
-    if (tripDescriptionCancelButton) {
-        tripDescriptionCancelButton.addEventListener('click', (event) => {
-            event.preventDefault();
-            tripDescriptionModalController.close();
-        });
+    if (!tripDescriptionTitleElement) {
+        if (!tripDetailState.initialised) { initTripDetailPanel(); }
+        tripDescriptionTitleElement = tripDetailTitleElement || document.getElementById('tripDetailTitle');
     }
 
-    if (tripDescriptionCloseButton) {
-        tripDescriptionCloseButton.addEventListener('click', (event) => {
-            event.preventDefault();
-            tripDescriptionModalController.close();
-        });
+    if (tripProfilePanelInitialised) {
+        updateTripDescriptionSaveButtonState();
+        return;
+    }
+
+    if (tripDescriptionCancelButton) {
+        tripDescriptionCancelButton.addEventListener('click', handleTripDescriptionCancel);
     }
 
     if (tripDescriptionForm) {
@@ -2076,14 +2070,12 @@ function ensureTripDescriptionModal() {
         });
     }
 
+    tripProfilePanelInitialised = true;
     updateTripDescriptionSaveButtonState();
-
-    return tripDescriptionModalController;
 }
 
-function openTripDescriptionModal(tripId, options = {}) {
-    const controller = ensureTripDescriptionModal();
-    if (!controller) { return; }
+function openTripProfile(tripId, options = {}) {
+    initTripProfilePanel();
 
     const cleanedTripId = typeof tripId === 'string'
         ? tripId.trim()
@@ -2107,16 +2099,61 @@ function openTripDescriptionModal(tripId, options = {}) {
         tripDescriptionField.disabled = false;
     }
 
+    if (tripProfilePanelElement) {
+        tripProfilePanelElement.scrollTop = 0;
+    }
+
     showTripDescriptionStatus('');
 
     const fallbackTrip = getTripFromState(cleanedTripId) || { id: cleanedTripId, name: TRIP_NAME_FALLBACK, description: '' };
-    populateTripDescriptionModal(fallbackTrip, { preserveDirty: false });
+    populateTripProfilePanel(fallbackTrip, { preserveDirty: false });
 
-    controller.open();
-    controller.refreshFocusableElements();
+    updateTripDescriptionSaveButtonState();
 
     const requestId = tripDescriptionState.requestId + 1;
     refreshTripDescription(cleanedTripId, requestId);
+}
+
+function closeTripProfileOverlay(options = {}) {
+    const { restoreFocus = true } = options || {};
+    initTripProfilePanel();
+
+    tripDescriptionState.requestId += 1;
+    const trigger = tripDescriptionState.triggerElement;
+    tripDescriptionState.tripId = null;
+    tripDescriptionState.isSaving = false;
+    tripDescriptionState.isDirty = false;
+    tripDescriptionState.lastAppliedDescription = '';
+    tripDescriptionState.triggerElement = null;
+
+    if (tripDescriptionForm) {
+        tripDescriptionForm.classList.remove('is-saving');
+        tripDescriptionForm.reset();
+    }
+
+    if (tripDescriptionField) {
+        tripDescriptionField.disabled = false;
+        tripDescriptionField.value = '';
+    }
+
+    if (tripDescriptionUpdatedElement) {
+        tripDescriptionUpdatedElement.hidden = true;
+    }
+    if (tripDescriptionUpdatedTimeElement) {
+        tripDescriptionUpdatedTimeElement.textContent = '';
+        tripDescriptionUpdatedTimeElement.removeAttribute('dateTime');
+    }
+
+    showTripDescriptionStatus('');
+    updateTripDescriptionSaveButtonState();
+
+    if (restoreFocus && trigger && typeof trigger.focus === 'function') {
+        try {
+            trigger.focus({ preventScroll: true });
+        } catch (error) {
+            trigger.focus();
+        }
+    }
 }
 
 function openTripDetail(tripId, triggerElement) {
@@ -2173,13 +2210,6 @@ function openTripDetail(tripId, triggerElement) {
         loadTripDetailData(tripId, requestId);
     }
 
-    if (tripLocationSearchInput) {
-        try {
-            tripLocationSearchInput.focus({ preventScroll: true });
-        } catch (error) {
-            tripLocationSearchInput.focus();
-        }
-    }
 }
 
 function closeTripDetail(options = {}) {
@@ -2187,6 +2217,8 @@ function closeTripDetail(options = {}) {
     const { restoreFocus = true, skipRender = false } = options || {};
     const previousTripId = tripDetailState.selectedTripId;
     const triggerElement = tripDetailState.triggerElement;
+
+    closeTripProfileOverlay({ restoreFocus: false });
 
     tripDetailState.selectedTripId = null;
     tripDetailState.trip = null;
@@ -2254,28 +2286,62 @@ function closeTripDetail(options = {}) {
     }
 }
 
+function attachTripProfileEscapeListener() {
+    if (tripProfileEscapeListener) { return; }
+    tripProfileEscapeListener = (event) => {
+        if (event.defaultPrevented) { return; }
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            closeTripDetail();
+        }
+    };
+    document.addEventListener('keydown', tripProfileEscapeListener);
+}
+
+function detachTripProfileEscapeListener() {
+    if (!tripProfileEscapeListener) { return; }
+    document.removeEventListener('keydown', tripProfileEscapeListener);
+    tripProfileEscapeListener = null;
+}
+
 function showTripDetailView() {
     initTripDetailPanel();
-    if (tripListView) {
-        tripListView.hidden = true;
-        tripListView.setAttribute('aria-hidden', 'true');
-    }
+    initTripProfilePanel();
     if (tripDetailContainer) {
         tripDetailContainer.hidden = false;
         tripDetailContainer.setAttribute('aria-hidden', 'false');
     }
+    if (tripProfileOverlay) {
+        tripProfileOverlay.hidden = false;
+        tripProfileOverlay.setAttribute('aria-hidden', 'false');
+        tripProfileOverlay.classList.add('open');
+    }
+    if (tripProfilePanelElement) {
+        tripProfilePanelElement.scrollTop = 0;
+    }
+    if (tripDescriptionField && !tripDescriptionState.isSaving) {
+        try {
+            tripDescriptionField.focus({ preventScroll: true });
+        } catch (error) {
+            tripDescriptionField.focus();
+        }
+    }
+    attachTripProfileEscapeListener();
 }
 
 function hideTripDetailView() {
     initTripDetailPanel();
+    initTripProfilePanel();
     if (tripDetailContainer) {
         tripDetailContainer.hidden = true;
         tripDetailContainer.setAttribute('aria-hidden', 'true');
     }
-    if (tripListView) {
-        tripListView.hidden = false;
-        tripListView.setAttribute('aria-hidden', 'false');
+    if (tripProfileOverlay) {
+        tripProfileOverlay.classList.remove('open');
+        tripProfileOverlay.setAttribute('aria-hidden', 'true');
+        tripProfileOverlay.hidden = true;
     }
+    detachTripProfileEscapeListener();
 }
 
 function updateTripDetailHeader() {
@@ -2302,7 +2368,7 @@ function updateTripDetailHeader() {
         if (formatted) {
             tripDetailUpdatedElement.hidden = false;
             tripDetailUpdatedElement.textContent = '';
-            tripDetailUpdatedElement.append('Date ');
+            tripDetailUpdatedElement.append('Updated ');
             const timeElement = document.createElement('time');
             timeElement.dateTime = updatedValue;
             timeElement.textContent = formatted;

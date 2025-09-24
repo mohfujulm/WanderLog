@@ -87,46 +87,6 @@
                             <div id="tripList" class="trip-list" role="list" hidden></div>
                         </div>
                     </div>
-                    <div id="tripDetailView" class="trip-detail" hidden aria-hidden="true">
-                        <button type="button" class="trip-detail-back" id="tripDetailBack">Back to trips</button>
-                        <div class="trip-detail-header">
-                            <div class="trip-detail-titles">
-                                <h4 class="trip-detail-heading" id="tripDetailTitle">Trip details</h4>
-                                <p class="trip-detail-subtitle" id="tripDetailSubtitle">Review the places assigned to this journey.</p>
-                            </div>
-                            <div class="trip-detail-meta" aria-live="polite">
-                                <span id="tripDetailCount" class="trip-detail-meta-entry"></span>
-                                <span id="tripDetailUpdated" class="trip-detail-meta-entry" hidden></span>
-                            </div>
-                            <div class="trip-detail-actions" id="tripDetailActions" hidden>
-                                <button type="button" class="trip-detail-delete" id="tripDetailDelete">Delete trip</button>
-                            </div>
-                        </div>
-                        <div class="trip-detail-controls">
-                            <label class="trip-search">
-                                <span class="trip-search-label">Search</span>
-                                <input type="search" id="tripLocationSearchInput" name="tripLocationSearch" placeholder="Search locations" autocomplete="off">
-                            </label>
-                            <div class="trip-sort" role="group" aria-label="Location sorting">
-                                <label class="trip-sort-field" for="tripLocationSortField">
-                                    <span class="trip-sort-label">Sort by</span>
-                                    <select id="tripLocationSortField" name="tripLocationSortField">
-                                        <option value="date">Date visited</option>
-                                        <option value="name">Name</option>
-                                    </select>
-                                </label>
-                                <button type="button" class="trip-sort-direction" id="tripLocationSortDirection" aria-label="Sort descending">
-                                    Ascending
-                                </button>
-                            </div>
-                        </div>
-                        <div class="trip-location-list-container">
-                            <div id="tripLocationLoading" class="trip-list-message" role="status" aria-live="polite" hidden>Loading locations...</div>
-                            <div id="tripLocationError" class="trip-list-message trip-list-message-error" role="alert" hidden></div>
-                            <div id="tripLocationEmpty" class="trip-list-message" aria-live="polite" hidden>No locations assigned to this trip yet.</div>
-                            <div id="tripLocationList" class="trip-location-list" role="list" hidden></div>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>
@@ -254,34 +214,70 @@
             </div>
         </div>
     </div>
-    <div id="tripDescriptionModal" class="modal-overlay" aria-hidden="true" hidden>
-        <div class="modal-content trip-description-modal" role="dialog" aria-modal="true" aria-labelledby="tripDescriptionTitle" tabindex="-1">
-            <button type="button" class="modal-close-button" id="tripDescriptionClose" aria-label="Close trip notes">
-                <span aria-hidden="true">&times;</span>
-            </button>
-            <div class="trip-description-header">
-                <h2 id="tripDescriptionTitle">Trip notes</h2>
-                <p class="trip-description-meta" id="tripDescriptionUpdated" hidden>
-                    Last updated
-                    <time id="tripDescriptionUpdatedTime"></time>
-                </p>
+    <div id="tripProfileOverlay" class="trip-profile-overlay" aria-hidden="true" hidden>
+        <article id="tripProfilePanel" class="trip-profile-panel" role="dialog" aria-modal="false" aria-labelledby="tripDetailTitle">
+            <div id="tripDetailView" class="trip-detail trip-profile-content" hidden aria-hidden="true">
+                <div class="trip-profile-hero">
+                    <button type="button" class="trip-profile-close" id="tripDetailBack" aria-label="Close trip profile">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                    <div class="trip-profile-hero-body">
+                        <p class="trip-profile-eyebrow">Trip profile</p>
+                        <h2 class="trip-profile-title" id="tripDetailTitle" data-default-text="Trip details">Trip details</h2>
+                        <p class="trip-profile-subtitle" id="tripDetailSubtitle" data-default-text="Review the places assigned to this journey.">Review the places assigned to this journey.</p>
+                        <div class="trip-profile-meta" aria-live="polite">
+                            <span id="tripDetailCount" class="trip-profile-meta-entry"></span>
+                            <span id="tripDetailUpdated" class="trip-profile-meta-entry" hidden></span>
+                        </div>
+                        <div class="trip-profile-actions" id="tripDetailActions" hidden>
+                            <button type="button" class="trip-detail-delete" id="tripDetailDelete">Delete trip</button>
+                        </div>
+                    </div>
+                </div>
+                <form id="tripDescriptionForm" class="trip-profile-description" novalidate>
+                    <label class="trip-profile-description-label" for="tripDescriptionInput">Description</label>
+                    <textarea id="tripDescriptionInput" name="description" rows="6" maxlength="2000" placeholder="Describe this trip"></textarea>
+                    <div class="trip-profile-description-footer">
+                        <div class="trip-profile-updated" id="tripDescriptionUpdated" hidden>
+                            Last updated <time id="tripDescriptionUpdatedTime"></time>
+                        </div>
+                        <div class="trip-profile-description-actions">
+                            <button type="button" class="modal-button secondary" id="tripDescriptionCancel">Cancel</button>
+                            <button type="submit" class="modal-button primary" id="tripDescriptionSave" disabled>Save</button>
+                        </div>
+                    </div>
+                </form>
+                <div id="tripDescriptionStatus" class="trip-description-status" role="status" aria-live="polite" hidden></div>
+                <div class="trip-profile-controls">
+                    <div class="trip-detail-controls">
+                        <label class="trip-search">
+                            <span class="trip-search-label">Search</span>
+                            <input type="search" id="tripLocationSearchInput" name="tripLocationSearch" placeholder="Search locations" autocomplete="off">
+                        </label>
+                        <div class="trip-sort" role="group" aria-label="Location sorting">
+                            <label class="trip-sort-field" for="tripLocationSortField">
+                                <span class="trip-sort-label">Sort by</span>
+                                <select id="tripLocationSortField" name="tripLocationSortField">
+                                    <option value="date">Date visited</option>
+                                    <option value="name">Name</option>
+                                </select>
+                            </label>
+                            <button type="button" class="trip-sort-direction" id="tripLocationSortDirection" aria-label="Sort descending">
+                                Ascending
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="trip-profile-locations">
+                    <div class="trip-location-list-container">
+                        <div id="tripLocationLoading" class="trip-list-message" role="status" aria-live="polite" hidden>Loading locations...</div>
+                        <div id="tripLocationError" class="trip-list-message trip-list-message-error" role="alert" hidden></div>
+                        <div id="tripLocationEmpty" class="trip-list-message" aria-live="polite" hidden>No locations assigned to this trip yet.</div>
+                        <div id="tripLocationList" class="trip-location-list" role="list" hidden></div>
+                    </div>
+                </div>
             </div>
-            <p class="trip-description-intro">
-                Keep notes about this journey so you always remember the highlights. Updates are saved for this trip only.
-            </p>
-            <form id="tripDescriptionForm" novalidate>
-                <div class="form-group">
-                    <label for="tripDescriptionInput">Description</label>
-                    <textarea id="tripDescriptionInput" name="description" rows="10" maxlength="2000" placeholder="Describe this trip"></textarea>
-                    <p class="form-helper-text">You can write up to 2,000 characters. Markdown formatting isn't supported.</p>
-                </div>
-                <div class="modal-actions">
-                    <button type="button" class="modal-button secondary" id="tripDescriptionCancel">Cancel</button>
-                    <button type="submit" class="modal-button primary" id="tripDescriptionSave" disabled>Save</button>
-                </div>
-            </form>
-            <div id="tripDescriptionStatus" class="trip-description-status" role="status" aria-live="polite" hidden></div>
-        </div>
+        </article>
     </div>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
