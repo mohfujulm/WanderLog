@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% if not_found %}Trip not found{% else %}{{ (trip.name or 'Trip') | e }} | WanderLog Trip{% endif %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Raleway:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/trip-window.css') }}">
+</head>
+<body>
+<main class="trip-window">
+    {% if not_found %}
+    <header class="trip-window-header">
+        <h1>Trip not found</h1>
+        {% if trip_id %}
+        <p class="trip-window-meta">We couldn't find a trip with the ID <code>{{ trip_id }}</code>.</p>
+        {% else %}
+        <p class="trip-window-meta">A valid trip identifier is required to display this page.</p>
+        {% endif %}
+    </header>
+    {% else %}
+    <header class="trip-window-header">
+        <h1 id="tripName">{{ trip.name or 'Trip' }}</h1>
+        <p class="trip-window-meta">Trip ID: <code>{{ trip_id }}</code></p>
+        <p class="trip-window-meta" id="tripUpdatedWrapper" hidden>
+            Last updated
+            <time id="tripUpdatedTime" datetime="{{ trip.updated_at or trip.latest_location_date or trip.created_at or '' }}"></time>
+        </p>
+    </header>
+    <section class="trip-window-section">
+        <p class="trip-window-description-intro">
+            Keep notes about this journey so you always remember the highlights. Updates are saved automatically for this trip.
+        </p>
+        <form id="tripDescriptionForm" class="trip-window-form" novalidate>
+            <div class="form-field">
+                <label for="tripDescription">Description</label>
+                <textarea id="tripDescription" name="description" rows="10" maxlength="2000" placeholder="Describe this trip">{{ trip.description or '' }}</textarea>
+                <p class="form-helper-text">You can write up to 2,000 characters. Markdown formatting isn't supported.</p>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="primary">Save description</button>
+            </div>
+        </form>
+        <div id="tripStatus" class="trip-status" role="status" aria-live="polite" hidden></div>
+    </section>
+    {% endif %}
+</main>
+{% if not not_found %}
+<script id="tripData" type="application/json" data-trip-id="{{ trip_id }}">{{ trip|tojson }}</script>
+<script src="{{ url_for('static', filename='js/trip-window.js') }}" defer></script>
+{% endif %}
+</body>
+</html>

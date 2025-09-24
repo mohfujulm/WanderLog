@@ -1344,6 +1344,17 @@ function normaliseTrip(trip) {
         ? latestDateRaw
         : (latestDateRaw ? String(latestDateRaw) : '');
 
+    let description = '';
+    if (typeof trip.description === 'string') {
+        description = trip.description;
+    } else if (trip.description !== null && trip.description !== undefined) {
+        try {
+            description = String(trip.description);
+        } catch (error) {
+            description = '';
+        }
+    }
+
     return {
         id: identifier,
         name,
@@ -1351,6 +1362,7 @@ function normaliseTrip(trip) {
         created_at: createdAt,
         updated_at: updatedAt,
         latest_location_date: latestDate,
+        description,
     };
 }
 
@@ -1654,6 +1666,7 @@ function handleTripListClick(event) {
     const tripId = target.dataset.tripId || '';
     if (!tripId) { return; }
     event.preventDefault();
+    openTripInNewWindow(tripId);
     openTripDetail(tripId, target);
 }
 
@@ -1669,6 +1682,7 @@ function handleTripListKeydown(event) {
     const tripId = target.dataset.tripId || '';
     if (!tripId) { return; }
     event.preventDefault();
+    openTripInNewWindow(tripId);
     openTripDetail(tripId, target);
 }
 
@@ -1734,6 +1748,36 @@ async function handleTripDetailDeleteClick(event) {
         triggerButton: button || null,
         confirmMessage,
     });
+}
+
+function openTripInNewWindow(tripId) {
+    const cleanedTripId = tripId ? String(tripId).trim() : '';
+    if (!cleanedTripId) { return; }
+
+    const url = `/trips/${encodeURIComponent(cleanedTripId)}`;
+    const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
+    if (newWindow && typeof newWindow === 'object') {
+        try {
+            newWindow.opener = null;
+        } catch (error) {
+            // Ignore failures when clearing the opener reference.
+        }
+    }
+}
+
+function handleTripWindowMessage(event) {
+    if (!event) { return; }
+
+    if (event.origin && window.location && window.location.origin && event.origin !== window.location.origin) {
+        return;
+    }
+
+    const data = event.data;
+    if (!data || typeof data !== 'object') { return; }
+
+    if (data.type === 'trip-updated' && data.trip) {
+        upsertTripInList(data.trip, { reloadDetail: false });
+    }
 }
 
 function openTripDetail(tripId, triggerElement) {
@@ -4300,6 +4344,8 @@ async function deleteMarker(markerId, markerInstance, triggerButton) {
         if (triggerButton) { triggerButton.disabled = false; }
     }
 }
+
+window.addEventListener('message', handleTripWindowMessage);
 
 document.addEventListener('DOMContentLoaded', async () => {
     ensureManualPointModal();

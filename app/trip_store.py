@@ -32,6 +32,7 @@ class Trip:
     id: str
     name: str
     place_ids: List[str] = field(default_factory=list)
+    description: str = ""
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
 
@@ -66,6 +67,13 @@ def _normalise_trip_data(raw: dict) -> Optional[Trip]:
     else:
         place_ids = []
 
+    description_raw = raw.get("description")
+    if description_raw is None:
+        description = ""
+    else:
+        description_candidate = str(description_raw)
+        description = description_candidate if description_candidate.strip() else ""
+
     created_at = str(raw.get("created_at") or raw.get("created") or "").strip()
     if not created_at:
         created_at = _utcnow_iso()
@@ -80,6 +88,7 @@ def _normalise_trip_data(raw: dict) -> Optional[Trip]:
         place_ids=place_ids,
         created_at=created_at,
         updated_at=updated_at,
+        description=description,
     )
 
 
@@ -149,16 +158,19 @@ def get_trip(trip_id: str) -> Optional[Trip]:
     return None
 
 
-def create_trip(name: str) -> Trip:
+def create_trip(name: str, *, description: str = "") -> Trip:
     """Create a new trip with ``name`` and persist it."""
 
     cleaned_name = (name or "").strip()
     if not cleaned_name:
         raise ValueError("Trip name is required.")
 
+    raw_description = str(description or "")
+    cleaned_description = raw_description if raw_description.strip() else ""
+
     _ensure_cache()
 
-    trip = Trip(id=uuid4().hex, name=cleaned_name)
+    trip = Trip(id=uuid4().hex, name=cleaned_name, description=cleaned_description)
     _trips_cache.append(trip)
     save_trips()
     return trip
@@ -310,7 +322,12 @@ def remove_places_from_all_trips(place_ids: Iterable[str]) -> dict:
     }
 
 
-def update_trip_metadata(trip_id: str, *, name: Optional[str] = None) -> Trip:
+def update_trip_metadata(
+    trip_id: str,
+    *,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+) -> Trip:
     """Update metadata for the trip identified by ``trip_id``."""
 
     _ensure_cache()
@@ -325,6 +342,13 @@ def update_trip_metadata(trip_id: str, *, name: Optional[str] = None) -> Trip:
         cleaned = name.strip()
         if cleaned and cleaned != trip.name:
             trip.name = cleaned
+            updated = True
+
+    if description is not None:
+        raw_description = str(description or "")
+        final_description = raw_description if raw_description.strip() else ""
+        if final_description != trip.description:
+            trip.description = final_description
             updated = True
 
     if updated:
