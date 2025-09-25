@@ -24,6 +24,8 @@ let tripMarkerIconInstance = null;
 const tripMarkerLookup = new Map();
 const mapMarkerLookup = new Map();
 const mapMarkerData = new Map();
+let loadMarkersAbortController = null;
+let loadMarkersRequestToken = 0;
 let isTripMapModeActive = false;
 let previousMapView = null;
 let manualPointForm;
@@ -4095,10 +4097,18 @@ async function loadMarkers() {
         return;
     }
 
-    // Remove any markers currently displayed
-    markerCluster.clearLayers();
-    mapMarkerLookup.clear();
-    mapMarkerData.clear();
+    const requestToken = ++loadMarkersRequestToken;
+
+    if (loadMarkersAbortController) {
+        try {
+            loadMarkersAbortController.abort();
+        } catch (abortError) {
+            console.error('Failed to abort previous marker request', abortError);
+        }
+    }
+
+    const abortController = new AbortController();
+    loadMarkersAbortController = abortController;
 
     // Collect the values of all checked source type filters
     const checked = Array.from(
@@ -4115,11 +4125,29 @@ async function loadMarkers() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
+            signal: abortController.signal,
         });
+
+        if (!response.ok) {
+            throw new Error(`Failed to load map data. (${response.status})`);
+        }
+
         // Parse the JSON response
         const markers = await response.json();
+
+        if (requestToken !== loadMarkersRequestToken) {
+            return;
+        }
+
+        // Remove any markers currently displayed
+        markerCluster.clearLayers();
+        mapMarkerLookup.clear();
+        mapMarkerData.clear();
+
+        const markerList = Array.isArray(markers) ? markers : [];
+
         // Add a Leaflet marker for each item returned
-        markers.forEach((m) => {
+        markerList.forEach((m) => {
             const lat = Number(m.lat);
             const lng = Number(m.lng);
             if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
@@ -4190,12 +4218,19 @@ async function loadMarkers() {
 
             marker.addTo(markerCluster);
         });
-        // Done loading
-        hideLoading();
         refreshSelectionAfterDataLoad();
     } catch (err) {
-        hideLoading();
+        if (err && err.name === 'AbortError') {
+            return;
+        }
         console.error(err);
+    } finally {
+        if (requestToken === loadMarkersRequestToken) {
+            hideLoading();
+            if (loadMarkersAbortController === abortController) {
+                loadMarkersAbortController = null;
+            }
+        }
     }
 }
 
