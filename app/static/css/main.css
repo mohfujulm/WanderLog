@@ -508,6 +508,14 @@ button, input, select { font-family: inherit; }
     gap: 10px;
 }
 
+.trip-profile-panel:not(.trip-profile-panel-editing) .trip-profile-description {
+    display: none;
+}
+
+.trip-profile-panel.trip-profile-panel-editing .trip-profile-description-display {
+    display: none;
+}
+
 .trip-profile-name-field {
     display: flex;
     flex-direction: column;

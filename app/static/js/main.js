@@ -1896,9 +1896,11 @@ function applyTripProfileEditMode() {
     }
     if (tripDescriptionForm) {
         tripDescriptionForm.hidden = !isEditing;
+        tripDescriptionForm.setAttribute('aria-hidden', isEditing ? 'false' : 'true');
     }
     if (tripDescriptionDisplayElement) {
         tripDescriptionDisplayElement.hidden = isEditing;
+        tripDescriptionDisplayElement.setAttribute('aria-hidden', isEditing ? 'true' : 'false');
     }
     if (tripNameInputContainer) {
         tripNameInputContainer.hidden = !isEditing;
@@ -2561,11 +2563,14 @@ function closeTripDetail(options = {}) {
 function attachTripProfileEscapeListener() {
     if (tripProfileEscapeListener) { return; }
     tripProfileEscapeListener = (event) => {
-        if (event.defaultPrevented) { return; }
-        if (event.key === 'Escape') {
+        if (event.defaultPrevented || event.key !== 'Escape') { return; }
+        if (tripProfileEditState.active) {
             event.preventDefault();
-            closeTripDetail();
+            handleTripDescriptionCancel();
+            return;
         }
+        event.preventDefault();
+        closeTripDetail();
     };
     document.addEventListener('keydown', tripProfileEscapeListener);
 }
