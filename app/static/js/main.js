@@ -201,6 +201,7 @@ const MARKER_ICON_PATHS = Object.assign(
 
 const MAP_STATE_STORAGE_KEY = 'wanderlog.mapState';
 const MAP_STATE_STORAGE_VERSION = 1;
+let menuStateAutoKeyCounter = 0;
 
 const mapStateStorage = (() => {
     if (typeof window === 'undefined') { return null; }
@@ -263,6 +264,42 @@ function mergeMapState(baseState, partialState) {
         }
 
         result.filters = nextFilters;
+    }
+
+    if (partialState && typeof partialState.menus === 'object') {
+        const baseMenus = (baseState && typeof baseState.menus === 'object') ? baseState.menus : {};
+        const nextMenus = Object.assign({}, baseMenus);
+
+        Object.keys(partialState.menus).forEach((menuKey) => {
+            const partialMenuState = partialState.menus[menuKey];
+
+            if (partialMenuState === null) {
+                delete nextMenus[menuKey];
+                return;
+            }
+
+            if (!partialMenuState || typeof partialMenuState !== 'object') {
+                return;
+            }
+
+            const baseMenuState = (nextMenus[menuKey] && typeof nextMenus[menuKey] === 'object')
+                ? nextMenus[menuKey]
+                : {};
+            const mergedMenuState = Object.assign({}, baseMenuState);
+
+            if ('open' in partialMenuState) {
+                mergedMenuState.open = Boolean(partialMenuState.open);
+            }
+
+            if ('activePanelId' in partialMenuState) {
+                const activePanelId = partialMenuState.activePanelId;
+                mergedMenuState.activePanelId = typeof activePanelId === 'string' ? activePanelId : '';
+            }
+
+            nextMenus[menuKey] = mergedMenuState;
+        });
+
+        result.menus = nextMenus;
     }
 
     return result;
@@ -346,6 +383,66 @@ function persistFilterState(startDate, endDate, sourceTypes) {
             endDate: endDate || '',
             sourceTypes: selectedTypes,
             allSourceTypesSelected: allSelected,
+        },
+    });
+}
+
+function getMenuStateStorageKey(menu) {
+    if (!menu) { return null; }
+
+    const existing = menu.dataset ? menu.dataset.menuStorageKey : null;
+    if (existing) { return existing; }
+
+    const explicitAttribute = menu.getAttribute('data-menu-storage-key');
+    if (explicitAttribute) {
+        if (menu.dataset) { menu.dataset.menuStorageKey = explicitAttribute; }
+        return explicitAttribute;
+    }
+
+    const id = menu.getAttribute('id');
+    if (id) {
+        if (menu.dataset) { menu.dataset.menuStorageKey = id; }
+        return id;
+    }
+
+    const controls = menu.querySelector('.overlay-controls');
+    if (controls && controls.id) {
+        const derived = `controls:${controls.id}`;
+        if (menu.dataset) { menu.dataset.menuStorageKey = derived; }
+        return derived;
+    }
+
+    const toggle = menu.querySelector('.menu-toggle');
+    if (toggle && toggle.id) {
+        const derived = `toggle:${toggle.id}`;
+        if (menu.dataset) { menu.dataset.menuStorageKey = derived; }
+        return derived;
+    }
+
+    const generated = `menu-${menuStateAutoKeyCounter++}`;
+    if (menu.dataset) { menu.dataset.menuStorageKey = generated; }
+    return generated;
+}
+
+function saveMenuState(menu, partialMenuState) {
+    if (!menu) { return; }
+    const key = getMenuStateStorageKey(menu);
+    if (!key) { return; }
+
+    const payload = {};
+    if (partialMenuState && typeof partialMenuState === 'object') {
+        if ('open' in partialMenuState) {
+            payload.open = Boolean(partialMenuState.open);
+        }
+        if ('activePanelId' in partialMenuState) {
+            const id = partialMenuState.activePanelId;
+            payload.activePanelId = typeof id === 'string' ? id : '';
+        }
+    }
+
+    saveStoredMapState({
+        menus: {
+            [key]: payload,
         },
     });
 }
@@ -5624,6 +5721,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     const storedAllSourceTypesSelected = storedFilterState
         ? Boolean(storedFilterState.allSourceTypesSelected)
         : false;
+    const storedMenuStates = (storedMapState && typeof storedMapState.menus === 'object')
+        ? storedMapState.menus
+        : null;
+    const menuElement = document.querySelector('.menu-container');
+    const menuStorageKey = menuElement ? getMenuStateStorageKey(menuElement) : null;
+    const storedMenuState = (menuStorageKey && storedMenuStates && typeof storedMenuStates[menuStorageKey] === 'object')
+        ? storedMenuStates[menuStorageKey]
+        : null;
+    const storedMenuActivePanelId = (storedMenuState && typeof storedMenuState.activePanelId === 'string'
+        && storedMenuState.activePanelId)
+        ? storedMenuState.activePanelId
+        : null;
     const menuToggleButton = document.getElementById('menuToggle');
     if (menuToggleButton) {
         menuToggleButton.addEventListener('click', (event) => {
@@ -5699,6 +5808,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else {
                 delete menuControls.dataset.activePanel;
             }
+
+            if (menuElement) {
+                const activePanelId = activePanel ? activePanel.id : '';
+                saveMenuState(menuElement, { activePanelId });
+            }
         };
 
         const focusTab = (tab) => {
@@ -5736,7 +5850,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         });
 
-        const initiallySelected = tabs.find((tab) => tab.getAttribute('aria-selected') === 'true') || tabs[0];
+        let initiallySelected = tabs.find((tab) => tab.getAttribute('aria-selected') === 'true') || tabs[0];
+        if (storedMenuActivePanelId) {
+            const storedPanel = panels.find((panel) => panel.id === storedMenuActivePanelId) || null;
+            if (storedPanel) {
+                const storedTab = tabs.find((tab) => tab.getAttribute('aria-controls') === storedPanel.id) || null;
+                if (storedTab) {
+                    initiallySelected = storedTab;
+                }
+            }
+        }
         activateTab(initiallySelected);
     }
     try {
@@ -5814,8 +5937,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
     initMap();
-    const menu = document.querySelector('.menu-container');
-    if (menu) { applyMenuState(menu, menu.classList.contains('open')); }
+    if (menuElement) {
+        if (storedMenuState && typeof storedMenuState.open === 'boolean') {
+            if (storedMenuState.open) { menuElement.classList.add('open'); }
+            else { menuElement.classList.remove('open'); }
+        }
+        applyMenuState(menuElement, menuElement.classList.contains('open'), { skipPersistence: true });
+    }
     document.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape') { return; }
         const manualModalElement = document.getElementById('manualPointModal');
@@ -5854,7 +5982,8 @@ function toggleMenu() {
     applyMenuState(menu, isOpen);
 }
 
-function applyMenuState(menu, isOpen) {
+function applyMenuState(menu, isOpen, options = {}) {
+    const skipPersistence = options && options.skipPersistence;
     const trigger = menu.querySelector('.menu-toggle');
     const icon = trigger ? trigger.querySelector('.menu-toggle-icon img') : null;
     const label = trigger ? trigger.querySelector('.menu-toggle-text') : null;
@@ -5892,5 +6021,9 @@ function applyMenuState(menu, isOpen) {
                 element.setAttribute('tabindex', '-1');
             }
         });
+    }
+
+    if (!skipPersistence) {
+        saveMenuState(menu, { open: isOpen });
     }
 }
