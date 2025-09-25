@@ -1,6 +1,8 @@
-﻿<!DOCTYPE html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Wanderlog Map</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -8,470 +10,112 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-      
-        :root { --app-font-family: 'Raleway', 'Verdana', sans-serif; }
-
-        body, html {    height: 100%; 
-                        font-family: var(--app-font-family); 
-                        overflow: hidden; }
-
-        button, input, select { font-family: inherit; }
-
-        #map-container {    position: relative; 
-                            width: 100vw; 
-                            height: 100vh; }
-
-        #map {  width: 100%;
-                height: 100%; }
-
-        .leaflet-marker-icon.marker-pin-icon {
-            filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.25));
-        }
-
-        .menu-container {   position: absolute; 
-                            top: 0; 
-                            right: 0; 
-                            height: 100%; 
-                            width: min(18vw, 90vw); 
-                            z-index: 1000; 
-                            background-color: rgba(255,255,255,0.96); 
-                            padding: 24px 24px 24px 16px; 
-                            border-radius: 24px 0 0 24px; 
-                            box-shadow: -8px 0 24px rgba(0,0,0,0.18); 
-                            display: flex; 
-                            flex-direction: column; 
-                            gap: 16px; 
-                            transform: translateX(calc(100% - 80px)); 
-                            transition: transform 0.35s ease, box-shadow 0.35s ease, padding 0.35s ease; 
-                            backdrop-filter: blur(14px); 
-                            overflow: hidden; }
-        
-        .menu-container.open {  transform: translateX(0); 
-                                box-shadow: -12px 0 32px rgba(0,0,0,0.25); 
-                                padding-left: 24px; }
-
-        .menu-toggle {  align-self: flex-start; 
-                        cursor: pointer; 
-                        user-select: none; 
-                        padding: 18px 12px; 
-                        background: rgba(255,255,255,0.95); 
-                        border-radius: 18px; 
-                        box-shadow: 0 6px 18px rgba(0,0,0,0.12); 
-                        transition: background 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease; 
-                        border: none; 
-                        display: inline-flex; 
-                        flex-direction: row; 
-                        align-items: center; 
-                        justify-content: center; 
-                        gap: 8px; 
-                        text-transform: uppercase; 
-                        letter-spacing: 0.12em; 
-                        color: #333; 
-                        writing-mode: vertical-rl; 
-                        text-orientation: mixed; 
-                        font-weight: 500; }
-
-        .menu-toggle:hover {    background: rgba(255,255,255,1); 
-                                transform: translateY(-2px); 
-                                box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
-
-        .menu-toggle:focus { outline: 2px solid rgba(0,120,212,0.6); outline-offset: 2px; }
-
-        .menu-toggle .menu-toggle-icon {    display: inline-flex; 
-                                            align-items: center; 
-                                            justify-content: center; 
-                                            width: 20px; 
-                                            height: 20px; 
-                                            line-height: 1; 
-                                            writing-mode: horizontal-tb; 
-                                            flex-shrink: 0; }
-
-        .menu-toggle .menu-toggle-icon img {    width: 100%; 
-                                                height: 100%; 
-                                                object-fit: contain; 
-                                                display: block; }
-
-        .menu-toggle .menu-toggle-text { font-size: 12px; }
-
-        .menu-container.open .menu-toggle { align-self: flex-end; 
-                                            margin-left: auto; 
-                                            writing-mode: horizontal-tb; 
-                                            flex-direction: row; 
-                                            padding: 10px 16px; 
-                                            border-radius: 14px; 
-                                            gap: 8px; 
-                                            letter-spacing: 0.08em;
-                                            box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
-        .menu-container.open .menu-toggle .menu-toggle-text { font-size: 14px; }
-
-        .overlay-controls { display: flex; 
-                            flex-direction: column; 
-                            align-items: flex-end;
-                            gap: 12px; 
-                            opacity: 0; 
-                            transform: translateX(16px); 
-                            transition: opacity 0.25s ease 0.1s, transform 0.25s ease 0.1s; 
-                            overflow-y: auto; 
-                            max-height: calc(100% - 80px); 
-                            padding-right: 4px; 
-                            pointer-events: none; }
-
-
-        .menu-container.open .overlay-controls { opacity: 1; transform: translateX(0); pointer-events: auto; }
-
-        .overlay-button {   background: rgba(255,255,255,0.95); 
-                            color: #333; 
-                            border: none; 
-                            padding: 12px 18px; 
-                            font-size: 14px; 
-                            font-weight: 500; 
-                            border-radius: 15px; 
-                            cursor: pointer; 
-                            transition: all 0.3s ease; 
-                            box-shadow: 3px 4px 0px 0px rgba(0, 0, 0, 0.15); 
-                            backdrop-filter: blur(10px); 
-                            border: 1px solid rgba(255,255,255,0.2); 
-                            min-width: 180px; 
-                            text-align: right; 
-                            width: 100%; }
-
-        .overlay-section-title { align-self: stretch;
-                                 padding-top: 3px;
-                                 font-size: 13px;
-                                 font-weight: 600;
-                                 letter-spacing: 0.08em;
-                                 text-transform: uppercase;
-                                 color: #444;
-                                 text-align: right; }
-
-        .overlay-button:hover {     background: rgba(255,255,255,1); 
-                                    transform: translateY(-2px); 
-                                    box-shadow: 4px 5px 0px 0px rgba(0, 0, 0, 0.15); }
-
-        .overlay-button:active {    transform: translateY(0); 
-                                    box-shadow: 4px 5px 0px 0px rgba(0, 0, 0, 0.15); }
-
-        .checkbox-group {               display: flex;
-                                        flex-direction: column;
-                                        gap: 4px;
-                                        align-self: stretch; }
-
-        .checkbox-group label {         display: flex; 
-                                        align-items: center; 
-                                        gap: 8px; 
-                                        font-size: 14px; 
-                                        justify-content: space-between; }
-
-        .checkbox-group label span {    flex: 1;
-                                        min-width: 0;
-                                        text-align: right; }
-
-        .checkbox-group label input { flex-shrink: 0; }
-
-        .date-filter-group {            display: flex;
-                                        flex-direction: column;
-                                        gap: 8px;
-                                        align-self: stretch; }
-
-        .date-filter-group label {      display: flex;
-                                        align-items: center;
-                                        gap: 8px;
-                                        font-size: 14px;
-                                        justify-content: space-between; }
-
-        .date-filter-group label span { flex: 1;
-                                        text-align: right; }
-
-        .date-filter-group input {      border: 1px solid #ccc;
-                                        border-radius: 8px;
-                                        padding: 6px 10px;
-                                        font-size: 14px;
-                                        font-family: inherit; }
-
-        .date-filter-actions {          display: flex;
-                                        justify-content: flex-end; }
-
-        .date-filter-clear {            background: none;
-                                        border: none;
-                                        color: #0078d4;
-                                        font-size: 13px;
-                                        font-weight: 600;
-                                        cursor: pointer;
-                                        padding: 0; }
-
-        .date-filter-clear:hover {      text-decoration: underline; }
-
-        .date-filter-clear:focus {      outline: 2px solid rgba(0,120,212,0.6);
-                                        outline-offset: 2px; }
-
-        #status {   position: absolute; 
-                    bottom: 20px; 
-                    left: 50%; 
-                    transform: translateX(-50%); 
-                    background: rgba(255,255,255,0.9); 
-                    padding: 8px 12px; 
-                    border-radius: 4px; 
-                    display: none; 
-                    font-size: 14px; 
-                    z-index: 1000; }
-
-        #status.success {   border: 1px solid #4CAF50; 
-                            color: #4CAF50; }
-                    
-        #status.error {     border: 1px solid #F44336; 
-                            color: #F44336; }
-
-        .loading-overlay {  position: absolute; 
-                            top: 0; 
-                            left: 0; 
-                            width: 100%; 
-                            height: 100%; 
-                            background: rgba(255,255,255,0.8); 
-                            display: none; 
-                            align-items: center; 
-                            justify-content: center; 
-                            z-index: 2000; }
-
-        .loading-spinner {  text-align: center; 
-                            font-size: 18px; }
-
-        .spinner {          border: 4px solid #f3f3f3; 
-                            border-top: 4px solid #0078D7; 
-                            border-radius: 50%; 
-                            width: 40px; 
-                            height: 40px; 
-                            animation: spin 1s linear infinite; 
-                            margin: 0 auto 10px; }
-
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-        .modal-overlay {    position: absolute; 
-                            inset: 0; background: rgba(0,0,0,0.45); 
-                            display: none; 
-                            align-items: center; 
-                            justify-content: center; 
-                            z-index: 3000; 
-                            padding: 20px; }
-
-        .modal-overlay.open { display: flex; }
-
-        .modal-content {    background: #fff; 
-                            border-radius: 12px; 
-                            width: min(420px, 100%); 
-                            box-shadow: 0 12px 32px rgba(0,0,0,0.25); 
-                            padding: 24px; 
-                            display: flex; 
-                            flex-direction: column; 
-                            gap: 16px; 
-                            outline: none; }
-
-        .modal-content h2 { font-size: 20px; 
-                            margin-bottom: 4px; }
-
-        .modal-content form { display: flex; 
-                            flex-direction: column; 
-                            gap: 14px; }
-
-        .form-group {       display: flex; 
-                            flex-direction: column; 
-                            gap: 6px; }
-
-        .form-group label { font-weight: 600; 
-                            font-size: 14px; 
-                            color: #333; }
-
-        .form-group input, .form-group select { padding: 10px; 
-                                                border: 1px solid #ccc; 
-                                                border-radius: 8px; 
-                                                font-size: 14px; 
-                                                width: 100%; }
-
-        .modal-actions {    display: flex; 
-                            justify-content: flex-end; 
-                            gap: 12px; 
-                            margin-top: 8px; }
-
-        .modal-button {     border: none; 
-                            border-radius: 8px; 
-                            padding: 10px 18px; 
-                            font-size: 14px; 
-                            cursor: pointer; 
-                            transition: background 0.2s ease, transform 0.2s ease; 
-                            font-weight: 600; }
-
-        .modal-button.secondary { background: #e0e0e0; color: #333; }
-        .modal-button.secondary:hover { background: #d5d5d5; }
-        .modal-button.primary { background: #0078d4; color: #fff; }
-        .modal-button.primary:hover { background: #0062ad; transform: translateY(-1px); }
-        .modal-button:focus { outline: 2px solid #0078d4; outline-offset: 2px; }
-
-        .archived-list {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            max-height: 320px;
-            overflow-y: auto;
-        }
-
-        .archived-empty {
-            font-size: 12px;
-            color: #555;
-            text-align: center;
-        }
-
-        .archived-item {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 12px;
-            padding: 12px;
-            border: 1px solid #e0e0e0;
-            border-radius: 10px;
-            background: #f9fafb;
-        }
-
-        .archived-item-details {
-            display: flex;
-            flex-direction: column;
-            font-size: 12px;
-            gap: 4px;
-            flex: 1;
-            min-width: 0;
-        }
-
-        .archived-item-place {
-            font-weight: 500;
-            color: #222;
-            word-break: break-word;
-        }
-
-        .archived-item-meta {
-            font-size: 12px;
-            color: #555;
-        }
-
-        .archived-item-action {
-            align-self: center;
-            white-space: nowrap;
-        }
-
-        .marker-popup {
-            font-family: var(--app-font-family);
-            min-width: 220px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            color: #222;
-        }
-
-        .marker-popup-row {
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-            font-size: 13px;
-            line-height: 1.4;
-        }
-
-        .marker-popup-label {
-            font-weight: 600;
-            color: #555;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            font-size: 11px;
-        }
-
-        .marker-popup-value {
-            color: #1a1a1a;
-            word-break: break-word;
-        }
-
-        .marker-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 4px;
-        }
-
-        .marker-action {
-            flex: 1 1 0;
-            border: none;
-            border-radius: 8px;
-            padding: 8px 10px;
-            font-size: 13px;
-            cursor: pointer;
-            transition: background 0.2s ease, transform 0.2s ease;
-            font-weight: 600;
-        }
-
-        .marker-action:focus {
-            outline: 2px solid rgba(0,120,212,0.45);
-            outline-offset: 2px;
-        }
-
-        .marker-action:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .marker-action-archive {
-            background: #eef2ff;
-            color: #314192;
-        }
-
-        .marker-action-archive:hover:not(:disabled) {
-            background: #dce4ff;
-            transform: translateY(-1px);
-        }
-
-        .marker-action-delete {
-            background: #fdecea;
-            color: #b3261e;
-        }
-
-        .marker-action-delete:hover:not(:disabled) {
-            background: #fbd6d2;
-            transform: translateY(-1px);
-        }
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}" />
 </head>
 <body>
 <div id="map-container">
     <div id="map"></div>
-    <input type="file" id="timelineFile" accept=".json" style="display:none" onchange="updateMap()">
+    <input type="file" id="timelineFile" accept=".json" hidden>
     <div class="menu-container" role="complementary" aria-label="Map controls panel">
-        <button class="menu-toggle" type="button" onclick="toggleMenu()" aria-label="Open menu" aria-expanded="false" aria-controls="menuControls">
+        <button class="menu-toggle" id="menuToggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="menuControls">
             <span class="menu-toggle-icon" aria-hidden="true">
                 <img src="{{ url_for('static', filename='assets/menu-icon.svg') }}" alt="" aria-hidden="true">
             </span>
             <span class="menu-toggle-text">Menu</span>
         </button>
         <div class="overlay-controls" id="menuControls" aria-hidden="true" inert>
-            <button class="overlay-button" onclick="document.getElementById('timelineFile').click()">Import Timeline Data</button>
-            <button class="overlay-button" onclick="addManualPoint()">Add a Location Manually</button>
-            <button class="overlay-button" onclick="clearMap()">Clear Map</button>
-            <button class="overlay-button" onclick="refreshMap()">Refresh Map</button>
-            <button class="overlay-button" onclick="viewArchivedPoints()">View Archived Points</button>
-            <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
-            <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
-            <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
-            <div class="date-filter-group" id="dateFilters" role="group" aria-labelledby="dateFiltersTitle">
-                <label for="filterStartDate">
-                    <span>Start Date</span>
-                    <input type="date" id="filterStartDate" name="filterStartDate">
-                </label>
-                <label for="filterEndDate">
-                    <span>End Date</span>
-                    <input type="date" id="filterEndDate" name="filterEndDate">
-                </label>
-                <div class="date-filter-actions">
-                    <button type="button" class="date-filter-clear" id="clearDateFilters">Clear Dates</button>
+            <div class="overlay-tabs-wrapper">
+                <div class="overlay-tabs" role="tablist" aria-label="Menu sections">
+                    <button type="button" class="overlay-tab" role="tab" id="menuTabTrips" aria-selected="true" aria-controls="menuPanelTrips">Trips</button>
+                    <button type="button" class="overlay-tab" role="tab" id="menuTabControls" aria-selected="false" aria-controls="menuPanelControls" tabindex="-1">Settings</button>
+                </div>
+                <button type="button" class="overlay-manage-toggle" id="manageModeQuickToggle" data-manage-mode-toggle data-manage-mode-active-class="overlay-manage-toggle-active" data-manage-mode-label-default="Edit" data-manage-mode-label-active="Done" aria-pressed="false">Edit</button>
+            </div>
+            <div id="menuPanelControls" class="overlay-tab-panel" role="tabpanel" aria-labelledby="menuTabControls">
+                <button class="overlay-button" type="button" id="importTimelineButton">Import Timeline Data</button>
+                <button class="overlay-button" type="button" id="addManualPointButton">Add a Location Manually</button>
+                <button class="overlay-button" type="button" id="clearMapButton">Clear Map</button>
+                <button class="overlay-button" type="button" id="refreshMapButton">Refresh Map</button>
+                <button class="overlay-button" type="button" id="viewArchivedPointsButton">View Archived Points</button>
+                <button class="overlay-button" type="button" id="manageModeToggle" data-manage-mode-toggle data-manage-mode-active-class="overlay-button-active" data-manage-mode-label-default="Enter Manage Mode" data-manage-mode-label-active="Exit Manage Mode">Enter Manage Mode</button>
+                <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
+                <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
+                <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
+                <div class="date-filter-group" id="dateFilters" role="group" aria-labelledby="dateFiltersTitle">
+                    <label for="filterStartDate">
+                        <span>Start Date</span>
+                        <input type="date" id="filterStartDate" name="filterStartDate">
+                    </label>
+                    <label for="filterEndDate">
+                        <span>End Date</span>
+                        <input type="date" id="filterEndDate" name="filterEndDate">
+                    </label>
+                    <div class="date-filter-actions">
+                        <button type="button" class="date-filter-clear" id="clearDateFilters">Clear Dates</button>
+                    </div>
+                </div>
+            </div>
+            <div id="menuPanelTrips" class="overlay-tab-panel" role="tabpanel" aria-labelledby="menuTabTrips" hidden>
+                <div class="trip-panel">
+                    <div class="trip-panel-header">
+                        <h3 class="trip-panel-heading">Trips</h3>
+                        <p class="trip-panel-subtitle">Browse every journey you've created and quickly locate the one you need.</p>
+                    </div>
+                    <div id="tripListView" class="trip-list-view">
+                        <div class="trip-controls">
+                            <label class="trip-search">
+                                <span class="trip-search-label">Search</span>
+                                <input type="search" id="tripSearchInput" name="tripSearch" placeholder="Search trips" autocomplete="off">
+                            </label>
+                            <div class="trip-sort" role="group" aria-label="Trip sorting">
+                                <label class="trip-sort-field" for="tripSortField">
+                                    <span class="trip-sort-label">Sort by</span>
+                                    <select id="tripSortField" name="tripSortField">
+                                        <option value="name">Name</option>
+                                        <option value="latest_location_date" selected>Date</option>
+                                    </select>
+                                </label>
+                                <button type="button" class="trip-sort-direction" id="tripSortDirection" aria-label="Sort ascending">
+                                    Descending
+                                </button>
+                            </div>
+                        </div>
+                        <div class="trip-list-container">
+                            <div id="tripListLoading" class="trip-list-message" role="status" aria-live="polite" hidden>Loading trips...</div>
+                            <div id="tripListError" class="trip-list-message trip-list-message-error" role="alert" hidden></div>
+                            <div id="tripListEmpty" class="trip-list-message" aria-live="polite" hidden>No trips yet. Assign a location to begin your first journey.</div>
+                            <div id="tripList" class="trip-list" role="list" hidden></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
     <div id="status"></div>
+    <div id="selectionToolbar" class="selection-toolbar" hidden aria-live="polite">
+        <div class="selection-summary">
+            <div class="selection-count"><span id="selectionCount">0</span> selected</div>
+            <div class="selection-summary-actions">
+                <button type="button" class="selection-clear" id="selectionClearButton">Clear selection</button>
+                <button type="button" class="selection-exit" id="selectionExitButton">Exit manage mode</button>
+            </div>
+        </div>
+        <div class="selection-actions" role="group" aria-label="Selection actions">
+            <button type="button" class="selection-action-button selection-action-trip" id="selectionAddToTripButton" disabled>
+                Add to Trip
+            </button>
+            <button type="button" class="selection-action-button selection-action-remove-trips" id="selectionRemoveTripsButton" disabled>
+                Remove from Trips
+            </button>
+            <button type="button" class="selection-action-button selection-action-archive" id="selectionArchiveButton" disabled>
+                Archive
+            </button>
+            <button type="button" class="selection-action-button selection-action-delete" id="selectionDeleteButton" disabled>
+                Delete
+            </button>
+        </div>
+        <p class="selection-hint">Drag on the map to select locations. Hold Alt while dragging to remove from the selection.</p>
+    </div>
     <div class="loading-overlay" id="loading">
         <div class="loading-spinner">
             <div class="spinner"></div>
@@ -485,6 +129,11 @@
                 <div class="form-group">
                     <label for="manualPlace">Place Name</label>
                     <input type="text" id="manualPlace" name="place_name" autocomplete="off" required>
+                </div>
+                <div class="form-group">
+                    <label for="manualAlias">Custom Name (Optional)</label>
+                    <input type="text" id="manualAlias" name="alias" maxlength="120" autocomplete="off" placeholder="e.g. Grandma's House">
+                    <p class="form-helper-text">Leave blank to use the place name from your timeline.</p>
                 </div>
                 <div class="form-group">
                     <label for="manualDate">Date</label>
@@ -505,6 +154,55 @@
             </form>
         </div>
     </div>
+    <div id="aliasModal" class="modal-overlay" aria-hidden="true" hidden>
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="aliasModalTitle" tabindex="-1">
+            <h2 id="aliasModalTitle">Rename Location</h2>
+            <form id="aliasForm">
+                <div class="form-group">
+                    <label for="aliasInput">Custom Name</label>
+                    <input type="text" id="aliasInput" name="alias" maxlength="120" autocomplete="off" placeholder="Enter a nickname or leave blank">
+                    <p class="form-helper-text">
+                        Original place name:
+                        <span id="aliasOriginalName" class="alias-modal-original"></span>
+                    </p>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="modal-button secondary" id="aliasCancel">Cancel</button>
+                    <button type="submit" class="modal-button primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div id="tripAssignmentModal" class="modal-overlay" aria-hidden="true" hidden>
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="tripAssignmentTitle" tabindex="-1">
+            <h2 id="tripAssignmentTitle">Add to Trip</h2>
+            <form id="tripAssignmentForm">
+                <div class="form-group">
+                    <label for="tripSelect">Choose a Trip</label>
+                    <select id="tripSelect" name="trip_id">
+                        <option value="" disabled selected>Loading trips...</option>
+                    </select>
+                    <p class="form-helper-text" id="tripSelectHelper">
+                        Select an existing trip or enter a name to create a new one.
+                    </p>
+                </div>
+                <div class="form-group" id="tripMembershipGroup">
+                    <span class="form-group-label">Assigned Trips</span>
+                    <div id="tripMembershipList" class="trip-membership-list" role="list" hidden></div>
+                    <p class="form-helper-text" id="tripMembershipEmpty">This location is not part of any trips yet.</p>
+                </div>
+                <div class="form-group">
+                    <label for="newTripName">Create New Trip</label>
+                    <input type="text" id="newTripName" name="new_trip_name" maxlength="120" autocomplete="off" placeholder="e.g. Summer Getaway">
+                    <p class="form-helper-text">Enter a new trip name to create it and add this location.</p>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="modal-button secondary" id="tripAssignmentCancel">Cancel</button>
+                    <button type="submit" class="modal-button primary">Add to Trip</button>
+                </div>
+            </form>
+        </div>
+    </div>
     <div id="archivedPointsModal" class="modal-overlay" aria-hidden="true" hidden>
         <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="archivedPointsTitle" tabindex="-1">
             <h2 id="archivedPointsTitle">Archived Data Points</h2>
@@ -516,788 +214,88 @@
             </div>
         </div>
     </div>
+    <div id="tripProfileOverlay" class="trip-profile-overlay" aria-hidden="true" hidden>
+        <article id="tripProfilePanel" class="trip-profile-panel" role="dialog" aria-modal="false" aria-labelledby="tripDetailTitle">
+            <div id="tripDetailView" class="trip-detail trip-profile-content" hidden aria-hidden="true">
+                <div class="trip-profile-hero">
+                    <button type="button" class="trip-profile-close" id="tripDetailBack" aria-label="Close trip profile">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                    <div class="trip-profile-hero-body">
+                        <p class="trip-profile-eyebrow">Trip profile</p>
+                        <h2 class="trip-profile-title" id="tripDetailTitle" data-default-text="Trip details">Trip details</h2>
+                        <p class="trip-profile-subtitle" id="tripDetailSubtitle" data-default-text="Review the places assigned to this journey.">Review the places assigned to this journey.</p>
+                        <div class="trip-profile-meta" aria-live="polite">
+                            <span id="tripDetailCount" class="trip-profile-meta-entry"></span>
+                            <span id="tripDetailUpdated" class="trip-profile-meta-entry" hidden></span>
+                        </div>
+                        <div class="trip-profile-actions" id="tripDetailActions" hidden>
+                            <button type="button" class="trip-detail-delete" id="tripDetailDelete">Delete trip</button>
+                        </div>
+                    </div>
+                </div>
+                <form id="tripDescriptionForm" class="trip-profile-description" novalidate>
+                    <label class="trip-profile-description-label" for="tripDescriptionInput">Description</label>
+                    <textarea id="tripDescriptionInput" name="description" rows="6" maxlength="2000" placeholder="Describe this trip"></textarea>
+                    <div class="trip-profile-description-footer">
+                        <div class="trip-profile-updated" id="tripDescriptionUpdated" hidden>
+                            Last updated <time id="tripDescriptionUpdatedTime"></time>
+                        </div>
+                        <div class="trip-profile-description-actions">
+                            <button type="button" class="modal-button secondary" id="tripDescriptionCancel">Cancel</button>
+                            <button type="submit" class="modal-button primary" id="tripDescriptionSave" disabled>Save</button>
+                        </div>
+                    </div>
+                </form>
+                <div id="tripDescriptionStatus" class="trip-description-status" role="status" aria-live="polite" hidden></div>
+                <div class="trip-profile-controls">
+                    <div class="trip-detail-controls">
+                        <label class="trip-search">
+                            <span class="trip-search-label">Search</span>
+                            <input type="search" id="tripLocationSearchInput" name="tripLocationSearch" placeholder="Search locations" autocomplete="off">
+                        </label>
+                        <div class="trip-sort" role="group" aria-label="Location sorting">
+                            <label class="trip-sort-field" for="tripLocationSortField">
+                                <span class="trip-sort-label">Sort by</span>
+                                <select id="tripLocationSortField" name="tripLocationSortField">
+                                    <option value="date">Date visited</option>
+                                    <option value="name">Name</option>
+                                </select>
+                            </label>
+                            <button type="button" class="trip-sort-direction" id="tripLocationSortDirection" aria-label="Sort descending">
+                                Ascending
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="trip-profile-locations">
+                    <div class="trip-location-list-container">
+                        <div id="tripLocationLoading" class="trip-list-message" role="status" aria-live="polite" hidden>Loading locations...</div>
+                        <div id="tripLocationError" class="trip-list-message trip-list-message-error" role="alert" hidden></div>
+                        <div id="tripLocationEmpty" class="trip-list-message" aria-live="polite" hidden>No locations assigned to this trip yet.</div>
+                        <div id="tripLocationList" class="trip-location-list" role="list" hidden></div>
+                    </div>
+                </div>
+            </div>
+        </article>
+    </div>
 </div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" defer></script>
 <script>
-const MAPBOX_TOKEN = "{{ mapbox_token }}";
-const MENU_ICON_PATH = "{{ url_for('static', filename='assets/menu-icon.svg') }}";
-const CLOSE_ICON_PATH = "{{ url_for('static', filename='assets/close-icon.svg') }}";
-let map;
-let markerCluster;
-let manualPointForm;
-let manualPointModalController = null;
-let archivedPointsModalController = null;
-let archivedPointsList = null;
-
-const SOURCE_TYPE_LABELS = {
-    google_timeline: 'Google Timeline',
-    manual: 'Manual Entry',
-};
-
-const MARKER_ICON_PATHS = {
-    google_timeline: "{{ url_for('static', filename='assets/marker-pin-blue.svg') }}",
-    manual: "{{ url_for('static', filename='assets/marker-pin-orange.svg') }}",
-    default: "{{ url_for('static', filename='assets/marker-pin-gray.svg') }}",
-};
-
-const markerIconCache = new Map();
-
-const HTML_ESCAPE_LOOKUP = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-};
-const HTML_ESCAPE_REGEX = /[&<>"']/g;
-
-function escapeHtml(value) {
-    if (value === null || value === undefined) { return ''; }
-    return String(value).replace(HTML_ESCAPE_REGEX, (match) => HTML_ESCAPE_LOOKUP[match] || match);
-}
-
-function escapeHtmlAttribute(value) {
-    return escapeHtml(value).replace(/`/g, '&#96;');
-}
-
-function createPopupContent(markerData) {
-    if (!markerData) { return ''; }
-
-    const markerId = markerData.id || '';
-    const safeId = escapeHtmlAttribute(markerId);
-    const place = escapeHtml(markerData.place || 'Unknown');
-    const sourceLabel = getSourceTypeLabel(markerData.source_type);
-    const sourceRow = sourceLabel
-        ? `<div class="marker-popup-row"><span class="marker-popup-label">Source</span><span class="marker-popup-value">${escapeHtml(sourceLabel)}</span></div>`
-        : '';
-    const date = escapeHtml(markerData.date || 'Unknown');
-    const latNumber = Number(markerData.lat);
-    const lngNumber = Number(markerData.lng);
-    const latText = Number.isFinite(latNumber) ? latNumber.toFixed(4) : String(markerData.lat ?? '');
-    const lngText = Number.isFinite(lngNumber) ? lngNumber.toFixed(4) : String(markerData.lng ?? '');
-    const coordinates = `${escapeHtml(latText)}, ${escapeHtml(lngText)}`;
-    const hasId = Boolean(markerId);
-    const actions = hasId
-        ? `<div class="marker-actions"><button type="button" class="marker-action marker-action-archive">Archive</button><button type="button" class="marker-action marker-action-delete">Delete</button></div>`
-        : '';
-
-    return [
-        `<div class="marker-popup"${hasId ? ` data-marker-id="${safeId}"` : ''}>`,
-        `<div class="marker-popup-row"><span class="marker-popup-label">Place Name</span><span class="marker-popup-value">${place}</span></div>`,
-        sourceRow,
-        `<div class="marker-popup-row"><span class="marker-popup-label">Date Visited</span><span class="marker-popup-value">${date}</span></div>`,
-        `<div class="marker-popup-row"><span class="marker-popup-label">Coordinates</span><span class="marker-popup-value">${coordinates}</span></div>`,
-        actions,
-        `</div>`,
-    ].filter(Boolean).join('');
-}
-
-function getSourceTypeLabel(type) {
-    if (!type) { return ''; }
-    if (Object.prototype.hasOwnProperty.call(SOURCE_TYPE_LABELS, type)) {
-        return SOURCE_TYPE_LABELS[type];
-    }
-    return type
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function getMarkerIcon(sourceType) {
-    const iconUrl = MARKER_ICON_PATHS[sourceType] || MARKER_ICON_PATHS.default;
-    if (markerIconCache.has(iconUrl)) {
-        return markerIconCache.get(iconUrl);
-    }
-    const icon = L.icon({
-        className: 'marker-pin-icon',
-        iconUrl,
-        iconRetinaUrl: iconUrl,
-        iconSize: [36, 48],
-        iconAnchor: [18, 44],
-        popupAnchor: [0, -40],
-    });
-
-    markerIconCache.set(iconUrl, icon);
-    return icon;
-}
-
-function showLoading() { document.getElementById('loading').style.display = 'flex'; }
-function hideLoading() { document.getElementById('loading').style.display = 'none'; }
-function showStatus(message, isError=false) {
-    const status = document.getElementById('status');
-    status.textContent = message;
-    status.className = isError ? 'error' : 'success';
-    status.style.display = 'block';
-    setTimeout(() => status.style.display = 'none', 4000);
-}
-
-function initMap() {
-    // Create a Leaflet map centered on a default view
-    map = L.map('map').setView([40.65997395108914, -73.71300111746832], 5);
-    // Add Mapbox tiles using the token passed from the backend
-    L.tileLayer(`https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`, {
-        maxZoom: 18,
-        attribution: 'Mapbox'
-    }).addTo(map);
-    // Cluster group keeps the map responsive when many markers are shown
-    markerCluster = L.markerClusterGroup();
-    map.addLayer(markerCluster);
-    // Load existing markers once the map is ready
-    loadMarkers();
-}
-
-async function loadMarkers() {
-    // Show a loading overlay while fetching marker data
-    showLoading();
-    const startDateInput = document.getElementById('filterStartDate');
-    const endDateInput = document.getElementById('filterEndDate');
-    const startDate = startDateInput ? startDateInput.value : '';
-    const endDate = endDateInput ? endDateInput.value : '';
-
-    if (startDate && endDate && startDate > endDate) {
-        hideLoading();
-        showStatus('Start date must be on or before end date.', true);
-        return;
-    }
-
-    // Remove any markers currently displayed
-    markerCluster.clearLayers();
-    // Collect the values of all checked source type filters
-    const checked = Array.from(
-        document.querySelectorAll('#sourceTypeFilters input:checked')
-    ).map(cb => cb.value);
-
-    const payload = { source_types: checked };
-    if (startDate) { payload.start_date = startDate; }
-    if (endDate) { payload.end_date = endDate; }
-
-    try {
-        // Request the marker list from the server, filtering by source type
-        const response = await fetch('/api/map_data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-        // Parse the JSON response
-        const markers = await response.json();
-        // Add a Leaflet marker for each item returned
-        markers.forEach(m => {
-            const lat = Number(m.lat);
-            const lng = Number(m.lng);
-            if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-                return;
-            }
-
-            const marker = L.marker([lat, lng], {
-                icon: getMarkerIcon(m.source_type),
-                title: m.place || '',
-                riseOnHover: true,
-            });
-
-            const popupContent = createPopupContent(m);
-            marker.bindPopup(popupContent).addTo(markerCluster);
-
-            marker.on('popupopen', () => {
-                const popupElement = marker.getPopup() ? marker.getPopup().getElement() : null;
-                if (!popupElement) { return; }
-
-                const archiveButton = popupElement.querySelector('.marker-action-archive');
-                if (archiveButton) {
-                    archiveButton.onclick = (event) => {
-                        event.preventDefault();
-                        archiveMarker(m.id, marker, archiveButton);
-                    };
-                }
-
-                const deleteButton = popupElement.querySelector('.marker-action-delete');
-                if (deleteButton) {
-                    deleteButton.onclick = (event) => {
-                        event.preventDefault();
-                        deleteMarker(m.id, marker, deleteButton);
-                    };
-                }
-            });
-        });
-        // Done loading
-        hideLoading();
-    } catch(err) {
-        hideLoading();
-        console.error(err);
-    }
-}
-
-async function updateMap() {
-    const fileInput = document.getElementById('timelineFile');
-    if (!fileInput.files.length) { showStatus('No file selected!', true); return; }
-    showLoading();
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
-    try {
-        const response = await fetch('/api/update_timeline', { method: 'POST', body: formData });
-        const result = await response.json();
-        hideLoading();
-        showStatus(result.message, result.status === 'error');
-        if (result.status === 'success') { loadMarkers(); }
-    } catch(err) {
-        hideLoading();
-        showStatus('Error: ' + err.message, true);
-    }
-}
-
-async function clearMap() {
-    const confirmClear = window.confirm(
-        'Clearing the map will remove all data permanently. This action cannot be undone. Do you want to continue?'
-    );
-    if (!confirmClear) { return; }
-
-    showLoading();
-    try {
-        const response = await fetch('/api/clear', { method: 'POST' });
-        const result = await response.json();
-        hideLoading();
-        showStatus(result.message, result.status === 'error');
-        if (result.status === 'success') { loadMarkers(); }
-    } catch(error) {
-        hideLoading();
-        showStatus('Error: ' + error.message, true);
-    }
-}
-
-function createModalController(modalId, { getInitialFocus, onClose } = {}) {
-    const modal = document.getElementById(modalId);
-    if (!modal) { return null; }
-    const modalContent = modal.querySelector('.modal-content');
-    let focusableElements = [];
-    let previouslyFocused = null;
-
-    function setFocusableElements() {
-        focusableElements = Array.from(
-            modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
-        ).filter((el) => !el.disabled && modal.contains(el));
-    }
-
-    function focusInitialElement() {
-        const target = typeof getInitialFocus === 'function' ? getInitialFocus() : null;
-        if (target && typeof target.focus === 'function') {
-            target.focus();
-            return;
-        }
-
-        if (focusableElements.length > 0) {
-            focusableElements[0].focus();
-            return;
-        }
-
-        if (modalContent && typeof modalContent.focus === 'function') {
-            modalContent.focus();
-        }
-    }
-
-    function handleKeydown(event) {
-        if (!modal.classList.contains('open')) { return; }
-
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            close();
-            return;
-        }
-
-        if (event.key !== 'Tab') { return; }
-
-        setFocusableElements();
-        if (focusableElements.length === 0) {
-            event.preventDefault();
-            if (modalContent && typeof modalContent.focus === 'function') {
-                modalContent.focus();
-            }
-            return;
-        }
-
-        const first = focusableElements[0];
-        const last = focusableElements[focusableElements.length - 1];
-        const active = document.activeElement;
-
-        if (event.shiftKey) {
-            if (active === first || !modal.contains(active)) {
-                event.preventDefault();
-                last.focus();
-            }
-        } else if (active === last) {
-            event.preventDefault();
-            first.focus();
-        }
-    }
-
-    function open() {
-        previouslyFocused = document.activeElement;
-        modal.classList.add('open');
-        modal.removeAttribute('hidden');
-        modal.setAttribute('aria-hidden', 'false');
-        setFocusableElements();
-        focusInitialElement();
-        document.addEventListener('keydown', handleKeydown);
-    }
-
-    function close() {
-        modal.classList.remove('open');
-        modal.setAttribute('aria-hidden', 'true');
-        modal.setAttribute('hidden', '');
-        document.removeEventListener('keydown', handleKeydown);
-        focusableElements = [];
-        if (typeof onClose === 'function') {
-            onClose();
-        }
-        if (previouslyFocused && typeof previouslyFocused.focus === 'function') {
-            previouslyFocused.focus();
-        }
-        previouslyFocused = null;
-    }
-
-    modal.addEventListener('click', (event) => {
-        if (event.target === modal) {
-            close();
-        }
-    });
-
-    return {
-        open,
-        close,
-        refreshFocusableElements: setFocusableElements,
+    window.wanderLogConfig = {
+        mapboxToken: "{{ mapbox_token }}",
+        assets: {
+            menuIcon: "{{ url_for('static', filename='assets/menu-icon.svg') }}",
+            closeIcon: "{{ url_for('static', filename='assets/close-icon.svg') }}",
+        },
+        markerIcons: {
+            google_timeline: "{{ url_for('static', filename='assets/marker-pin-blue.svg') }}",
+            manual: "{{ url_for('static', filename='assets/marker-pin-orange.svg') }}",
+            default: "{{ url_for('static', filename='assets/marker-pin-gray.svg') }}",
+        },
     };
-}
-
-function ensureManualPointModal() {
-    if (manualPointModalController) { return manualPointModalController; }
-
-    manualPointForm = document.getElementById('manualPointForm');
-    const controller = createModalController('manualPointModal', {
-        getInitialFocus: () => {
-            const form = manualPointForm || document.getElementById('manualPointForm');
-            return form ? form.elements['place_name'] : null;
-        },
-        onClose: () => {
-            const form = manualPointForm || document.getElementById('manualPointForm');
-            if (form) { form.reset(); }
-        },
-    });
-
-    if (!controller) { return null; }
-    manualPointModalController = controller;
-
-    const cancelButton = document.getElementById('manualPointCancel');
-    if (cancelButton) {
-        cancelButton.addEventListener('click', (event) => {
-            event.preventDefault();
-            manualPointModalController.close();
-        });
-    }
-
-    if (manualPointForm) {
-        manualPointForm.addEventListener('submit', handleManualPointSubmit);
-    }
-
-    return manualPointModalController;
-}
-
-function ensureArchivedPointsModal() {
-    if (archivedPointsModalController) { return archivedPointsModalController; }
-
-    archivedPointsList = document.getElementById('archivedPointsList');
-    const controller = createModalController('archivedPointsModal', {
-        getInitialFocus: () => document.getElementById('archivedPointsClose'),
-    });
-
-    if (!controller) { return null; }
-    archivedPointsModalController = controller;
-
-    const closeButton = document.getElementById('archivedPointsClose');
-    if (closeButton) {
-        closeButton.addEventListener('click', (event) => {
-            event.preventDefault();
-            archivedPointsModalController.close();
-        });
-    }
-
-    return archivedPointsModalController;
-}
-
-async function handleManualPointSubmit(event) {
-    event.preventDefault();
-    manualPointForm = manualPointForm || document.getElementById('manualPointForm');
-    if (!manualPointForm) { return; }
-
-    const place = manualPointForm.elements['place_name'].value.trim();
-    const date = manualPointForm.elements['start_date'].value;
-    const latValue = manualPointForm.elements['latitude'].value.trim();
-    const lonValue = manualPointForm.elements['longitude'].value.trim();
-
-    if (!place) {
-        showStatus('Place name is required.', true);
-        manualPointForm.elements['place_name'].focus();
-        return;
-    }
-
-    if (!date) {
-        showStatus('Date is required.', true);
-        manualPointForm.elements['start_date'].focus();
-        return;
-    }
-
-    if (!latValue) {
-        showStatus('Latitude is required.', true);
-        manualPointForm.elements['latitude'].focus();
-        return;
-    }
-
-    const lat = Number(latValue);
-    if (!Number.isFinite(lat) || lat < -90 || lat > 90) {
-        showStatus('Latitude must be a valid number between -90 and 90.', true);
-        manualPointForm.elements['latitude'].focus();
-        return;
-    }
-
-    if (!lonValue) {
-        showStatus('Longitude is required.', true);
-        manualPointForm.elements['longitude'].focus();
-        return;
-    }
-
-    const lon = Number(lonValue);
-    if (!Number.isFinite(lon) || lon < -180 || lon > 180) {
-        showStatus('Longitude must be a valid number between -180 and 180.', true);
-        manualPointForm.elements['longitude'].focus();
-        return;
-    }
-
-    showLoading();
-    try {
-        const response = await fetch('/api/add_point', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                place_name: place,
-                start_date: date,
-                latitude: lat,
-                longitude: lon,
-                source_type: 'manual'
-            })
-        });
-        const result = await response.json();
-        hideLoading();
-        showStatus(result.message, result.status === 'error');
-        if (result.status === 'success') {
-            if (manualPointModalController) {
-                manualPointModalController.close();
-            }
-            loadMarkers();
-        }
-    } catch(err) {
-        hideLoading();
-        showStatus('Error: ' + err.message, true);
-    }
-}
-
-function addManualPoint() {
-    const controller = ensureManualPointModal();
-    if (controller) {
-        controller.open();
-    }
-}
-
-function viewArchivedPoints() {
-    const controller = ensureArchivedPointsModal();
-    if (!controller) { return; }
-    controller.open();
-    loadArchivedPointsList();
-}
-
-async function loadArchivedPointsList() {
-    archivedPointsList = archivedPointsList || document.getElementById('archivedPointsList');
-    if (!archivedPointsList) { return; }
-
-    archivedPointsList.innerHTML = '<p class="archived-empty">Loading archived data points...</p>';
-
-    try {
-        const response = await fetch('/api/archived_markers');
-        if (!response.ok) {
-            throw new Error('Failed to load archived data points.');
-        }
-        const markers = await response.json();
-
-        if (!Array.isArray(markers) || markers.length === 0) {
-            archivedPointsList.innerHTML = '<p class="archived-empty">No archived data points.</p>';
-            return;
-        }
-
-        const fragment = document.createDocumentFragment();
-        markers.forEach((marker) => {
-            const item = document.createElement('div');
-            item.className = 'archived-item';
-            if (marker.id) {
-                item.dataset.markerId = marker.id;
-            }
-            item.setAttribute('role', 'listitem');
-
-            const details = document.createElement('div');
-            details.className = 'archived-item-details';
-
-            const title = document.createElement('div');
-            title.className = 'archived-item-place';
-            title.textContent = marker.place || 'Unknown';
-            details.appendChild(title);
-
-            const meta = document.createElement('div');
-            meta.className = 'archived-item-meta';
-            const metaParts = [];
-            if (marker.date) {
-                metaParts.push(marker.date);
-            }
-            const latNumber = Number(marker.lat);
-            const lngNumber = Number(marker.lng);
-            if (Number.isFinite(latNumber) && Number.isFinite(lngNumber)) {
-                metaParts.push(`${latNumber.toFixed(4)}, ${lngNumber.toFixed(4)}`);
-            }
-            meta.textContent = metaParts.join(' • ');
-            details.appendChild(meta);
-
-            const actionButton = document.createElement('button');
-            actionButton.type = 'button';
-            actionButton.className = 'modal-button primary archived-item-action';
-            actionButton.textContent = 'Unarchive';
-            actionButton.addEventListener('click', (event) => {
-                event.preventDefault();
-                unarchiveMarker(marker.id, actionButton);
-            });
-
-            item.appendChild(details);
-            item.appendChild(actionButton);
-            fragment.appendChild(item);
-        });
-
-        archivedPointsList.innerHTML = '';
-        archivedPointsList.appendChild(fragment);
-    } catch (error) {
-        console.error('Failed to load archived data points', error);
-        archivedPointsList.innerHTML = '<p class="archived-empty">Failed to load archived data points.</p>';
-    } finally {
-        if (archivedPointsModalController) {
-            archivedPointsModalController.refreshFocusableElements();
-        }
-    }
-}
-
-function refreshMap() { loadMarkers(); }
-
-async function archiveMarker(markerId, markerInstance, triggerButton) {
-    if (!markerId) {
-        showStatus('This data point cannot be archived.', true);
-        return;
-    }
-
-    if (triggerButton) { triggerButton.disabled = true; }
-    showLoading();
-
-    try {
-        const response = await fetch(`/api/markers/${encodeURIComponent(markerId)}/archive`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ archived: true }),
-        });
-        const result = await response.json().catch(() => ({}));
-
-        if (!response.ok || result.status === 'error') {
-            const message = (result && result.message) ? result.message : 'Failed to archive data point.';
-            throw new Error(message);
-        }
-
-        showStatus(result.message || 'Data point archived successfully.');
-        if (markerInstance && typeof markerInstance.closePopup === 'function') {
-            markerInstance.closePopup();
-        }
-        await loadMarkers();
-        const archivedModal = document.getElementById('archivedPointsModal');
-        if (archivedModal && archivedModal.classList.contains('open')) {
-            await loadArchivedPointsList();
-        }
-    } catch (error) {
-        showStatus(error.message || 'Failed to archive data point.', true);
-    } finally {
-        hideLoading();
-        if (triggerButton) { triggerButton.disabled = false; }
-    }
-}
-
-async function unarchiveMarker(markerId, triggerButton) {
-    if (!markerId) {
-        showStatus('This data point cannot be unarchived.', true);
-        return;
-    }
-
-    if (triggerButton) { triggerButton.disabled = true; }
-    showLoading();
-
-    try {
-        const response = await fetch(`/api/markers/${encodeURIComponent(markerId)}/archive`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ archived: false }),
-        });
-        const result = await response.json().catch(() => ({}));
-
-        if (!response.ok || result.status === 'error') {
-            const message = (result && result.message) ? result.message : 'Failed to unarchive data point.';
-            throw new Error(message);
-        }
-
-        showStatus(result.message || 'Data point unarchived successfully.');
-        await loadMarkers();
-        await loadArchivedPointsList();
-    } catch (error) {
-        showStatus(error.message || 'Failed to unarchive data point.', true);
-    } finally {
-        hideLoading();
-        if (triggerButton) { triggerButton.disabled = false; }
-    }
-}
-
-async function deleteMarker(markerId, markerInstance, triggerButton) {
-    if (!markerId) {
-        showStatus('This data point cannot be deleted.', true);
-        return;
-    }
-
-    const confirmDelete = window.confirm(
-        'Deleting this data point is irreversible. Do you want to continue?'
-    );
-    if (!confirmDelete) { return; }
-
-    if (triggerButton) { triggerButton.disabled = true; }
-    showLoading();
-
-    try {
-        const response = await fetch(`/api/markers/${encodeURIComponent(markerId)}`, { method: 'DELETE' });
-        const result = await response.json().catch(() => ({}));
-
-        if (!response.ok || result.status === 'error') {
-            const message = (result && result.message) ? result.message : 'Failed to delete data point.';
-            throw new Error(message);
-        }
-
-        showStatus(result.message || 'Data point deleted successfully.');
-        if (markerInstance && typeof markerInstance.closePopup === 'function') {
-            markerInstance.closePopup();
-        }
-        await loadMarkers();
-    } catch (error) {
-        showStatus(error.message || 'Failed to delete data point.', true);
-    } finally {
-        hideLoading();
-        if (triggerButton) { triggerButton.disabled = false; }
-    }
-}
-
-document.addEventListener('DOMContentLoaded', async () => {
-    ensureManualPointModal();
-    ensureArchivedPointsModal();
-    try {
-        const response = await fetch('/api/source_types');
-        const types = await response.json();
-        const container = document.getElementById('sourceTypeFilters');
-        types.forEach(type => {
-            const label = document.createElement('label');
-            const cb = document.createElement('input');
-            cb.type = 'checkbox';
-            cb.value = type;
-            cb.checked = true;
-            cb.addEventListener('change', loadMarkers);
-            const text = document.createElement('span');
-            text.textContent = getSourceTypeLabel(type);
-            label.appendChild(text);
-            label.appendChild(cb);
-            container.appendChild(label);
-        });
-    } catch(err) {
-        console.error('Failed to load source types', err);
-    }
-    const startDateInput = document.getElementById('filterStartDate');
-    const endDateInput = document.getElementById('filterEndDate');
-    const clearDateButton = document.getElementById('clearDateFilters');
-
-    if (startDateInput) { startDateInput.addEventListener('change', loadMarkers); }
-    if (endDateInput) { endDateInput.addEventListener('change', loadMarkers); }
-    if (clearDateButton) {
-        clearDateButton.addEventListener('click', () => {
-            if (startDateInput) { startDateInput.value = ''; }
-            if (endDateInput) { endDateInput.value = ''; }
-            loadMarkers();
-        });
-    }
-    initMap();
-    const menu = document.querySelector('.menu-container');
-    if (menu) { applyMenuState(menu, menu.classList.contains('open')); }
-    document.addEventListener('keydown', (event) => {
-        if (event.key !== 'Escape') { return; }
-        const manualModalElement = document.getElementById('manualPointModal');
-        if (manualModalElement && manualModalElement.classList.contains('open')) { return; }
-        const archivedModalElement = document.getElementById('archivedPointsModal');
-        if (archivedModalElement && archivedModalElement.classList.contains('open')) { return; }
-        const menu = document.querySelector('.menu-container');
-        if (menu && menu.classList.contains('open')) {
-            event.preventDefault();
-            toggleMenu();
-            const trigger = menu.querySelector('.menu-toggle');
-            if (trigger) { trigger.focus(); }
-        }
-    });
-});
-
-function toggleMenu() {
-    const menu = document.querySelector('.menu-container');
-    if (!menu) { return; }
-    const isOpen = menu.classList.toggle('open');
-    applyMenuState(menu, isOpen);
-}
-
-function applyMenuState(menu, isOpen) {
-    const trigger = menu.querySelector('.menu-toggle');
-    const icon = trigger ? trigger.querySelector('.menu-toggle-icon img') : null;
-    const label = trigger ? trigger.querySelector('.menu-toggle-text') : null;
-    const controls = menu.querySelector('.overlay-controls');
-
-    if (trigger) {
-        trigger.setAttribute('aria-expanded', String(isOpen));
-        trigger.setAttribute('aria-label', isOpen ? 'Close menu' : 'Open menu');
-    }
-    if (icon) { icon.setAttribute('src', isOpen ? CLOSE_ICON_PATH : MENU_ICON_PATH); }
-    if (label) { label.textContent = isOpen ? 'Close' : 'Menu'; }
-    if (controls) {
-        controls.setAttribute('aria-hidden', String(!isOpen));
-        if (isOpen) { controls.removeAttribute('inert'); }
-        else { controls.setAttribute('inert', ''); }
-        const focusableSelectors = 'button, [href], input, select, textarea, [tabindex]';
-        const focusableElements = controls.querySelectorAll(focusableSelectors);
-        focusableElements.forEach((element) => {
-            if (isOpen) {
-                if (element.dataset.menuPrevTabindex !== undefined) {
-                    const previous = element.dataset.menuPrevTabindex;
-                    if (previous === '') {
-                        element.removeAttribute('tabindex');
-                    } else {
-                        element.setAttribute('tabindex', previous);
-                    }
-                    delete element.dataset.menuPrevTabindex;
-                } else if (element.getAttribute('tabindex') === '-1') {
-                    element.removeAttribute('tabindex');
-                }
-            } else {
-                if (element.dataset.menuPrevTabindex === undefined) {
-                    element.dataset.menuPrevTabindex = element.hasAttribute('tabindex') ? element.getAttribute('tabindex') || '' : '';
-                }
-                element.setAttribute('tabindex', '-1');
-            }
-        });
-    }
-}
 </script>
+<script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
 </body>
 </html>

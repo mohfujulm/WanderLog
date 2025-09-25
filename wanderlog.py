@@ -81,10 +81,32 @@ def update_map_with_timeline_data(input_map, input_file):
 
     # STEP 5: Loop through each row in the CSV and create markers
     for idx, row in df.iterrows():
-        print(f"Processing location {idx + 1}: {row['Place Name']}")
+        place_name = row.get('Place Name', '')
+        if pd.isna(place_name):
+            place_name = ''
+        else:
+            place_name = str(place_name).strip()
+
+        alias_value = row.get('Alias', '') if 'Alias' in row else ''
+        if pd.isna(alias_value):
+            alias_value = ''
+        else:
+            alias_value = str(alias_value).strip()
+
+        display_name = alias_value or place_name
+
+        print(f"Processing location {idx + 1}: {display_name}")
         
         # Create custom HTML for each popup
         # This creates a beautiful styled popup with gradient background
+        alias_row = ""
+        if alias_value:
+            alias_row = f"""
+            <p style=\"margin: 5px 0; font-size: 12px;\">
+                <strong>Place Name:</strong> {place_name}
+            </p>
+            """
+
         popup_html = f"""
         {popup_css}
         <div style="
@@ -102,8 +124,9 @@ def update_map_with_timeline_data(input_map, input_file):
                 📍 Location Details
             </h3>
             <p style="margin: 5px 0; font-size: 12px;">
-                <strong>Place Name:</strong> {row['Place Name']}
+                <strong>{'Alias' if alias_value else 'Place Name'}:</strong> {display_name}
             </p>
+            {alias_row}
             <p style="margin: 5px 0; font-size: 12px;">
                 <strong>Coordinates:</strong><br>
                 Lat: {row['Latitude']:.4f}<br>

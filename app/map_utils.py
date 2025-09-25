@@ -125,6 +125,29 @@ def update_map_with_timeline_data(
     ).add_to(input_map)
 
     for _, row in df.iterrows():
+        place_name = row.get("Place Name", "")
+        if pd.isna(place_name):
+            place_name = ""
+        else:
+            place_name = str(place_name).strip()
+
+        alias_value = row.get("Alias", "")
+        if pd.isna(alias_value):
+            alias_value = ""
+        else:
+            alias_value = str(alias_value).strip()
+
+        display_name = alias_value or place_name
+        name_label = "Alias" if alias_value else "Place Name"
+
+        alias_row = ""
+        if alias_value:
+            alias_row = f"""
+            <p style=\"margin: 5px 0; font-size: 12px;\">
+                <strong>Place Name:</strong> {place_name}
+            </p>
+            """
+
         popup_html = f"""
         {popup_css}
         <div style="
@@ -142,8 +165,9 @@ def update_map_with_timeline_data(
                 📍 Location Details
             </h3>
             <p style="margin: 5px 0; font-size: 12px;">
-                <strong>Place Name:</strong> {row['Place Name']}
+                <strong>{name_label}:</strong> {display_name}
             </p>
+            {alias_row}
             <p style="margin: 5px 0; font-size: 12px;">
                 <strong>Date Visited:</strong> {row['Start Date']}
             </p>
@@ -152,7 +176,7 @@ def update_map_with_timeline_data(
                 Lat: {row['Latitude']:.4f}<br>
                 Lng: {row['Longitude']:.4f}
             </p>
-            
+
             <!-- Custom arrow pointing down -->
             <div style="
                 position: absolute;
@@ -212,12 +236,28 @@ def dataframe_to_markers(
         if archived_value and not include_archived:
             continue
 
+        place_name = row.get("Place Name", "")
+        if pd.isna(place_name):
+            place_name = ""
+        else:
+            place_name = str(place_name).strip()
+
+        alias_value = row.get("Alias", "")
+        if pd.isna(alias_value):
+            alias_value = ""
+        else:
+            alias_value = str(alias_value).strip()
+
+        display_name = alias_value or place_name
+
         markers.append(
             {
                 "id": row.get("Place ID", ""),      # Unique identifier used for actions
                 "lat": row["Latitude"],           # Latitude for the map marker
                 "lng": row["Longitude"],          # Longitude for the map marker
-                "place": row.get("Place Name", ""),  # Human readable place name
+                "place": place_name,               # Human readable place name
+                "alias": alias_value,              # Optional custom alias provided by the user
+                "display_name": display_name,      # Alias when present otherwise the place name
                 "date": row.get("Start Date", ""),   # Date when the place was visited
                 "source_type": row.get("Source Type", ""),  # Data source category
                 "archived": archived_value,

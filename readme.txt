@@ -4,3 +4,4 @@ v0.2 - added html server backend code to support interactive buttons.  Added but
 v0.3 - added dates to map marker popup data.  Made map rendering dynamic, and faster.  Reworked how map data is processed and stored to be more efficient.
 v0.4 - updated UI, added data type filtering, cleaned up code
 v0.5 - added archiving/deleting of data points, backups for timeline data on clear map, warnings for clear map & deleting of data points, and date range filtering
+v0.6 - added "Trips" prototype, added edit mode with multi-selection/editing of data points, updates to UI, fixed sorting, added descriptions to Trips
