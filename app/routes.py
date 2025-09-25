@@ -15,6 +15,7 @@ main = Blueprint("main", __name__)
 MAPBOX_ACCESS_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN")
 MAX_ALIAS_LENGTH = 120
 MAX_TRIP_NAME_LENGTH = 120
+MAX_TRIP_DESCRIPTION_LENGTH = 2000
 
 
 def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
@@ -41,6 +42,7 @@ def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
             'created_at': trip.get('created_at'),
             'updated_at': trip.get('updated_at'),
             'latest_location_date': latest_location_date,
+            'description': trip.get('description', ''),
         }
 
     place_ids = getattr(trip, 'place_ids', []) or []
@@ -53,6 +55,7 @@ def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
         'created_at': getattr(trip, 'created_at', None),
         'updated_at': getattr(trip, 'updated_at', None),
         'latest_location_date': latest_location_date,
+        'description': getattr(trip, 'description', ''),
     }
 
 
@@ -270,6 +273,7 @@ def index():
     """Render the landing page."""
 
     return render_template("index.html", mapbox_token=MAPBOX_ACCESS_TOKEN)
+
 
 @main.route('/api/update_timeline', methods=['POST'])
 def api_update_timeline():
@@ -600,6 +604,89 @@ def api_get_trip(trip_id: str):
         'trip': serialised_trip,
         'locations': locations,
     })
+
+
+@main.route('/api/trips/<trip_id>', methods=['DELETE'])
+def api_delete_trip(trip_id: str):
+    """Delete the trip identified by ``trip_id``."""
+
+    identifier = (trip_id or '').strip()
+    if not identifier:
+        return jsonify(status='error', message='A valid trip ID is required.'), 400
+
+    try:
+        trip = trip_store.delete_trip(identifier)
+    except ValueError as exc:
+        return jsonify(status='error', message=str(exc)), 400
+    except KeyError:
+        return jsonify(status='error', message='Trip not found.'), 404
+
+    return jsonify(
+        status='success',
+        message='Trip deleted successfully.',
+        trip=_serialise_trip(trip),
+    )
+
+
+@main.route('/api/trips/<trip_id>', methods=['PATCH'])
+def api_update_trip(trip_id: str):
+    """Update metadata for the trip identified by ``trip_id``."""
+
+    identifier = (trip_id or '').strip()
+    if not identifier:
+        return jsonify(status='error', message='A valid trip ID is required.'), 400
+
+    payload = request.get_json(silent=True) or {}
+
+    name_value = payload.get('name', None)
+    description_value = payload.get('description', None)
+
+    cleaned_name = None
+    if name_value is not None:
+        cleaned_name = str(name_value).strip()
+        if not cleaned_name:
+            return jsonify(status='error', message='Trip name cannot be blank.'), 400
+        if len(cleaned_name) > MAX_TRIP_NAME_LENGTH:
+            return jsonify(
+                status='error',
+                message=(
+                    f'Trip name must be {MAX_TRIP_NAME_LENGTH} characters or fewer.'
+                ),
+            ), 400
+
+    cleaned_description = None
+    if description_value is not None:
+        if not isinstance(description_value, str):
+            description_value = str(description_value)
+        if len(description_value) > MAX_TRIP_DESCRIPTION_LENGTH:
+            return jsonify(
+                status='error',
+                message=(
+                    'Trip description must be '
+                    f'{MAX_TRIP_DESCRIPTION_LENGTH} characters or fewer.'
+                ),
+            ), 400
+        cleaned_description = description_value
+
+    if cleaned_name is None and cleaned_description is None:
+        return jsonify(status='error', message='No updates were supplied.'), 400
+
+    try:
+        trip = trip_store.update_trip_metadata(
+            identifier,
+            name=cleaned_name,
+            description=cleaned_description,
+        )
+    except ValueError as exc:
+        return jsonify(status='error', message=str(exc)), 400
+    except KeyError:
+        return jsonify(status='error', message='Trip not found.'), 404
+
+    return jsonify(
+        status='success',
+        message='Trip updated successfully.',
+        trip=_serialise_trip(trip),
+    )
 
 
 @main.route('/api/trips', methods=['POST'])
