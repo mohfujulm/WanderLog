@@ -1905,6 +1905,9 @@ function applyTripProfileEditMode() {
     if (tripNameInputContainer) {
         tripNameInputContainer.hidden = !isEditing;
     }
+    if (tripDescriptionSaveButton) {
+        tripDescriptionSaveButton.hidden = !isEditing;
+    }
     if (tripDetailEditButton) {
         tripDetailEditButton.disabled = isEditing || Boolean(tripDescriptionState.isSaving);
         tripDetailEditButton.setAttribute('aria-pressed', isEditing ? 'true' : 'false');
@@ -2162,10 +2165,11 @@ async function handleTripDescriptionSubmit(event) {
 
     const payload = {};
     let description = '';
+    let trimmedName = '';
 
     if (nameChanged) {
         const rawName = nameField ? nameField.value : '';
-        const trimmedName = rawName ? rawName.trim() : '';
+        trimmedName = rawName ? rawName.trim() : '';
         if (!trimmedName) {
             showTripDescriptionStatus('Trip name cannot be blank.', true);
             if (nameField && typeof nameField.focus === 'function') {
@@ -2200,8 +2204,48 @@ async function handleTripDescriptionSubmit(event) {
         payload.description = description;
     }
 
+    const previousState = {
+        lastAppliedName: tripDescriptionState.lastAppliedName,
+        lastAppliedDescription: tripDescriptionState.lastAppliedDescription,
+        trip: (tripDetailState.trip && String(tripDetailState.trip.id) === tripId)
+            ? { ...tripDetailState.trip }
+            : null,
+    };
+
+    const draftValues = {
+        name: nameChanged ? trimmedName : null,
+        description: descriptionChanged ? description : null,
+    };
+
+    if (nameChanged) {
+        tripDescriptionState.lastAppliedName = trimmedName;
+        if (tripDescriptionTitleElement) {
+            tripDescriptionTitleElement.textContent = trimmedName || TRIP_NAME_FALLBACK;
+        }
+    }
+    if (descriptionChanged) {
+        tripDescriptionState.lastAppliedDescription = description;
+    }
+
+    if (tripDetailState.trip && String(tripDetailState.trip.id) === tripId) {
+        const updatedDetail = { ...tripDetailState.trip };
+        if (nameChanged) {
+            updatedDetail.name = trimmedName;
+        }
+        if (descriptionChanged) {
+            updatedDetail.description = description;
+        }
+        tripDetailState.trip = updatedDetail;
+        updateTripDetailHeader();
+    }
+
+    updateTripDescriptionDisplay(descriptionChanged ? description : undefined);
+
+    exitTripProfileEditMode({ restoreFocus: false });
     setTripDescriptionSaving(true);
-    showTripDescriptionStatus('');
+    showTripDescriptionStatus('Saving changes…');
+
+    let shouldRestoreFocusToEdit = true;
 
     try {
         const response = await fetch(`/api/trips/${encodeURIComponent(tripId)}`, {
@@ -2233,13 +2277,47 @@ async function handleTripDescriptionSubmit(event) {
             tripDescriptionState.isNameDirty = false;
         }
 
-        exitTripProfileEditMode({ restoreFocus: true });
         showTripDescriptionStatus(result && result.message ? result.message : 'Trip updated successfully.');
     } catch (error) {
+        shouldRestoreFocusToEdit = false;
         console.error('Failed to update trip description', error);
+        tripDescriptionState.lastAppliedName = previousState.lastAppliedName;
+        tripDescriptionState.lastAppliedDescription = previousState.lastAppliedDescription;
+        if (tripDescriptionTitleElement) {
+            const previousName = previousState.lastAppliedName || '';
+            const displayName = previousName.trim().length > 0
+                ? previousName
+                : TRIP_NAME_FALLBACK;
+            tripDescriptionTitleElement.textContent = displayName;
+        }
+        if (previousState.trip) {
+            tripDetailState.trip = previousState.trip;
+            updateTripDetailHeader();
+        }
+        updateTripDescriptionDisplay();
+
+        enterTripProfileEditMode();
+
+        if (tripNameInputElement && draftValues.name !== null) {
+            tripNameInputElement.value = draftValues.name;
+            tripDescriptionState.isNameDirty = true;
+        }
+        if (tripDescriptionField && draftValues.description !== null) {
+            tripDescriptionField.value = draftValues.description;
+            tripDescriptionState.isDirty = true;
+        }
+
+        updateTripDescriptionSaveButtonState();
         showTripDescriptionStatus(error.message || 'Failed to save description.', true);
     } finally {
         setTripDescriptionSaving(false);
+        if (shouldRestoreFocusToEdit && tripDetailEditButton) {
+            try {
+                tripDetailEditButton.focus({ preventScroll: true });
+            } catch (focusError) {
+                tripDetailEditButton.focus();
+            }
+        }
     }
 }
 
