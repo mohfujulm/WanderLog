@@ -469,7 +469,8 @@ button, input, select { font-family: inherit; }
     box-shadow: none;
 }
 
-.trip-detail-edit {
+.trip-detail-edit,
+.trip-detail-cancel {
     border: none;
     border-radius: 999px;
     padding: 8px 18px;
@@ -483,19 +484,21 @@ button, input, select { font-family: inherit; }
     transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
     box-shadow: inset 0 0 0 1px rgba(17,24,39,0.12);
 }
-
-.trip-detail-edit:hover:not(:disabled) {
+.trip-detail-edit:hover:not(:disabled),
+.trip-detail-cancel:hover:not(:disabled) {
     background: rgba(255,255,255,0.28);
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(17, 24, 39, 0.12);
 }
 
-.trip-detail-edit:focus-visible {
+.trip-detail-edit:focus-visible,
+.trip-detail-cancel:focus-visible {
     outline: 2px solid rgba(17, 24, 39, 0.7);
     outline-offset: 2px;
 }
 
-.trip-detail-edit:disabled {
+.trip-detail-edit:disabled,
+.trip-detail-cancel:disabled {
     opacity: 0.65;
     cursor: not-allowed;
     transform: none;
