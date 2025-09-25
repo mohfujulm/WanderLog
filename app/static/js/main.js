@@ -58,6 +58,15 @@ let tripDescriptionUpdatedTimeElement = null;
 let tripDescriptionSaveButton = null;
 let tripDescriptionCancelButton = null;
 let tripDescriptionCloseButton = null;
+let tripAlbumForm = null;
+let tripAlbumInput = null;
+let tripAlbumStatusElement = null;
+let tripAlbumSaveButton = null;
+let tripAlbumCancelButton = null;
+let tripAlbumPreviewContainer = null;
+let tripAlbumPreviewGrid = null;
+let tripAlbumEmptyElement = null;
+let tripAlbumOpenLink = null;
 let tripMembershipGroupElement = null;
 let tripModalContext = { triggerButton: null, mode: 'single', count: 0 };
 let manageModeToggleButtons = [];
@@ -132,6 +141,15 @@ const tripDescriptionState = {
     isDirty: false,
     lastAppliedDescription: '',
     triggerElement: null,
+};
+
+const tripAlbumState = {
+    tripId: null,
+    requestId: 0,
+    isSaving: false,
+    isDirty: false,
+    lastAppliedUrl: '',
+    photos: [],
 };
 
 const manageModeState = {
@@ -1882,6 +1900,264 @@ function handleTripDescriptionCancel(event) {
     showTripDescriptionStatus(statusMessage);
 }
 
+function updateTripAlbumButtonState() {
+    const disableSave = !tripAlbumState.tripId
+        || tripAlbumState.isSaving
+        || !tripAlbumState.isDirty;
+    if (tripAlbumSaveButton) {
+        tripAlbumSaveButton.disabled = disableSave;
+    }
+    if (tripAlbumCancelButton) {
+        tripAlbumCancelButton.disabled = Boolean(tripAlbumState.isSaving);
+    }
+}
+
+function showTripAlbumStatus(message, isError = false) {
+    if (!tripAlbumStatusElement) { return; }
+
+    const text = message ? String(message) : '';
+    tripAlbumStatusElement.textContent = text;
+    tripAlbumStatusElement.hidden = text.length === 0;
+
+    if (isError) {
+        tripAlbumStatusElement.classList.add('trip-description-status-error');
+    } else {
+        tripAlbumStatusElement.classList.remove('trip-description-status-error');
+    }
+}
+
+function setTripAlbumSaving(isSaving) {
+    const saving = Boolean(isSaving);
+    tripAlbumState.isSaving = saving;
+    if (tripAlbumForm) {
+        tripAlbumForm.classList.toggle('is-saving', saving);
+    }
+    if (tripAlbumInput) {
+        tripAlbumInput.disabled = saving;
+    }
+    updateTripAlbumButtonState();
+}
+
+function updateTripAlbumLink(url) {
+    if (!tripAlbumOpenLink) { return; }
+    const cleaned = typeof url === 'string' ? url.trim() : '';
+    if (cleaned) {
+        tripAlbumOpenLink.hidden = false;
+        tripAlbumOpenLink.href = cleaned;
+    } else {
+        tripAlbumOpenLink.hidden = true;
+        tripAlbumOpenLink.removeAttribute('href');
+    }
+}
+
+function renderTripAlbumPhotos(photos) {
+    if (!tripAlbumPreviewGrid || !tripAlbumPreviewContainer) { return; }
+
+    const list = Array.isArray(photos) ? photos : [];
+    tripAlbumPreviewGrid.innerHTML = '';
+
+    if (!list.length) {
+        tripAlbumPreviewContainer.hidden = true;
+        if (tripAlbumEmptyElement) { tripAlbumEmptyElement.hidden = false; }
+        return;
+    }
+
+    list.forEach((photo, index) => {
+        const photoUrl = photo && typeof photo.url === 'string' && photo.url ? photo.url : '';
+        const thumbUrl = photo && typeof photo.thumbnail_url === 'string' && photo.thumbnail_url
+            ? photo.thumbnail_url
+            : (photoUrl || '');
+
+        const element = photoUrl ? document.createElement('a') : document.createElement('div');
+        element.className = 'trip-album-photo';
+        element.setAttribute('role', 'listitem');
+
+        if (photoUrl) {
+            element.href = photoUrl;
+            element.target = '_blank';
+            element.rel = 'noopener noreferrer';
+        }
+
+        const image = document.createElement('img');
+        if (thumbUrl) {
+            image.src = thumbUrl;
+        }
+        image.alt = `Photo ${index + 1} from album`;
+        image.loading = 'lazy';
+
+        element.appendChild(image);
+        tripAlbumPreviewGrid.appendChild(element);
+    });
+
+    tripAlbumPreviewContainer.hidden = false;
+    if (tripAlbumEmptyElement) { tripAlbumEmptyElement.hidden = true; }
+}
+
+async function loadTripAlbumPhotos(tripId) {
+    const cleanedTripId = typeof tripId === 'string'
+        ? tripId.trim()
+        : String(tripId || '').trim();
+    if (!cleanedTripId) { return; }
+
+    const requestId = tripAlbumState.requestId + 1;
+    tripAlbumState.requestId = requestId;
+
+    showTripAlbumStatus('Loading photos...');
+
+    try {
+        const response = await fetch(`/api/trips/${encodeURIComponent(cleanedTripId)}/photos`);
+        const data = await response.json().catch(() => ({}));
+
+        if (tripAlbumState.tripId !== cleanedTripId || tripAlbumState.requestId !== requestId) {
+            return;
+        }
+
+        if (!response.ok || (data && data.status === 'error')) {
+            const message = data && data.message ? data.message : 'Failed to load album photos.';
+            throw new Error(message);
+        }
+
+        const photos = Array.isArray(data.photos) ? data.photos : [];
+        tripAlbumState.photos = photos;
+        renderTripAlbumPhotos(photos);
+
+        if (photos.length === 0) {
+            showTripAlbumStatus('No photos were found in the shared album.');
+        } else {
+            showTripAlbumStatus('');
+        }
+    } catch (error) {
+        if (tripAlbumState.tripId !== cleanedTripId || tripAlbumState.requestId !== requestId) {
+            return;
+        }
+        console.error('Failed to load album photos', error);
+        tripAlbumState.photos = [];
+        renderTripAlbumPhotos([]);
+        showTripAlbumStatus(error.message || 'Failed to load album photos.', true);
+    }
+}
+
+function applyTripAlbumUrl(url, options = {}) {
+    const { preserveDirty = true, fetchPhotos = true } = options || {};
+    const cleaned = typeof url === 'string' ? url.trim() : '';
+    const shouldUpdateField = !preserveDirty || !tripAlbumState.isDirty;
+    const previousUrl = typeof tripAlbumState.lastAppliedUrl === 'string'
+        ? tripAlbumState.lastAppliedUrl
+        : (tripAlbumState.lastAppliedUrl ? String(tripAlbumState.lastAppliedUrl) : '');
+    const hasChanged = cleaned !== previousUrl;
+
+    tripAlbumState.lastAppliedUrl = cleaned;
+
+    if (tripAlbumInput && shouldUpdateField) {
+        tripAlbumInput.value = cleaned;
+        tripAlbumState.isDirty = false;
+    } else if (tripAlbumInput && tripAlbumInput.value === cleaned) {
+        tripAlbumState.isDirty = false;
+    }
+
+    updateTripAlbumLink(cleaned);
+    updateTripAlbumButtonState();
+
+    if (!cleaned) {
+        tripAlbumState.photos = [];
+        renderTripAlbumPhotos([]);
+        if (tripAlbumStatusElement && !tripAlbumStatusElement.hidden) {
+            showTripAlbumStatus('');
+        }
+        return;
+    }
+
+    if (fetchPhotos && shouldUpdateField && tripAlbumState.tripId && (hasChanged || !Array.isArray(tripAlbumState.photos) || tripAlbumState.photos.length === 0)) {
+        loadTripAlbumPhotos(tripAlbumState.tripId);
+    }
+}
+
+function handleTripAlbumCancel(event) {
+    if (event) { event.preventDefault(); }
+
+    const lastValue = tripAlbumState.lastAppliedUrl || '';
+    const wasDirty = Boolean(tripAlbumState.isDirty);
+
+    if (tripAlbumInput) {
+        tripAlbumInput.value = lastValue;
+    }
+
+    tripAlbumState.isDirty = false;
+    updateTripAlbumButtonState();
+
+    if (wasDirty) {
+        const message = lastValue
+            ? 'Reverted to last saved album link.'
+            : 'Cleared album changes.';
+        showTripAlbumStatus(message);
+    } else if (!lastValue) {
+        showTripAlbumStatus('');
+    }
+
+    if (!lastValue) {
+        tripAlbumState.photos = [];
+        renderTripAlbumPhotos([]);
+    }
+}
+
+async function handleTripAlbumSubmit(event) {
+    if (event) { event.preventDefault(); }
+
+    const tripId = tripAlbumState.tripId ? String(tripAlbumState.tripId).trim() : '';
+    if (!tripId) {
+        showTripAlbumStatus('Trip could not be determined.', true);
+        return;
+    }
+
+    if (!tripAlbumInput) {
+        showTripAlbumStatus('Album field is unavailable.', true);
+        return;
+    }
+
+    if (!tripAlbumState.isDirty) {
+        showTripAlbumStatus('No changes to save.');
+        return;
+    }
+
+    const albumUrl = tripAlbumInput.value || '';
+
+    setTripAlbumSaving(true);
+    showTripAlbumStatus('');
+
+    try {
+        const response = await fetch(`/api/trips/${encodeURIComponent(tripId)}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ album_url: albumUrl }),
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || (result && result.status === 'error')) {
+            const message = result && result.message ? result.message : 'Failed to save album link.';
+            throw new Error(message);
+        }
+
+        const updatedTrip = result && result.trip ? result.trip : null;
+        if (updatedTrip && typeof updatedTrip === 'object') {
+            populateTripProfilePanel(updatedTrip, { preserveDirty: false });
+            upsertTripInList(updatedTrip, { reloadDetail: false });
+        } else {
+            tripAlbumState.lastAppliedUrl = albumUrl.trim();
+            tripAlbumState.isDirty = false;
+            updateTripAlbumLink(albumUrl);
+            loadTripAlbumPhotos(tripId);
+        }
+
+        const successMessage = result && result.message ? result.message : 'Album link updated.';
+        showTripAlbumStatus(successMessage);
+    } catch (error) {
+        console.error('Failed to update trip album', error);
+        showTripAlbumStatus(error.message || 'Failed to save album link.', true);
+    } finally {
+        setTripAlbumSaving(false);
+    }
+}
+
 function populateTripProfilePanel(trip, options = {}) {
     const { preserveDirty = true } = options || {};
     const name = trip && trip.name ? String(trip.name) : TRIP_NAME_FALLBACK;
@@ -1922,6 +2198,14 @@ function populateTripProfilePanel(trip, options = {}) {
     }
 
     updateTripDescriptionSaveButtonState();
+
+    let albumUrl = '';
+    if (trip && typeof trip.album_url === 'string') {
+        albumUrl = trip.album_url;
+    } else if (trip && typeof trip.albumUrl === 'string') {
+        albumUrl = trip.albumUrl;
+    }
+    applyTripAlbumUrl(albumUrl, { preserveDirty });
 }
 
 async function refreshTripDescription(tripId, requestId) {
@@ -2039,6 +2323,15 @@ function initTripProfilePanel() {
     tripDescriptionSaveButton = document.getElementById('tripDescriptionSave');
     tripDescriptionCancelButton = document.getElementById('tripDescriptionCancel');
     tripDescriptionCloseButton = document.getElementById('tripDetailBack');
+    tripAlbumForm = document.getElementById('tripAlbumForm');
+    tripAlbumInput = document.getElementById('tripAlbumInput');
+    tripAlbumStatusElement = document.getElementById('tripAlbumStatus');
+    tripAlbumSaveButton = document.getElementById('tripAlbumSave');
+    tripAlbumCancelButton = document.getElementById('tripAlbumCancel');
+    tripAlbumPreviewContainer = document.getElementById('tripAlbumPreview');
+    tripAlbumPreviewGrid = document.getElementById('tripAlbumPreviewGrid');
+    tripAlbumEmptyElement = document.getElementById('tripAlbumEmpty');
+    tripAlbumOpenLink = document.getElementById('tripAlbumOpenLink');
 
     if (!tripDescriptionTitleElement) {
         if (!tripDetailState.initialised) { initTripDetailPanel(); }
@@ -2047,6 +2340,7 @@ function initTripProfilePanel() {
 
     if (tripProfilePanelInitialised) {
         updateTripDescriptionSaveButtonState();
+        updateTripAlbumButtonState();
         return;
     }
 
@@ -2070,8 +2364,29 @@ function initTripProfilePanel() {
         });
     }
 
+    if (tripAlbumCancelButton) {
+        tripAlbumCancelButton.addEventListener('click', handleTripAlbumCancel);
+    }
+
+    if (tripAlbumForm) {
+        tripAlbumForm.addEventListener('submit', handleTripAlbumSubmit);
+    }
+
+    if (tripAlbumInput) {
+        tripAlbumInput.addEventListener('input', () => {
+            const currentValue = tripAlbumInput.value ? tripAlbumInput.value.trim() : '';
+            const lastValue = tripAlbumState.lastAppliedUrl ? String(tripAlbumState.lastAppliedUrl).trim() : '';
+            tripAlbumState.isDirty = currentValue !== lastValue;
+            updateTripAlbumButtonState();
+            if (tripAlbumStatusElement && !tripAlbumStatusElement.hidden) {
+                showTripAlbumStatus('');
+            }
+        });
+    }
+
     tripProfilePanelInitialised = true;
     updateTripDescriptionSaveButtonState();
+    updateTripAlbumButtonState();
 }
 
 function openTripProfile(tripId, options = {}) {
@@ -2098,6 +2413,27 @@ function openTripProfile(tripId, options = {}) {
     if (tripDescriptionField) {
         tripDescriptionField.disabled = false;
     }
+
+    tripAlbumState.requestId += 1;
+    tripAlbumState.tripId = cleanedTripId;
+    tripAlbumState.isSaving = false;
+    tripAlbumState.isDirty = false;
+    tripAlbumState.lastAppliedUrl = '';
+    tripAlbumState.photos = [];
+
+    if (tripAlbumForm) {
+        tripAlbumForm.classList.remove('is-saving');
+        tripAlbumForm.reset();
+    }
+
+    if (tripAlbumInput) {
+        tripAlbumInput.disabled = false;
+    }
+
+    renderTripAlbumPhotos([]);
+    updateTripAlbumLink('');
+    showTripAlbumStatus('');
+    updateTripAlbumButtonState();
 
     if (tripProfilePanelElement) {
         tripProfilePanelElement.scrollTop = 0;
@@ -2126,6 +2462,13 @@ function closeTripProfileOverlay(options = {}) {
     tripDescriptionState.lastAppliedDescription = '';
     tripDescriptionState.triggerElement = null;
 
+    tripAlbumState.requestId += 1;
+    tripAlbumState.tripId = null;
+    tripAlbumState.isSaving = false;
+    tripAlbumState.isDirty = false;
+    tripAlbumState.lastAppliedUrl = '';
+    tripAlbumState.photos = [];
+
     if (tripDescriptionForm) {
         tripDescriptionForm.classList.remove('is-saving');
         tripDescriptionForm.reset();
@@ -2135,6 +2478,21 @@ function closeTripProfileOverlay(options = {}) {
         tripDescriptionField.disabled = false;
         tripDescriptionField.value = '';
     }
+
+    if (tripAlbumForm) {
+        tripAlbumForm.classList.remove('is-saving');
+        tripAlbumForm.reset();
+    }
+
+    if (tripAlbumInput) {
+        tripAlbumInput.disabled = false;
+        tripAlbumInput.value = '';
+    }
+
+    renderTripAlbumPhotos([]);
+    updateTripAlbumLink('');
+    showTripAlbumStatus('');
+    updateTripAlbumButtonState();
 
     if (tripDescriptionUpdatedElement) {
         tripDescriptionUpdatedElement.hidden = true;

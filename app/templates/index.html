@@ -248,6 +248,26 @@
                     </div>
                 </form>
                 <div id="tripDescriptionStatus" class="trip-description-status" role="status" aria-live="polite" hidden></div>
+                <section class="trip-profile-album" aria-labelledby="tripAlbumLabel">
+                    <div class="trip-album-header">
+                        <h3 id="tripAlbumLabel" class="trip-album-title">Photo album</h3>
+                        <a id="tripAlbumOpenLink" class="trip-album-open-link" href="#" target="_blank" rel="noopener" hidden>Open album</a>
+                    </div>
+                    <form id="tripAlbumForm" class="trip-album-form" novalidate>
+                        <label class="trip-album-input-label" for="tripAlbumInput">Google Photos link</label>
+                        <input type="url" id="tripAlbumInput" name="album_url" placeholder="https://photos.app.goo.gl/your-album" inputmode="url" autocomplete="off">
+                        <p class="trip-album-helper">Paste a public Google Photos album link to show a preview for this trip.</p>
+                        <div class="trip-album-actions">
+                            <button type="button" class="modal-button secondary" id="tripAlbumCancel">Cancel</button>
+                            <button type="submit" class="modal-button primary" id="tripAlbumSave" disabled>Save</button>
+                        </div>
+                    </form>
+                    <div id="tripAlbumStatus" class="trip-description-status trip-album-status" role="status" aria-live="polite" hidden></div>
+                    <div id="tripAlbumPreview" class="trip-album-preview" hidden>
+                        <div id="tripAlbumPreviewGrid" class="trip-album-grid" role="list"></div>
+                    </div>
+                    <p id="tripAlbumEmpty" class="trip-album-empty">Add a Google Photos album to showcase your memories alongside the itinerary.</p>
+                </section>
                 <div class="trip-profile-controls">
                     <div class="trip-detail-controls">
                         <label class="trip-search">

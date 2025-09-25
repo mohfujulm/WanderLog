@@ -2,12 +2,14 @@
 
 import json
 import os
+from urllib.parse import urlparse
 
 import pandas as pd
 from flask import Blueprint, jsonify, render_template, request
 
 from app.map_utils import dataframe_to_markers, filter_dataframe_by_date_range
 from app.utils.json_processing_functions import unique_visits_to_df
+from app.utils.google_photos import fetch_google_photos_album
 from . import data_cache, trip_store
 
 main = Blueprint("main", __name__)
@@ -16,6 +18,7 @@ MAPBOX_ACCESS_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN")
 MAX_ALIAS_LENGTH = 120
 MAX_TRIP_NAME_LENGTH = 120
 MAX_TRIP_DESCRIPTION_LENGTH = 2000
+MAX_TRIP_ALBUM_URL_LENGTH = 1024
 
 
 def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
@@ -43,6 +46,7 @@ def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
             'updated_at': trip.get('updated_at'),
             'latest_location_date': latest_location_date,
             'description': trip.get('description', ''),
+            'album_url': trip.get('album_url', ''),
         }
 
     place_ids = getattr(trip, 'place_ids', []) or []
@@ -56,6 +60,7 @@ def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
         'updated_at': getattr(trip, 'updated_at', None),
         'latest_location_date': latest_location_date,
         'description': getattr(trip, 'description', ''),
+        'album_url': getattr(trip, 'album_url', ''),
     }
 
 
@@ -72,6 +77,37 @@ def _clean_string(value: object) -> str:
         return ""
 
     return str(value).strip()
+
+
+def _normalise_album_url(value) -> str:
+    """Return a validated album URL string."""
+
+    if value is None:
+        return ""
+
+    if isinstance(value, str):
+        cleaned = value.strip()
+    else:
+        cleaned = str(value).strip()
+
+    if not cleaned:
+        return ""
+
+    if len(cleaned) > MAX_TRIP_ALBUM_URL_LENGTH:
+        raise ValueError(
+            'Album link must be '
+            f'{MAX_TRIP_ALBUM_URL_LENGTH} characters or fewer.',
+        )
+
+    parsed = urlparse(cleaned)
+    if parsed.scheme not in {'http', 'https'}:
+        raise ValueError('Album link must start with http:// or https://.')
+
+    hostname = (parsed.netloc or '').lower()
+    if not hostname or 'google' not in hostname:
+        raise ValueError('Album link must be a Google Photos URL.')
+
+    return cleaned
 
 
 def _extract_trip_place_ids(trip):
@@ -606,6 +642,32 @@ def api_get_trip(trip_id: str):
     })
 
 
+@main.route('/api/trips/<trip_id>/photos', methods=['GET'])
+def api_get_trip_photos(trip_id: str):
+    """Return preview photos for the trip's Google Photos album."""
+
+    identifier = (trip_id or '').strip()
+    if not identifier:
+        return jsonify(status='error', message='A valid trip ID is required.'), 400
+
+    trip = trip_store.get_trip(identifier)
+    if trip is None:
+        return jsonify(status='error', message='Trip not found.'), 404
+
+    album_url = getattr(trip, 'album_url', '') or ''
+    if not album_url:
+        return jsonify(status='success', photos=[], album_url=''), 200
+
+    try:
+        photos = fetch_google_photos_album(album_url)
+    except ValueError as exc:
+        return jsonify(status='error', message=str(exc)), 400
+    except RuntimeError as exc:
+        return jsonify(status='error', message=str(exc)), 502
+
+    return jsonify(status='success', photos=photos, album_url=album_url)
+
+
 @main.route('/api/trips/<trip_id>', methods=['DELETE'])
 def api_delete_trip(trip_id: str):
     """Delete the trip identified by ``trip_id``."""
@@ -640,6 +702,8 @@ def api_update_trip(trip_id: str):
 
     name_value = payload.get('name', None)
     description_value = payload.get('description', None)
+    album_url_provided = 'album_url' in payload
+    album_url_value = payload.get('album_url') if album_url_provided else None
 
     cleaned_name = None
     if name_value is not None:
@@ -668,7 +732,14 @@ def api_update_trip(trip_id: str):
             ), 400
         cleaned_description = description_value
 
-    if cleaned_name is None and cleaned_description is None:
+    cleaned_album_url = None
+    if album_url_provided:
+        try:
+            cleaned_album_url = _normalise_album_url(album_url_value)
+        except ValueError as exc:
+            return jsonify(status='error', message=str(exc)), 400
+
+    if cleaned_name is None and cleaned_description is None and cleaned_album_url is None and not album_url_provided:
         return jsonify(status='error', message='No updates were supplied.'), 400
 
     try:
@@ -676,6 +747,7 @@ def api_update_trip(trip_id: str):
             identifier,
             name=cleaned_name,
             description=cleaned_description,
+            album_url=cleaned_album_url if album_url_provided else None,
         )
     except ValueError as exc:
         return jsonify(status='error', message=str(exc)), 400
@@ -706,8 +778,14 @@ def api_create_trip():
             message=f'Trip name must be {MAX_TRIP_NAME_LENGTH} characters or fewer.'
         ), 400
 
+    album_url_value = payload.get('album_url')
     try:
-        trip = trip_store.create_trip(name)
+        cleaned_album_url = _normalise_album_url(album_url_value)
+    except ValueError as exc:
+        return jsonify(status='error', message=str(exc)), 400
+
+    try:
+        trip = trip_store.create_trip(name, album_url=cleaned_album_url)
     except ValueError as exc:
         return jsonify(status='error', message=str(exc)), 400
 

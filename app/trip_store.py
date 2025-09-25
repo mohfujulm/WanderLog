@@ -33,6 +33,7 @@ class Trip:
     name: str
     place_ids: List[str] = field(default_factory=list)
     description: str = ""
+    album_url: str = ""
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
 
@@ -74,6 +75,15 @@ def _normalise_trip_data(raw: dict) -> Optional[Trip]:
         description_candidate = str(description_raw)
         description = description_candidate if description_candidate.strip() else ""
 
+    album_url_raw = raw.get("album_url") or raw.get("photo_album")
+    if album_url_raw is None:
+        album_url = ""
+    else:
+        album_candidate = str(album_url_raw)
+        album_url = album_candidate.strip()
+        if not album_url:
+            album_url = ""
+
     created_at = str(raw.get("created_at") or raw.get("created") or "").strip()
     if not created_at:
         created_at = _utcnow_iso()
@@ -89,6 +99,7 @@ def _normalise_trip_data(raw: dict) -> Optional[Trip]:
         created_at=created_at,
         updated_at=updated_at,
         description=description,
+        album_url=album_url,
     )
 
 
@@ -158,7 +169,7 @@ def get_trip(trip_id: str) -> Optional[Trip]:
     return None
 
 
-def create_trip(name: str, *, description: str = "") -> Trip:
+def create_trip(name: str, *, description: str = "", album_url: str = "") -> Trip:
     """Create a new trip with ``name`` and persist it."""
 
     cleaned_name = (name or "").strip()
@@ -168,9 +179,17 @@ def create_trip(name: str, *, description: str = "") -> Trip:
     raw_description = str(description or "")
     cleaned_description = raw_description if raw_description.strip() else ""
 
+    raw_album_url = str(album_url or "")
+    cleaned_album_url = raw_album_url.strip()
+
     _ensure_cache()
 
-    trip = Trip(id=uuid4().hex, name=cleaned_name, description=cleaned_description)
+    trip = Trip(
+        id=uuid4().hex,
+        name=cleaned_name,
+        description=cleaned_description,
+        album_url=cleaned_album_url,
+    )
     _trips_cache.append(trip)
     save_trips()
     return trip
@@ -327,6 +346,7 @@ def update_trip_metadata(
     *,
     name: Optional[str] = None,
     description: Optional[str] = None,
+    album_url: Optional[str] = None,
 ) -> Trip:
     """Update metadata for the trip identified by ``trip_id``."""
 
@@ -349,6 +369,13 @@ def update_trip_metadata(
         final_description = raw_description if raw_description.strip() else ""
         if final_description != trip.description:
             trip.description = final_description
+            updated = True
+
+    if album_url is not None:
+        raw_album_url = str(album_url or "")
+        final_album_url = raw_album_url.strip()
+        if final_album_url != trip.album_url:
+            trip.album_url = final_album_url
             updated = True
 
     if updated:
