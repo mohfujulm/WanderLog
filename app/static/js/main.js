@@ -3345,9 +3345,9 @@ function getTripHighlightIcon() {
     if (tripMarkerIconInstance) { return tripMarkerIconInstance; }
     tripMarkerIconInstance = L.divIcon({
         className: 'trip-marker-icon',
-        iconSize: [32, 32],
-        iconAnchor: [24, 24],
-        popupAnchor: [0, -28],
+        iconSize: [36, 48],
+        iconAnchor: [18, 44],
+        popupAnchor: [0, -40],
     });
     return tripMarkerIconInstance;
 }
