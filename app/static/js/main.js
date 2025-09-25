@@ -1870,8 +1870,7 @@ function showTripDescriptionStatus(message, isError = false) {
 }
 
 function updateTripDescriptionDisplay(description) {
-    initTripProfilePanel();
-    if (!tripDescriptionDisplayElement) { return; }
+    if (!tripProfilePanelInitialised || !tripDescriptionDisplayElement) { return; }
 
     const value = typeof description === 'string'
         ? description
@@ -1888,7 +1887,7 @@ function updateTripDescriptionDisplay(description) {
 }
 
 function applyTripProfileEditMode() {
-    initTripProfilePanel();
+    if (!tripProfilePanelInitialised) { return; }
 
     const isEditing = Boolean(tripProfileEditState.active);
 
