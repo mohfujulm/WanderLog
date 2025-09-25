@@ -2189,6 +2189,9 @@ function applyTripProfileEditMode() {
     if (tripDescriptionSaveButton) {
         tripDescriptionSaveButton.hidden = !isEditing;
     }
+    if (tripDescriptionCancelButton) {
+        tripDescriptionCancelButton.hidden = !isEditing;
+    }
     if (tripDetailEditButton) {
         tripDetailEditButton.disabled = isEditing || Boolean(tripDescriptionState.isSaving);
         tripDetailEditButton.setAttribute('aria-pressed', isEditing ? 'true' : 'false');
@@ -3087,6 +3090,9 @@ function updateTripDetailActions() {
             tripDetailDeleteButton.hidden = !tripProfileEditState.active;
             tripDetailDeleteButton.disabled = !canInteract;
         }
+        if (tripDescriptionCancelButton) {
+            tripDescriptionCancelButton.hidden = !tripProfileEditState.active;
+        }
     } else {
         tripDetailActionsElement.hidden = true;
         if (tripDetailEditButton) {
@@ -3101,6 +3107,9 @@ function updateTripDetailActions() {
             delete tripDetailDeleteButton.dataset.tripId;
             tripDetailDeleteButton.removeAttribute('aria-label');
             tripDetailDeleteButton.removeAttribute('title');
+        }
+        if (tripDescriptionCancelButton) {
+            tripDescriptionCancelButton.hidden = true;
         }
     }
 }
