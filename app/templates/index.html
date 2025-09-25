@@ -136,6 +136,12 @@
                     <p class="form-helper-text">Leave blank to use the place name from your timeline.</p>
                 </div>
                 <div class="form-group">
+                    <label for="manualDescription">Description (Optional)</label>
+                    <textarea id="manualDescription" name="description" rows="4" maxlength="2000" placeholder="Add notes about this location"></textarea>
+                    <p class="form-helper-text">Optional. Share details or memories about this visit.</p>
+                    <p id="manualDescriptionCharacterCount" class="form-helper-text form-helper-counter" aria-live="polite">0 / 2000 characters</p>
+                </div>
+                <div class="form-group">
                     <label for="manualDate">Date</label>
                     <input type="date" id="manualDate" name="start_date" required>
                 </div>
@@ -168,6 +174,23 @@
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="modal-button secondary" id="aliasCancel">Cancel</button>
+                    <button type="submit" class="modal-button primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <div id="descriptionModal" class="modal-overlay" aria-hidden="true" hidden>
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="descriptionModalTitle" tabindex="-1">
+            <h2 id="descriptionModalTitle">Edit Location Description</h2>
+            <form id="descriptionForm">
+                <div class="form-group">
+                    <label for="descriptionInput">Description</label>
+                    <textarea id="descriptionInput" name="description" rows="6" maxlength="2000" placeholder="Add notes about this location"></textarea>
+                    <p class="form-helper-text">Optional. Describe what made this visit memorable.</p>
+                    <p id="descriptionCharacterCount" class="form-helper-text form-helper-counter" aria-live="polite">0 / 2000 characters</p>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="modal-button secondary" id="descriptionCancel">Cancel</button>
                     <button type="submit" class="modal-button primary">Save</button>
                 </div>
             </form>

@@ -16,6 +16,7 @@ MAPBOX_ACCESS_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN")
 MAX_ALIAS_LENGTH = 120
 MAX_TRIP_NAME_LENGTH = 120
 MAX_TRIP_DESCRIPTION_LENGTH = 2000
+MAX_LOCATION_DESCRIPTION_LENGTH = 2000
 
 
 def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
@@ -218,6 +219,7 @@ def _serialise_trip_location(row, *, place_id: str = "", order: int = 0) -> dict
             'date': '',
             'source_type': '',
             'archived': False,
+            'description': '',
             'latitude': None,
             'longitude': None,
             'order': order,
@@ -233,6 +235,13 @@ def _serialise_trip_location(row, *, place_id: str = "", order: int = 0) -> dict
     name = _clean_string(get_value('Place Name', ''))
     alias = _clean_string(get_value('Alias', ''))
     display_name = _clean_string(get_value('display_name', '')) or alias or name or 'Unknown location'
+
+    description_raw = get_value('Description', '')
+    if pd.isna(description_raw):  # type: ignore[arg-type]
+        description = ''
+    else:
+        description_candidate = str(description_raw)
+        description = description_candidate if description_candidate.strip() else ''
 
     start_date = _clean_string(get_value('Start Date', ''))
     end_date = _clean_string(get_value('End Date', ''))
@@ -261,6 +270,7 @@ def _serialise_trip_location(row, *, place_id: str = "", order: int = 0) -> dict
         'date': primary_date,
         'source_type': source_type,
         'archived': archived,
+        'description': description,
         'latitude': latitude,
         'longitude': longitude,
         'order': order,
@@ -362,6 +372,7 @@ def api_add_point():
     start_date = data.get('start_date', '')
     source_type = data.get('source_type', 'manual')
     alias_value = data.get('alias', '')
+    description_value = data.get('description', '')
 
     if alias_value is None:
         alias_value = ''
@@ -374,6 +385,25 @@ def api_add_point():
             message=f'Alias must be {MAX_ALIAS_LENGTH} characters or fewer.'
         ), 400
 
+    if description_value is None:
+        description_value = ''
+
+    if not isinstance(description_value, str):
+        description_value = str(description_value)
+
+    if len(description_value) > MAX_LOCATION_DESCRIPTION_LENGTH:
+        return jsonify(
+            status='error',
+            message=(
+                'Description must be '
+                f'{MAX_LOCATION_DESCRIPTION_LENGTH} characters or fewer.'
+            )
+        ), 400
+
+    description_clean = (
+        description_value if description_value.strip() else ''
+    )
+
     new_row = pd.DataFrame([
         {
             'Place ID': str(os.urandom(16).hex()),
@@ -384,6 +414,7 @@ def api_add_point():
             'Place Name': place_name,
             'Archived': False,
             'Alias': alias_value,
+            'Description': description_clean,
         }
     ])
 
@@ -1106,4 +1137,57 @@ def api_update_alias(place_id: str):
         message=message,
         alias=alias_value,
         display_name=display_name,
+    )
+
+
+@main.route('/api/markers/<place_id>/description', methods=['POST'])
+def api_update_marker_description(place_id: str):
+    """Create or update a free-form description for the given marker."""
+
+    df = data_cache.timeline_df
+    if df is None or df.empty or 'Place ID' not in df.columns:
+        return jsonify(status='error', message='Data point not found.'), 404
+
+    data_cache.ensure_archived_column()
+    df = data_cache.timeline_df
+
+    mask = df['Place ID'] == place_id
+    if not mask.any():
+        return jsonify(status='error', message='Data point not found.'), 404
+
+    payload = request.get_json(silent=True) or {}
+    description_value = payload.get('description', '')
+
+    if description_value is None:
+        description_value = ''
+
+    if not isinstance(description_value, str):
+        description_value = str(description_value)
+
+    if len(description_value) > MAX_LOCATION_DESCRIPTION_LENGTH:
+        return jsonify(
+            status='error',
+            message=(
+                'Description must be '
+                f'{MAX_LOCATION_DESCRIPTION_LENGTH} characters or fewer.'
+            ),
+        ), 400
+
+    final_description = description_value if description_value.strip() else ''
+
+    df.loc[mask, 'Description'] = final_description
+    data_cache.timeline_df = df
+    data_cache.ensure_archived_column()
+    data_cache.save_timeline_data()
+
+    message = (
+        'Description saved successfully.'
+        if final_description
+        else 'Description cleared successfully.'
+    )
+
+    return jsonify(
+        status='success',
+        message=message,
+        description=final_description,
     )
