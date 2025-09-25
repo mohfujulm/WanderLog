@@ -2564,12 +2564,25 @@ function attachTripProfileEscapeListener() {
     if (tripProfileEscapeListener) { return; }
     tripProfileEscapeListener = (event) => {
         if (event.defaultPrevented || event.key !== 'Escape') { return; }
+
+        const stopEvent = () => {
+            if (typeof event.stopImmediatePropagation === 'function') {
+                event.stopImmediatePropagation();
+            }
+            if (typeof event.stopPropagation === 'function') {
+                event.stopPropagation();
+            }
+        };
+
         if (tripProfileEditState.active) {
             event.preventDefault();
+            stopEvent();
             handleTripDescriptionCancel();
             return;
         }
+
         event.preventDefault();
+        stopEvent();
         closeTripDetail();
     };
     document.addEventListener('keydown', tripProfileEscapeListener);

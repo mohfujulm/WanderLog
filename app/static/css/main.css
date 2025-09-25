@@ -636,7 +636,7 @@ button, input, select { font-family: inherit; }
 }
 
 .trip-profile-panel .trip-sort-direction {
-    align-self: flex-start;
+    align-self: stretch;
 }
 
 .trip-profile-panel .trip-search input,
@@ -816,18 +816,21 @@ button, input, select { font-family: inherit; }
 
 .trip-sort-direction {  border: none;
                         border-radius: 12px;
-                        padding: 9px 14px;
+                        padding: 10px 16px;
+                        min-height: 42px;
                         background: #111827;
                         color: #fff;
-                        font-size: 12px;
+                        font-size: 14px;
                         font-weight: 600;
                         cursor: pointer;
                         transition: background 0.2s ease, transform 0.2s ease;
-                        letter-spacing: 0.06em;
+                        letter-spacing: 0.08em;
                         text-transform: uppercase;
                         display: inline-flex;
                         align-items: center;
-                        justify-content: center; }
+                        justify-content: center;
+                        box-sizing: border-box;
+                        align-self: stretch; }
 
 .trip-sort-direction:hover {   background: #1f2937;
                                 transform: translateY(-1px); }
