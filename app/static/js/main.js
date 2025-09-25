@@ -199,6 +199,254 @@ const MARKER_ICON_PATHS = Object.assign(
     APP_CONFIG.markerIcons || {},
 );
 
+const MAP_STATE_STORAGE_KEY = 'wanderlog.mapState';
+const MAP_STATE_STORAGE_VERSION = 1;
+let menuStateAutoKeyCounter = 0;
+
+const mapStateStorage = (() => {
+    if (typeof window === 'undefined') { return null; }
+    try {
+        const storage = window.localStorage;
+        if (!storage) { return null; }
+        const testKey = '__wanderlog_map_state_test__';
+        storage.setItem(testKey, testKey);
+        storage.removeItem(testKey);
+        return storage;
+    } catch (error) {
+        return null;
+    }
+})();
+
+function loadStoredMapState() {
+    if (!mapStateStorage) { return null; }
+    try {
+        const raw = mapStateStorage.getItem(MAP_STATE_STORAGE_KEY);
+        if (!raw) { return null; }
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') { return null; }
+        if (parsed.version && parsed.version !== MAP_STATE_STORAGE_VERSION) {
+            return null;
+        }
+        return parsed;
+    } catch (error) {
+        return null;
+    }
+}
+
+function mergeMapState(baseState, partialState) {
+    const result = Object.assign({}, baseState || {});
+
+    if (partialState && typeof partialState.view === 'object') {
+        const nextView = Object.assign({}, baseState && baseState.view ? baseState.view : {});
+        if (partialState.view.lat !== undefined) { nextView.lat = partialState.view.lat; }
+        if (partialState.view.lng !== undefined) { nextView.lng = partialState.view.lng; }
+        if (partialState.view.zoom !== undefined) { nextView.zoom = partialState.view.zoom; }
+        result.view = nextView;
+    }
+
+    if (partialState && typeof partialState.filters === 'object') {
+        const baseFilters = (baseState && typeof baseState.filters === 'object') ? baseState.filters : {};
+        const nextFilters = Object.assign({}, baseFilters);
+
+        if ('startDate' in partialState.filters) {
+            nextFilters.startDate = partialState.filters.startDate || '';
+        }
+        if ('endDate' in partialState.filters) {
+            nextFilters.endDate = partialState.filters.endDate || '';
+        }
+        if ('sourceTypes' in partialState.filters) {
+            nextFilters.sourceTypes = Array.isArray(partialState.filters.sourceTypes)
+                ? Array.from(new Set(partialState.filters.sourceTypes))
+                : [];
+        }
+        if ('allSourceTypesSelected' in partialState.filters) {
+            nextFilters.allSourceTypesSelected = Boolean(partialState.filters.allSourceTypesSelected);
+        }
+
+        result.filters = nextFilters;
+    }
+
+    if (partialState && typeof partialState.menus === 'object') {
+        const baseMenus = (baseState && typeof baseState.menus === 'object') ? baseState.menus : {};
+        const nextMenus = Object.assign({}, baseMenus);
+
+        Object.keys(partialState.menus).forEach((menuKey) => {
+            const partialMenuState = partialState.menus[menuKey];
+
+            if (partialMenuState === null) {
+                delete nextMenus[menuKey];
+                return;
+            }
+
+            if (!partialMenuState || typeof partialMenuState !== 'object') {
+                return;
+            }
+
+            const baseMenuState = (nextMenus[menuKey] && typeof nextMenus[menuKey] === 'object')
+                ? nextMenus[menuKey]
+                : {};
+            const mergedMenuState = Object.assign({}, baseMenuState);
+
+            if ('open' in partialMenuState) {
+                mergedMenuState.open = Boolean(partialMenuState.open);
+            }
+
+            if ('activePanelId' in partialMenuState) {
+                const activePanelId = partialMenuState.activePanelId;
+                mergedMenuState.activePanelId = typeof activePanelId === 'string' ? activePanelId : '';
+            }
+
+            nextMenus[menuKey] = mergedMenuState;
+        });
+
+        result.menus = nextMenus;
+    }
+
+    return result;
+}
+
+function saveStoredMapState(partialState) {
+    if (!mapStateStorage || !partialState) { return; }
+    try {
+        const current = loadStoredMapState() || {};
+        const merged = mergeMapState(current, partialState);
+        const payload = Object.assign({}, merged, { version: MAP_STATE_STORAGE_VERSION });
+        mapStateStorage.setItem(MAP_STATE_STORAGE_KEY, JSON.stringify(payload));
+    } catch (error) {
+        // Ignore persistence errors to avoid breaking the map experience.
+    }
+}
+
+function getInitialMapViewFromStorage() {
+    const storedState = loadStoredMapState();
+    if (!storedState || typeof storedState.view !== 'object') { return null; }
+
+    const { lat, lng, zoom } = storedState.view;
+    const latNumber = Number(lat);
+    const lngNumber = Number(lng);
+    const zoomNumber = Number(zoom);
+
+    const isLatValid = Number.isFinite(latNumber) && latNumber >= -85 && latNumber <= 85;
+    const isLngValid = Number.isFinite(lngNumber) && lngNumber >= -180 && lngNumber <= 180;
+    const isZoomValid = Number.isFinite(zoomNumber);
+
+    const clampedZoom = isZoomValid
+        ? Math.max(MAP_MIN_ZOOM, Math.min(MAP_TILE_MAX_ZOOM, zoomNumber))
+        : null;
+
+    if (isLatValid && isLngValid) {
+        return {
+            center: [latNumber, lngNumber],
+            zoom: clampedZoom !== null ? clampedZoom : MAP_DEFAULT_ZOOM,
+        };
+    }
+
+    if (clampedZoom !== null) {
+        return { center: null, zoom: clampedZoom };
+    }
+
+    return null;
+}
+
+function persistMapViewState() {
+    if (!map) { return; }
+    try {
+        const center = map.getCenter();
+        const zoom = map.getZoom();
+        const lat = center ? Number(center.lat) : null;
+        const lng = center ? Number(center.lng) : null;
+        const zoomNumber = Number(zoom);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng) || !Number.isFinite(zoomNumber)) {
+            return;
+        }
+        const clampedZoom = Math.max(MAP_MIN_ZOOM, Math.min(MAP_TILE_MAX_ZOOM, zoomNumber));
+        saveStoredMapState({
+            view: {
+                lat: Math.max(-85, Math.min(85, lat)),
+                lng: Math.max(-180, Math.min(180, lng)),
+                zoom: clampedZoom,
+            },
+        });
+    } catch (error) {
+        // Ignore persistence errors.
+    }
+}
+
+function persistFilterState(startDate, endDate, sourceTypes) {
+    const selectedTypes = Array.isArray(sourceTypes) ? sourceTypes.filter((value) => typeof value === 'string' && value) : [];
+    const totalTypeInputs = document.querySelectorAll('#sourceTypeFilters input').length;
+    const allSelected = totalTypeInputs > 0 && selectedTypes.length === totalTypeInputs;
+
+    saveStoredMapState({
+        filters: {
+            startDate: startDate || '',
+            endDate: endDate || '',
+            sourceTypes: selectedTypes,
+            allSourceTypesSelected: allSelected,
+        },
+    });
+}
+
+function getMenuStateStorageKey(menu) {
+    if (!menu) { return null; }
+
+    const existing = menu.dataset ? menu.dataset.menuStorageKey : null;
+    if (existing) { return existing; }
+
+    const explicitAttribute = menu.getAttribute('data-menu-storage-key');
+    if (explicitAttribute) {
+        if (menu.dataset) { menu.dataset.menuStorageKey = explicitAttribute; }
+        return explicitAttribute;
+    }
+
+    const id = menu.getAttribute('id');
+    if (id) {
+        if (menu.dataset) { menu.dataset.menuStorageKey = id; }
+        return id;
+    }
+
+    const controls = menu.querySelector('.overlay-controls');
+    if (controls && controls.id) {
+        const derived = `controls:${controls.id}`;
+        if (menu.dataset) { menu.dataset.menuStorageKey = derived; }
+        return derived;
+    }
+
+    const toggle = menu.querySelector('.menu-toggle');
+    if (toggle && toggle.id) {
+        const derived = `toggle:${toggle.id}`;
+        if (menu.dataset) { menu.dataset.menuStorageKey = derived; }
+        return derived;
+    }
+
+    const generated = `menu-${menuStateAutoKeyCounter++}`;
+    if (menu.dataset) { menu.dataset.menuStorageKey = generated; }
+    return generated;
+}
+
+function saveMenuState(menu, partialMenuState) {
+    if (!menu) { return; }
+    const key = getMenuStateStorageKey(menu);
+    if (!key) { return; }
+
+    const payload = {};
+    if (partialMenuState && typeof partialMenuState === 'object') {
+        if ('open' in partialMenuState) {
+            payload.open = Boolean(partialMenuState.open);
+        }
+        if ('activePanelId' in partialMenuState) {
+            const id = partialMenuState.activePanelId;
+            payload.activePanelId = typeof id === 'string' ? id : '';
+        }
+    }
+
+    saveStoredMapState({
+        menus: {
+            [key]: payload,
+        },
+    });
+}
+
 const MAX_ALIAS_LENGTH = 120;
 const MAX_TRIP_NAME_LENGTH = 120;
 const MAX_LOCATION_DESCRIPTION_LENGTH = 2000;
@@ -4047,9 +4295,16 @@ function focusMapOnTripLocations() {
 function initMap() {
     // Create a Leaflet map centered on a default view
     const worldBounds = L.latLngBounds(MAP_WORLD_BOUNDS);
+    const storedView = getInitialMapViewFromStorage();
+    const initialCenter = storedView && Array.isArray(storedView.center)
+        ? storedView.center
+        : MAP_DEFAULT_CENTER;
+    const initialZoom = storedView && Number.isFinite(storedView.zoom)
+        ? storedView.zoom
+        : MAP_DEFAULT_ZOOM;
     map = L.map('map', {
-        center: MAP_DEFAULT_CENTER,
-        zoom: MAP_DEFAULT_ZOOM,
+        center: initialCenter,
+        zoom: initialZoom,
         minZoom: MAP_MIN_ZOOM,
         maxBounds: worldBounds,
         maxBoundsViscosity: 1.0,
@@ -4063,9 +4318,16 @@ function initMap() {
         noWrap: true,
         bounds: worldBounds,
     }).addTo(map);
+    map.on('moveend', persistMapViewState);
+    map.on('zoomend', persistMapViewState);
     // Cluster group keeps the map responsive when many markers are shown
     markerCluster = L.markerClusterGroup();
     map.addLayer(markerCluster);
+    if (typeof map.whenReady === 'function') {
+        map.whenReady(() => {
+            persistMapViewState();
+        });
+    }
     setupManageModeMapInteractions();
     // Load existing markers once the map is ready
     loadMarkers();
@@ -4118,6 +4380,8 @@ async function loadMarkers() {
     const payload = { source_types: checked };
     if (startDate) { payload.start_date = startDate; }
     if (endDate) { payload.end_date = endDate; }
+
+    persistFilterState(startDate, endDate, checked);
 
     try {
         // Request the marker list from the server, filtering by source type
@@ -5446,6 +5710,29 @@ document.addEventListener('DOMContentLoaded', async () => {
     initManageModeControls();
     initTripsPanel();
     await loadTripsPanelData();
+    const storedMapState = loadStoredMapState();
+    const storedFilterState = (storedMapState && typeof storedMapState.filters === 'object')
+        ? storedMapState.filters
+        : null;
+    const storedSourceTypes = storedFilterState && Array.isArray(storedFilterState.sourceTypes)
+        ? storedFilterState.sourceTypes.filter((value) => typeof value === 'string' && value)
+        : null;
+    const storedSourceTypeSet = storedSourceTypes ? new Set(storedSourceTypes) : null;
+    const storedAllSourceTypesSelected = storedFilterState
+        ? Boolean(storedFilterState.allSourceTypesSelected)
+        : false;
+    const storedMenuStates = (storedMapState && typeof storedMapState.menus === 'object')
+        ? storedMapState.menus
+        : null;
+    const menuElement = document.querySelector('.menu-container');
+    const menuStorageKey = menuElement ? getMenuStateStorageKey(menuElement) : null;
+    const storedMenuState = (menuStorageKey && storedMenuStates && typeof storedMenuStates[menuStorageKey] === 'object')
+        ? storedMenuStates[menuStorageKey]
+        : null;
+    const storedMenuActivePanelId = (storedMenuState && typeof storedMenuState.activePanelId === 'string'
+        && storedMenuState.activePanelId)
+        ? storedMenuState.activePanelId
+        : null;
     const menuToggleButton = document.getElementById('menuToggle');
     if (menuToggleButton) {
         menuToggleButton.addEventListener('click', (event) => {
@@ -5521,6 +5808,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             } else {
                 delete menuControls.dataset.activePanel;
             }
+
+            if (menuElement) {
+                const activePanelId = activePanel ? activePanel.id : '';
+                saveMenuState(menuElement, { activePanelId });
+            }
         };
 
         const focusTab = (tab) => {
@@ -5558,7 +5850,16 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         });
 
-        const initiallySelected = tabs.find((tab) => tab.getAttribute('aria-selected') === 'true') || tabs[0];
+        let initiallySelected = tabs.find((tab) => tab.getAttribute('aria-selected') === 'true') || tabs[0];
+        if (storedMenuActivePanelId) {
+            const storedPanel = panels.find((panel) => panel.id === storedMenuActivePanelId) || null;
+            if (storedPanel) {
+                const storedTab = tabs.find((tab) => tab.getAttribute('aria-controls') === storedPanel.id) || null;
+                if (storedTab) {
+                    initiallySelected = storedTab;
+                }
+            }
+        }
         activateTab(initiallySelected);
     }
     try {
@@ -5570,7 +5871,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             const cb = document.createElement('input');
             cb.type = 'checkbox';
             cb.value = type;
-            cb.checked = true;
+            cb.checked = storedAllSourceTypesSelected
+                || (storedSourceTypeSet ? storedSourceTypeSet.has(type) : true);
             cb.addEventListener('change', loadMarkers);
             const text = document.createElement('span');
             text.textContent = getSourceTypeLabel(type);
@@ -5584,6 +5886,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     const startDateInput = document.getElementById('filterStartDate');
     const endDateInput = document.getElementById('filterEndDate');
     const clearDateButton = document.getElementById('clearDateFilters');
+
+    if (startDateInput && storedFilterState) {
+        const normalisedStart = normaliseDateInputValue(storedFilterState.startDate);
+        if (normalisedStart !== null) {
+            startDateInput.value = normalisedStart;
+        }
+    }
+    if (endDateInput && storedFilterState) {
+        const normalisedEnd = normaliseDateInputValue(storedFilterState.endDate);
+        if (normalisedEnd !== null) {
+            endDateInput.value = normalisedEnd;
+        }
+    }
 
     const applyDateFilters = () => {
         const startValue = startDateInput ? updateDateInputValue(startDateInput) : '';
@@ -5622,8 +5937,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
     initMap();
-    const menu = document.querySelector('.menu-container');
-    if (menu) { applyMenuState(menu, menu.classList.contains('open')); }
+    if (menuElement) {
+        if (storedMenuState && typeof storedMenuState.open === 'boolean') {
+            if (storedMenuState.open) { menuElement.classList.add('open'); }
+            else { menuElement.classList.remove('open'); }
+        }
+        applyMenuState(menuElement, menuElement.classList.contains('open'), { skipPersistence: true });
+    }
     document.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape') { return; }
         const manualModalElement = document.getElementById('manualPointModal');
@@ -5662,7 +5982,8 @@ function toggleMenu() {
     applyMenuState(menu, isOpen);
 }
 
-function applyMenuState(menu, isOpen) {
+function applyMenuState(menu, isOpen, options = {}) {
+    const skipPersistence = options && options.skipPersistence;
     const trigger = menu.querySelector('.menu-toggle');
     const icon = trigger ? trigger.querySelector('.menu-toggle-icon img') : null;
     const label = trigger ? trigger.querySelector('.menu-toggle-text') : null;
@@ -5700,5 +6021,9 @@ function applyMenuState(menu, isOpen) {
                 element.setAttribute('tabindex', '-1');
             }
         });
+    }
+
+    if (!skipPersistence) {
+        saveMenuState(menu, { open: isOpen });
     }
 }
