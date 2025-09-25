@@ -1656,6 +1656,9 @@ function initTripDetailPanel() {
     }
     if (!tripProfilePanelElement) {
         tripProfilePanelElement = document.getElementById('tripProfilePanel');
+        if (tripProfilePanelElement && !tripProfilePanelElement.hasAttribute('tabindex')) {
+            tripProfilePanelElement.setAttribute('tabindex', '-1');
+        }
     }
 
     if (tripDetailState.initialised) { return; }
@@ -1849,9 +1852,6 @@ function updateTripDescriptionSaveButtonState() {
     if (tripDescriptionCancelButton) {
         tripDescriptionCancelButton.disabled = !tripProfileEditState.active
             || Boolean(tripDescriptionState.isSaving);
-    }
-    if (tripDescriptionCloseButton) {
-        tripDescriptionCloseButton.disabled = Boolean(tripDescriptionState.isSaving);
     }
 }
 
@@ -2249,6 +2249,9 @@ function initTripProfilePanel() {
     }
     if (!tripProfilePanelElement) {
         tripProfilePanelElement = document.getElementById('tripProfilePanel');
+        if (tripProfilePanelElement && !tripProfilePanelElement.hasAttribute('tabindex')) {
+            tripProfilePanelElement.setAttribute('tabindex', '-1');
+        }
     }
 
     tripDescriptionForm = document.getElementById('tripDescriptionForm');
@@ -2609,11 +2612,21 @@ function showTripDetailView() {
     if (tripProfilePanelElement) {
         tripProfilePanelElement.scrollTop = 0;
     }
-    if (tripDescriptionField && !tripDescriptionState.isSaving) {
+    const preferredFocusTarget = (() => {
+        if (tripDetailBackButton && typeof tripDetailBackButton.focus === 'function') {
+            return tripDetailBackButton;
+        }
+        if (tripProfilePanelElement && typeof tripProfilePanelElement.focus === 'function') {
+            return tripProfilePanelElement;
+        }
+        return null;
+    })();
+
+    if (preferredFocusTarget) {
         try {
-            tripDescriptionField.focus({ preventScroll: true });
+            preferredFocusTarget.focus({ preventScroll: true });
         } catch (error) {
-            tripDescriptionField.focus();
+            preferredFocusTarget.focus();
         }
     }
     attachTripProfileEscapeListener();
