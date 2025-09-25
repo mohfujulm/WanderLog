@@ -28,6 +28,7 @@ let isTripMapModeActive = false;
 let previousMapView = null;
 let manualPointForm;
 let manualPointModalController = null;
+let manualDescriptionCharacterCountElement = null;
 let archivedPointsModalController = null;
 let archivedPointsList = null;
 let aliasForm;
@@ -35,6 +36,11 @@ let aliasModalController = null;
 let aliasOriginalNameElement = null;
 let aliasTargetMarkerId = null;
 let aliasModalContext = { isArchived: false, triggerButton: null };
+let descriptionForm;
+let descriptionModalController = null;
+let descriptionTargetMarkerId = null;
+let descriptionCharacterCountElement = null;
+let descriptionModalContext = { isArchived: false, triggerButton: null };
 let tripAssignmentModalController = null;
 let tripAssignmentForm = null;
 let tripAssignmentTargetIds = [];
@@ -193,6 +199,7 @@ const MARKER_ICON_PATHS = Object.assign(
 
 const MAX_ALIAS_LENGTH = 120;
 const MAX_TRIP_NAME_LENGTH = 120;
+const MAX_LOCATION_DESCRIPTION_LENGTH = 2000;
 
 const markerIconCache = new Map();
 
@@ -381,6 +388,17 @@ function createPopupContent(markerData) {
 
     const place = escapeHtml(placeClean || 'Unknown');
     const displayName = escapeHtml(displayClean || 'Unknown');
+    let descriptionText = '';
+    const descriptionRaw = markerData.description ?? '';
+    if (typeof descriptionRaw === 'string') {
+        descriptionText = descriptionRaw;
+    } else if (descriptionRaw !== null && descriptionRaw !== undefined) {
+        descriptionText = String(descriptionRaw);
+    }
+    const descriptionHasContent = descriptionText.trim().length > 0;
+    const descriptionRow = descriptionHasContent
+        ? `<div class="marker-popup-row marker-popup-description"><span class="marker-popup-label">Description</span><span class="marker-popup-value marker-popup-value-multiline">${escapeHtml(descriptionText).replace(/\r?\n/g, '<br>')}</span></div>`
+        : '';
     const sourceLabel = getSourceTypeLabel(markerData.source_type);
     const sourceRow = sourceLabel
         ? `<div class="marker-popup-row"><span class="marker-popup-label">Source</span><span class="marker-popup-value">${escapeHtml(sourceLabel)}</span></div>`
@@ -406,15 +424,17 @@ function createPopupContent(markerData) {
         ? `<div class="marker-popup-row"><span class="marker-popup-label">Trips</span><span class="marker-popup-value marker-popup-trips">${membershipBadges}</span></div>`
         : '';
     const manageTripLabel = membershipEntries.length ? 'Manage Trips' : 'Add to Trip';
+    const descriptionButtonLabel = descriptionHasContent ? 'Edit Description' : 'Add Description';
 
     const actions = hasId
-        ? `<div class="marker-actions"><button type="button" class="marker-action marker-action-trip">${escapeHtml(manageTripLabel)}</button><button type="button" class="marker-action marker-action-alias">Rename</button><button type="button" class="marker-action marker-action-archive">Archive</button><button type="button" class="marker-action marker-action-delete">Delete</button></div>`
+        ? `<div class="marker-actions"><button type="button" class="marker-action marker-action-trip">${escapeHtml(manageTripLabel)}</button><button type="button" class="marker-action marker-action-description">${escapeHtml(descriptionButtonLabel)}</button><button type="button" class="marker-action marker-action-alias">Rename</button><button type="button" class="marker-action marker-action-archive">Archive</button><button type="button" class="marker-action marker-action-delete">Delete</button></div>`
         : '';
 
     return [
         `<div class="marker-popup"${hasId ? ` data-marker-id="${safeId}"` : ''}>`,
         `<div class="marker-popup-row"><span class="marker-popup-label">${nameLabel}</span><span class="marker-popup-value">${displayName}</span></div>`,
         aliasRow,
+        descriptionRow,
         tripRow,
         sourceRow,
         `<div class="marker-popup-row"><span class="marker-popup-label">Date Visited</span><span class="marker-popup-value">${date}</span></div>`,
@@ -440,6 +460,17 @@ function attachMarkerPopupActions(marker, markerData) {
             tripButton.onclick = (event) => {
                 event.preventDefault();
                 openTripAssignmentModal(markerData, { triggerButton: tripButton });
+            };
+        }
+
+        const descriptionButton = popupElement.querySelector('.marker-action-description');
+        if (descriptionButton && markerData && markerId) {
+            descriptionButton.onclick = (event) => {
+                event.preventDefault();
+                openDescriptionModal(markerData, {
+                    triggerButton: descriptionButton,
+                    isArchived: Boolean(markerData.archived),
+                });
             };
         }
 
@@ -2990,6 +3021,15 @@ function normaliseTripLocation(location, index) {
         displayName = alias || name || 'Unknown location';
     }
 
+    const descriptionRaw = location.description ?? '';
+    let descriptionText = '';
+    if (typeof descriptionRaw === 'string') {
+        descriptionText = descriptionRaw;
+    } else if (descriptionRaw !== null && descriptionRaw !== undefined) {
+        descriptionText = String(descriptionRaw);
+    }
+    const description = descriptionText && descriptionText.trim() ? descriptionText : '';
+
     const startDateRaw = location.start_date ?? '';
     const startDate = typeof startDateRaw === 'string' ? startDateRaw.trim() : String(startDateRaw || '').trim();
 
@@ -3029,6 +3069,7 @@ function normaliseTripLocation(location, index) {
         name,
         alias,
         display_name: displayName,
+        description,
         start_date: startDate,
         end_date: endDate,
         date: primaryDate,
@@ -3048,6 +3089,7 @@ function createTripLocationSearchText(location) {
     if (location.display_name) { parts.push(String(location.display_name)); }
     if (location.alias) { parts.push(String(location.alias)); }
     if (location.name) { parts.push(String(location.name)); }
+    if (location.description) { parts.push(String(location.description)); }
     if (location.place_id) { parts.push(String(location.place_id)); }
     if (location.source_type) { parts.push(getSourceTypeLabel(location.source_type)); }
     if (location.date) { parts.push(String(location.date)); }
@@ -3164,6 +3206,13 @@ function createTripLocationListItem(location) {
         if (metaRow.children.length) {
             meta.appendChild(metaRow);
         }
+    }
+
+    if (location.description) {
+        const description = document.createElement('div');
+        description.className = 'trip-location-description';
+        description.textContent = location.description;
+        meta.appendChild(description);
     }
 
     item.appendChild(meta);
@@ -4290,10 +4339,20 @@ function createModalController(modalId, { getInitialFocus, onClose } = {}) {
     };
 }
 
+function updateManualDescriptionCharacterCount(value) {
+    if (!manualDescriptionCharacterCountElement) {
+        manualDescriptionCharacterCountElement = document.getElementById('manualDescriptionCharacterCount');
+    }
+    if (!manualDescriptionCharacterCountElement) { return; }
+    const length = value ? value.length : 0;
+    manualDescriptionCharacterCountElement.textContent = `${length} / ${MAX_LOCATION_DESCRIPTION_LENGTH} characters`;
+}
+
 function ensureManualPointModal() {
     if (manualPointModalController) { return manualPointModalController; }
 
     manualPointForm = document.getElementById('manualPointForm');
+    manualDescriptionCharacterCountElement = document.getElementById('manualDescriptionCharacterCount');
     const controller = createModalController('manualPointModal', {
         getInitialFocus: () => {
             const form = manualPointForm || document.getElementById('manualPointForm');
@@ -4302,6 +4361,7 @@ function ensureManualPointModal() {
         onClose: () => {
             const form = manualPointForm || document.getElementById('manualPointForm');
             if (form) { form.reset(); }
+            updateManualDescriptionCharacterCount('');
         },
     });
 
@@ -4318,6 +4378,13 @@ function ensureManualPointModal() {
 
     if (manualPointForm) {
         manualPointForm.addEventListener('submit', handleManualPointSubmit);
+        const descriptionField = manualPointForm.elements['description'];
+        if (descriptionField) {
+            descriptionField.addEventListener('input', () => {
+                updateManualDescriptionCharacterCount(descriptionField.value);
+            });
+            updateManualDescriptionCharacterCount(descriptionField.value);
+        }
     }
 
     return manualPointModalController;
@@ -4361,6 +4428,60 @@ function ensureAliasModal() {
     return aliasModalController;
 }
 
+function updateLocationDescriptionCharacterCount(value) {
+    if (!descriptionCharacterCountElement) {
+        descriptionCharacterCountElement = document.getElementById('descriptionCharacterCount');
+    }
+    if (!descriptionCharacterCountElement) { return; }
+    const length = value ? value.length : 0;
+    descriptionCharacterCountElement.textContent = `${length} / ${MAX_LOCATION_DESCRIPTION_LENGTH} characters`;
+}
+
+function ensureDescriptionModal() {
+    if (descriptionModalController) { return descriptionModalController; }
+
+    descriptionForm = document.getElementById('descriptionForm');
+    descriptionCharacterCountElement = document.getElementById('descriptionCharacterCount');
+
+    const controller = createModalController('descriptionModal', {
+        getInitialFocus: () => {
+            const form = descriptionForm || document.getElementById('descriptionForm');
+            return form ? form.elements['description'] : null;
+        },
+        onClose: () => {
+            descriptionTargetMarkerId = null;
+            descriptionModalContext = { isArchived: false, triggerButton: null };
+            const form = descriptionForm || document.getElementById('descriptionForm');
+            if (form) { form.reset(); }
+            updateLocationDescriptionCharacterCount('');
+        },
+    });
+
+    if (!controller) { return null; }
+    descriptionModalController = controller;
+
+    const cancelButton = document.getElementById('descriptionCancel');
+    if (cancelButton) {
+        cancelButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            descriptionModalController.close();
+        });
+    }
+
+    if (descriptionForm) {
+        descriptionForm.addEventListener('submit', handleDescriptionSubmit);
+        const descriptionField = descriptionForm.elements['description'];
+        if (descriptionField) {
+            descriptionField.addEventListener('input', () => {
+                updateLocationDescriptionCharacterCount(descriptionField.value);
+            });
+            updateLocationDescriptionCharacterCount(descriptionField.value);
+        }
+    }
+
+    return descriptionModalController;
+}
+
 function openAliasModal(markerData, options = {}) {
     if (!markerData || !markerData.id) {
         showStatus('This data point cannot be renamed.', true);
@@ -4394,6 +4515,39 @@ function openAliasModal(markerData, options = {}) {
             ? placeRaw.trim()
             : String(placeRaw || '').trim();
         aliasOriginalNameElement.textContent = placeValue || 'Unknown';
+    }
+
+    controller.open();
+    if (controller.refreshFocusableElements) {
+        controller.refreshFocusableElements();
+    }
+}
+
+function openDescriptionModal(markerData, options = {}) {
+    if (!markerData || !markerData.id) { return; }
+
+    const controller = ensureDescriptionModal();
+    if (!controller) { return; }
+
+    descriptionTargetMarkerId = markerData.id;
+    const triggerButton = options.triggerButton || null;
+    const isArchived = Boolean(options.isArchived);
+    descriptionModalContext = { triggerButton, isArchived };
+
+    descriptionForm = descriptionForm || document.getElementById('descriptionForm');
+    if (descriptionForm) {
+        const descriptionField = descriptionForm.elements['description'];
+        if (descriptionField) {
+            let value = '';
+            const raw = markerData.description ?? '';
+            if (typeof raw === 'string') {
+                value = raw;
+            } else if (raw !== null && raw !== undefined) {
+                value = String(raw);
+            }
+            descriptionField.value = value;
+            updateLocationDescriptionCharacterCount(value);
+        }
     }
 
     controller.open();
@@ -4456,6 +4610,68 @@ async function handleAliasSubmit(event) {
         }
     } catch (error) {
         showStatus(error.message || 'Failed to update alias.', true);
+    } finally {
+        hideLoading();
+        if (submitButton) { submitButton.disabled = false; }
+        if (cancelButton) { cancelButton.disabled = false; }
+        if (triggerButton) { triggerButton.disabled = false; }
+    }
+}
+
+async function handleDescriptionSubmit(event) {
+    event.preventDefault();
+
+    descriptionForm = descriptionForm || document.getElementById('descriptionForm');
+    if (!descriptionForm) { return; }
+
+    if (!descriptionTargetMarkerId) {
+        showStatus('This data point cannot be updated.', true);
+        return;
+    }
+
+    const descriptionField = descriptionForm.elements['description'];
+    const descriptionValue = descriptionField ? descriptionField.value : '';
+
+    if (descriptionValue.length > MAX_LOCATION_DESCRIPTION_LENGTH) {
+        showStatus(`Description must be ${MAX_LOCATION_DESCRIPTION_LENGTH} characters or fewer.`, true);
+        if (descriptionField) { descriptionField.focus(); }
+        return;
+    }
+
+    const submitButton = descriptionForm.querySelector('button[type="submit"]');
+    const cancelButton = document.getElementById('descriptionCancel');
+    const triggerButton = descriptionModalContext.triggerButton || null;
+    const isArchived = Boolean(descriptionModalContext.isArchived);
+
+    if (submitButton) { submitButton.disabled = true; }
+    if (cancelButton) { cancelButton.disabled = true; }
+    if (triggerButton) { triggerButton.disabled = true; }
+
+    showLoading();
+
+    try {
+        const response = await fetch(`/api/markers/${encodeURIComponent(descriptionTargetMarkerId)}/description`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ description: descriptionValue }),
+        });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || result.status === 'error') {
+            const message = (result && result.message) ? result.message : 'Failed to save description.';
+            throw new Error(message);
+        }
+
+        showStatus(result.message || 'Description saved successfully.');
+        if (descriptionModalController) {
+            descriptionModalController.close();
+        }
+        await loadMarkers();
+        if (isArchived) {
+            await loadArchivedPointsList();
+        }
+    } catch (error) {
+        showStatus(error.message || 'Failed to save description.', true);
     } finally {
         hideLoading();
         if (submitButton) { submitButton.disabled = false; }
@@ -4843,6 +5059,8 @@ async function handleManualPointSubmit(event) {
     const place = manualPointForm.elements['place_name'].value.trim();
     const aliasInput = manualPointForm.elements['alias'];
     const aliasValue = aliasInput ? aliasInput.value.trim() : '';
+    const descriptionInput = manualPointForm.elements['description'];
+    const descriptionValue = descriptionInput ? descriptionInput.value : '';
     const date = manualPointForm.elements['start_date'].value;
     const latValue = manualPointForm.elements['latitude'].value.trim();
     const lonValue = manualPointForm.elements['longitude'].value.trim();
@@ -4856,6 +5074,12 @@ async function handleManualPointSubmit(event) {
     if (aliasValue.length > MAX_ALIAS_LENGTH) {
         showStatus(`Alias must be ${MAX_ALIAS_LENGTH} characters or fewer.`, true);
         if (aliasInput) { aliasInput.focus(); }
+        return;
+    }
+
+    if (descriptionValue.length > MAX_LOCATION_DESCRIPTION_LENGTH) {
+        showStatus(`Description must be ${MAX_LOCATION_DESCRIPTION_LENGTH} characters or fewer.`, true);
+        if (descriptionInput) { descriptionInput.focus(); }
         return;
     }
 
@@ -4903,6 +5127,7 @@ async function handleManualPointSubmit(event) {
                 longitude: lon,
                 source_type: 'manual',
                 alias: aliasValue,
+                description: descriptionValue,
             })
         });
         const result = await response.json();
@@ -5002,10 +5227,35 @@ async function loadArchivedPointsList() {
             meta.textContent = metaParts.join(' • ');
             details.appendChild(meta);
 
+            const descriptionRaw = marker.description ?? '';
+            let descriptionText = '';
+            if (typeof descriptionRaw === 'string') {
+                descriptionText = descriptionRaw;
+            } else if (descriptionRaw !== null && descriptionRaw !== undefined) {
+                descriptionText = String(descriptionRaw);
+            }
+            if (descriptionText && descriptionText.trim()) {
+                const descriptionElement = document.createElement('div');
+                descriptionElement.className = 'archived-item-description';
+                descriptionElement.textContent = descriptionText;
+                details.appendChild(descriptionElement);
+            }
+
             const actionsContainer = document.createElement('div');
             actionsContainer.className = 'archived-item-actions';
 
             if (marker.id) {
+                const descriptionButton = document.createElement('button');
+                descriptionButton.type = 'button';
+                descriptionButton.className = 'modal-button secondary archived-item-action';
+                const hasDescription = Boolean(descriptionText && descriptionText.trim());
+                descriptionButton.textContent = hasDescription ? 'Edit description' : 'Add description';
+                descriptionButton.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    openDescriptionModal(marker, { triggerButton: descriptionButton, isArchived: true });
+                });
+                actionsContainer.appendChild(descriptionButton);
+
                 const renameButton = document.createElement('button');
                 renameButton.type = 'button';
                 renameButton.className = 'modal-button secondary archived-item-action';
