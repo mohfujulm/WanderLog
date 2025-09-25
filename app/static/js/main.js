@@ -55,6 +55,8 @@ let tripDescriptionStatusElement = null;
 let tripDescriptionTitleElement = null;
 let tripDescriptionUpdatedElement = null;
 let tripDescriptionUpdatedTimeElement = null;
+let tripDescriptionUpdatedReadOnlyElement = null;
+let tripDescriptionUpdatedReadOnlyTimeElement = null;
 let tripDescriptionSaveButton = null;
 let tripDescriptionCancelButton = null;
 let tripDescriptionCloseButton = null;
@@ -84,7 +86,11 @@ let tripDetailSubtitleElement = null;
 let tripDetailCountElement = null;
 let tripDetailUpdatedElement = null;
 let tripDetailActionsElement = null;
+let tripDetailEditButton = null;
 let tripDetailDeleteButton = null;
+let tripNameInputContainer = null;
+let tripNameInputElement = null;
+let tripDescriptionDisplayElement = null;
 let tripLocationSearchInput = null;
 let tripLocationSortFieldSelect = null;
 let tripLocationSortDirectionButton = null;
@@ -130,8 +136,14 @@ const tripDescriptionState = {
     requestId: 0,
     isSaving: false,
     isDirty: false,
+    isNameDirty: false,
     lastAppliedDescription: '',
+    lastAppliedName: '',
     triggerElement: null,
+};
+
+const tripProfileEditState = {
+    active: false,
 };
 
 const manageModeState = {
@@ -1644,6 +1656,9 @@ function initTripDetailPanel() {
     }
     if (!tripProfilePanelElement) {
         tripProfilePanelElement = document.getElementById('tripProfilePanel');
+        if (tripProfilePanelElement && !tripProfilePanelElement.hasAttribute('tabindex')) {
+            tripProfilePanelElement.setAttribute('tabindex', '-1');
+        }
     }
 
     if (tripDetailState.initialised) { return; }
@@ -1655,6 +1670,7 @@ function initTripDetailPanel() {
     tripDetailCountElement = document.getElementById('tripDetailCount');
     tripDetailUpdatedElement = document.getElementById('tripDetailUpdated');
     tripDetailActionsElement = document.getElementById('tripDetailActions');
+    tripDetailEditButton = document.getElementById('tripDetailEdit');
     tripDetailDeleteButton = document.getElementById('tripDetailDelete');
     tripLocationSearchInput = document.getElementById('tripLocationSearchInput');
     tripLocationSortFieldSelect = document.getElementById('tripLocationSortField');
@@ -1679,9 +1695,17 @@ function initTripDetailPanel() {
         tripDescriptionCloseButton = tripDetailBackButton;
     }
 
+    if (tripDetailEditButton && !tripDetailEditButton.dataset.initialised) {
+        tripDetailEditButton.addEventListener('click', handleTripDetailEditClick);
+        tripDetailEditButton.disabled = true;
+        tripDetailEditButton.dataset.initialised = 'true';
+        tripDetailEditButton.setAttribute('aria-pressed', 'false');
+    }
+
     if (tripDetailDeleteButton) {
         tripDetailDeleteButton.addEventListener('click', handleTripDetailDeleteClick);
         tripDetailDeleteButton.disabled = true;
+        tripDetailDeleteButton.hidden = true;
     }
 
     if (tripDetailActionsElement) {
@@ -1817,17 +1841,17 @@ async function handleTripDetailDeleteClick(event) {
 }
 
 function updateTripDescriptionSaveButtonState() {
-    const disableSave = !tripDescriptionState.tripId
+    const hasChanges = Boolean(tripDescriptionState.isDirty || tripDescriptionState.isNameDirty);
+    const disableSave = !tripProfileEditState.active
+        || !tripDescriptionState.tripId
         || tripDescriptionState.isSaving
-        || !tripDescriptionState.isDirty;
+        || !hasChanges;
     if (tripDescriptionSaveButton) {
         tripDescriptionSaveButton.disabled = disableSave;
     }
     if (tripDescriptionCancelButton) {
-        tripDescriptionCancelButton.disabled = Boolean(tripDescriptionState.isSaving);
-    }
-    if (tripDescriptionCloseButton) {
-        tripDescriptionCloseButton.disabled = Boolean(tripDescriptionState.isSaving);
+        tripDescriptionCancelButton.disabled = !tripProfileEditState.active
+            || Boolean(tripDescriptionState.isSaving);
     }
 }
 
@@ -1845,40 +1869,161 @@ function showTripDescriptionStatus(message, isError = false) {
     }
 }
 
+function updateTripDescriptionDisplay(description) {
+    if (!tripProfilePanelInitialised || !tripDescriptionDisplayElement) { return; }
+
+    const value = typeof description === 'string'
+        ? description
+        : tripDescriptionState.lastAppliedDescription || '';
+    const trimmed = value.trim();
+
+    if (trimmed) {
+        tripDescriptionDisplayElement.textContent = value;
+        tripDescriptionDisplayElement.classList.remove('trip-profile-description-empty');
+    } else {
+        tripDescriptionDisplayElement.textContent = 'No description has been added yet.';
+        tripDescriptionDisplayElement.classList.add('trip-profile-description-empty');
+    }
+}
+
+function applyTripProfileEditMode() {
+    if (!tripProfilePanelInitialised) { return; }
+
+    const isEditing = Boolean(tripProfileEditState.active);
+
+    if (tripProfilePanelElement) {
+        tripProfilePanelElement.classList.toggle('trip-profile-panel-editing', isEditing);
+    }
+    if (tripDescriptionForm) {
+        tripDescriptionForm.hidden = !isEditing;
+        tripDescriptionForm.setAttribute('aria-hidden', isEditing ? 'false' : 'true');
+    }
+    if (tripDescriptionDisplayElement) {
+        tripDescriptionDisplayElement.hidden = isEditing;
+        tripDescriptionDisplayElement.setAttribute('aria-hidden', isEditing ? 'true' : 'false');
+    }
+    if (tripNameInputContainer) {
+        tripNameInputContainer.hidden = !isEditing;
+    }
+    if (tripDescriptionSaveButton) {
+        tripDescriptionSaveButton.hidden = !isEditing;
+    }
+    if (tripDetailEditButton) {
+        tripDetailEditButton.disabled = isEditing || Boolean(tripDescriptionState.isSaving);
+        tripDetailEditButton.setAttribute('aria-pressed', isEditing ? 'true' : 'false');
+    }
+    if (tripNameInputElement) {
+        tripNameInputElement.disabled = Boolean(tripDescriptionState.isSaving);
+    }
+    if (tripDescriptionField) {
+        tripDescriptionField.disabled = Boolean(tripDescriptionState.isSaving);
+    }
+
+    updateTripDetailActions();
+    updateTripDescriptionSaveButtonState();
+}
+
+function enterTripProfileEditMode() {
+    initTripProfilePanel();
+    if (tripProfileEditState.active) { return; }
+
+    tripProfileEditState.active = true;
+
+    const nameValue = tripDescriptionState.lastAppliedName || '';
+    if (tripNameInputElement) {
+        tripNameInputElement.value = nameValue;
+    }
+
+    const descriptionValue = tripDescriptionState.lastAppliedDescription || '';
+    if (tripDescriptionField) {
+        tripDescriptionField.value = descriptionValue;
+    }
+
+    tripDescriptionState.isDirty = false;
+    tripDescriptionState.isNameDirty = false;
+
+    showTripDescriptionStatus('');
+    applyTripProfileEditMode();
+
+    const focusTarget = tripNameInputElement || tripDescriptionField || null;
+    if (focusTarget && typeof focusTarget.focus === 'function') {
+        try {
+            focusTarget.focus({ preventScroll: true });
+        } catch (error) {
+            focusTarget.focus();
+        }
+    }
+}
+
+function exitTripProfileEditMode(options = {}) {
+    initTripProfilePanel();
+
+    const { restoreFocus = false, focusTarget = null } = options || {};
+
+    if (!tripProfileEditState.active && !options.force) {
+        return;
+    }
+
+    tripProfileEditState.active = false;
+    tripDescriptionState.isDirty = false;
+    tripDescriptionState.isNameDirty = false;
+
+    if (tripNameInputElement) {
+        tripNameInputElement.value = tripDescriptionState.lastAppliedName || '';
+    }
+    if (tripDescriptionField) {
+        tripDescriptionField.value = tripDescriptionState.lastAppliedDescription || '';
+    }
+
+    applyTripProfileEditMode();
+    updateTripDescriptionDisplay();
+
+    const target = focusTarget || (restoreFocus ? tripDetailEditButton : null);
+    if (target && typeof target.focus === 'function') {
+        try {
+            target.focus({ preventScroll: true });
+        } catch (error) {
+            target.focus();
+        }
+    }
+}
+
 function setTripDescriptionSaving(isSaving) {
     const saving = Boolean(isSaving);
     tripDescriptionState.isSaving = saving;
     if (tripDescriptionForm) {
         tripDescriptionForm.classList.toggle('is-saving', saving);
     }
+    if (tripNameInputElement) {
+        tripNameInputElement.disabled = saving;
+    }
     if (tripDescriptionField) {
         tripDescriptionField.disabled = saving;
     }
+    if (tripDetailEditButton) {
+        tripDetailEditButton.disabled = saving || tripProfileEditState.active;
+    }
+    if (tripDetailDeleteButton) {
+        tripDetailDeleteButton.disabled = saving || !tripProfileEditState.active;
+    }
     updateTripDescriptionSaveButtonState();
+}
+
+function handleTripDetailEditClick(event) {
+    if (event) { event.preventDefault(); }
+    if (tripDescriptionState.isSaving) { return; }
+    if (!tripDetailState.trip || !tripDetailState.trip.id) { return; }
+    enterTripProfileEditMode();
 }
 
 function handleTripDescriptionCancel(event) {
     if (event) { event.preventDefault(); }
     initTripProfilePanel();
 
-    const lastValue = tripDescriptionState.lastAppliedDescription || '';
-    const wasDirty = Boolean(tripDescriptionState.isDirty);
+    const wasDirty = Boolean(tripDescriptionState.isDirty || tripDescriptionState.isNameDirty);
+    exitTripProfileEditMode({ restoreFocus: true });
 
-    if (tripDescriptionField) {
-        tripDescriptionField.value = lastValue;
-        try {
-            tripDescriptionField.focus({ preventScroll: true });
-        } catch (error) {
-            tripDescriptionField.focus();
-        }
-    }
-
-    tripDescriptionState.isDirty = false;
-    updateTripDescriptionSaveButtonState();
-
-    const statusMessage = wasDirty
-        ? (lastValue ? 'Reverted to last saved description.' : 'Cleared description changes.')
-        : '';
+    const statusMessage = wasDirty ? 'Discarded unsaved changes.' : '';
     showTripDescriptionStatus(statusMessage);
 }
 
@@ -1890,6 +2035,15 @@ function populateTripProfilePanel(trip, options = {}) {
         tripDescriptionTitleElement.textContent = name;
     }
 
+    tripDescriptionState.lastAppliedName = name;
+    if (tripNameInputElement) {
+        const shouldUpdateNameField = !preserveDirty || !tripDescriptionState.isNameDirty;
+        if (shouldUpdateNameField) {
+            tripNameInputElement.value = name;
+            tripDescriptionState.isNameDirty = false;
+        }
+    }
+
     const description = trip && typeof trip.description === 'string'
         ? trip.description
         : '';
@@ -1897,8 +2051,8 @@ function populateTripProfilePanel(trip, options = {}) {
         ? (trip.updated_at || trip.latest_location_date || trip.created_at || '')
         : '';
 
+    const label = formatTripUpdatedTimestamp(timestamp);
     if (tripDescriptionUpdatedElement && tripDescriptionUpdatedTimeElement) {
-        const label = formatTripUpdatedTimestamp(timestamp);
         if (label) {
             tripDescriptionUpdatedElement.hidden = false;
             tripDescriptionUpdatedTimeElement.textContent = label;
@@ -1907,6 +2061,17 @@ function populateTripProfilePanel(trip, options = {}) {
             tripDescriptionUpdatedElement.hidden = true;
             tripDescriptionUpdatedTimeElement.textContent = '';
             tripDescriptionUpdatedTimeElement.removeAttribute('dateTime');
+        }
+    }
+    if (tripDescriptionUpdatedReadOnlyElement && tripDescriptionUpdatedReadOnlyTimeElement) {
+        if (label) {
+            tripDescriptionUpdatedReadOnlyElement.hidden = false;
+            tripDescriptionUpdatedReadOnlyTimeElement.textContent = label;
+            tripDescriptionUpdatedReadOnlyTimeElement.dateTime = timestamp;
+        } else {
+            tripDescriptionUpdatedReadOnlyElement.hidden = true;
+            tripDescriptionUpdatedReadOnlyTimeElement.textContent = '';
+            tripDescriptionUpdatedReadOnlyTimeElement.removeAttribute('dateTime');
         }
     }
 
@@ -1921,7 +2086,9 @@ function populateTripProfilePanel(trip, options = {}) {
         tripDescriptionState.isDirty = false;
     }
 
+    updateTripDescriptionDisplay(description);
     updateTripDescriptionSaveButtonState();
+    updateTripDetailActions();
 }
 
 async function refreshTripDescription(tripId, requestId) {
@@ -1975,26 +2142,116 @@ async function handleTripDescriptionSubmit(event) {
         return;
     }
 
-    if (!tripDescriptionField) {
-        showTripDescriptionStatus('Description field is unavailable.', true);
+    if (!tripProfileEditState.active) {
+        showTripDescriptionStatus('Press Edit to make changes.', true);
         return;
     }
 
-    if (!tripDescriptionState.isDirty) {
+    const nameField = tripNameInputElement || null;
+    const descriptionField = tripDescriptionField || null;
+
+    if (!nameField && !descriptionField) {
+        showTripDescriptionStatus('Editing controls are unavailable.', true);
+        return;
+    }
+
+    const nameChanged = Boolean(tripDescriptionState.isNameDirty);
+    const descriptionChanged = Boolean(tripDescriptionState.isDirty);
+
+    if (!nameChanged && !descriptionChanged) {
         showTripDescriptionStatus('No changes to save.');
         return;
     }
 
-    const description = tripDescriptionField.value || '';
+    const payload = {};
+    let description = '';
+    let trimmedName = '';
 
+    if (nameChanged) {
+        const rawName = nameField ? nameField.value : '';
+        trimmedName = rawName ? rawName.trim() : '';
+        if (!trimmedName) {
+            showTripDescriptionStatus('Trip name cannot be blank.', true);
+            if (nameField && typeof nameField.focus === 'function') {
+                try {
+                    nameField.focus({ preventScroll: true });
+                } catch (error) {
+                    nameField.focus();
+                }
+            }
+            return;
+        }
+        if (trimmedName.length > MAX_TRIP_NAME_LENGTH) {
+            showTripDescriptionStatus(`Trip name must be ${MAX_TRIP_NAME_LENGTH} characters or fewer.`, true);
+            if (nameField && typeof nameField.focus === 'function') {
+                try {
+                    nameField.focus({ preventScroll: true });
+                } catch (error) {
+                    nameField.focus();
+                }
+            }
+            return;
+        }
+        payload.name = trimmedName;
+    }
+
+    if (descriptionChanged) {
+        if (!descriptionField) {
+            showTripDescriptionStatus('Description field is unavailable.', true);
+            return;
+        }
+        description = descriptionField.value || '';
+        payload.description = description;
+    }
+
+    const previousState = {
+        lastAppliedName: tripDescriptionState.lastAppliedName,
+        lastAppliedDescription: tripDescriptionState.lastAppliedDescription,
+        trip: (tripDetailState.trip && String(tripDetailState.trip.id) === tripId)
+            ? { ...tripDetailState.trip }
+            : null,
+    };
+
+    const draftValues = {
+        name: nameChanged ? trimmedName : null,
+        description: descriptionChanged ? description : null,
+    };
+
+    if (nameChanged) {
+        tripDescriptionState.lastAppliedName = trimmedName;
+        if (tripDescriptionTitleElement) {
+            tripDescriptionTitleElement.textContent = trimmedName || TRIP_NAME_FALLBACK;
+        }
+    }
+    if (descriptionChanged) {
+        tripDescriptionState.lastAppliedDescription = description;
+    }
+
+    if (tripDetailState.trip && String(tripDetailState.trip.id) === tripId) {
+        const updatedDetail = { ...tripDetailState.trip };
+        if (nameChanged) {
+            updatedDetail.name = trimmedName;
+        }
+        if (descriptionChanged) {
+            updatedDetail.description = description;
+        }
+        tripDetailState.trip = updatedDetail;
+        updateTripDetailHeader();
+    }
+
+    updateTripDescriptionDisplay(descriptionChanged ? description : undefined);
+
+    exitTripProfileEditMode({ restoreFocus: false });
     setTripDescriptionSaving(true);
-    showTripDescriptionStatus('');
+    showTripDescriptionStatus('Saving changes…');
+
+    let shouldRestoreFocusToEdit = true;
 
     try {
         const response = await fetch(`/api/trips/${encodeURIComponent(tripId)}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ description }),
+            body: JSON.stringify(payload),
         });
         const result = await response.json().catch(() => ({}));
 
@@ -2008,18 +2265,59 @@ async function handleTripDescriptionSubmit(event) {
             populateTripProfilePanel(updatedTrip, { preserveDirty: false });
             upsertTripInList(updatedTrip, { reloadDetail: false });
         } else {
-            tripDescriptionState.lastAppliedDescription = description;
-            if (tripDescriptionField.value === description) {
-                tripDescriptionState.isDirty = false;
+            if (typeof payload.name === 'string') {
+                tripDescriptionState.lastAppliedName = payload.name;
             }
+            if (payload.description !== undefined) {
+                tripDescriptionState.lastAppliedDescription = payload.description;
+                if (tripDescriptionField && tripDescriptionField.value === payload.description) {
+                    tripDescriptionState.isDirty = false;
+                }
+            }
+            tripDescriptionState.isNameDirty = false;
         }
 
         showTripDescriptionStatus(result && result.message ? result.message : 'Trip updated successfully.');
     } catch (error) {
+        shouldRestoreFocusToEdit = false;
         console.error('Failed to update trip description', error);
+        tripDescriptionState.lastAppliedName = previousState.lastAppliedName;
+        tripDescriptionState.lastAppliedDescription = previousState.lastAppliedDescription;
+        if (tripDescriptionTitleElement) {
+            const previousName = previousState.lastAppliedName || '';
+            const displayName = previousName.trim().length > 0
+                ? previousName
+                : TRIP_NAME_FALLBACK;
+            tripDescriptionTitleElement.textContent = displayName;
+        }
+        if (previousState.trip) {
+            tripDetailState.trip = previousState.trip;
+            updateTripDetailHeader();
+        }
+        updateTripDescriptionDisplay();
+
+        enterTripProfileEditMode();
+
+        if (tripNameInputElement && draftValues.name !== null) {
+            tripNameInputElement.value = draftValues.name;
+            tripDescriptionState.isNameDirty = true;
+        }
+        if (tripDescriptionField && draftValues.description !== null) {
+            tripDescriptionField.value = draftValues.description;
+            tripDescriptionState.isDirty = true;
+        }
+
+        updateTripDescriptionSaveButtonState();
         showTripDescriptionStatus(error.message || 'Failed to save description.', true);
     } finally {
         setTripDescriptionSaving(false);
+        if (shouldRestoreFocusToEdit && tripDetailEditButton) {
+            try {
+                tripDetailEditButton.focus({ preventScroll: true });
+            } catch (focusError) {
+                tripDetailEditButton.focus();
+            }
+        }
     }
 }
 
@@ -2029,16 +2327,24 @@ function initTripProfilePanel() {
     }
     if (!tripProfilePanelElement) {
         tripProfilePanelElement = document.getElementById('tripProfilePanel');
+        if (tripProfilePanelElement && !tripProfilePanelElement.hasAttribute('tabindex')) {
+            tripProfilePanelElement.setAttribute('tabindex', '-1');
+        }
     }
 
     tripDescriptionForm = document.getElementById('tripDescriptionForm');
     tripDescriptionField = document.getElementById('tripDescriptionInput');
+    tripDescriptionDisplayElement = document.getElementById('tripDescriptionDisplay');
     tripDescriptionStatusElement = document.getElementById('tripDescriptionStatus');
     tripDescriptionUpdatedElement = document.getElementById('tripDescriptionUpdated');
     tripDescriptionUpdatedTimeElement = document.getElementById('tripDescriptionUpdatedTime');
+    tripDescriptionUpdatedReadOnlyElement = document.getElementById('tripDescriptionUpdatedReadOnly');
+    tripDescriptionUpdatedReadOnlyTimeElement = document.getElementById('tripDescriptionUpdatedReadOnlyTime');
     tripDescriptionSaveButton = document.getElementById('tripDescriptionSave');
     tripDescriptionCancelButton = document.getElementById('tripDescriptionCancel');
     tripDescriptionCloseButton = document.getElementById('tripDetailBack');
+    tripNameInputContainer = document.getElementById('tripNameField');
+    tripNameInputElement = document.getElementById('tripNameInput');
 
     if (!tripDescriptionTitleElement) {
         if (!tripDetailState.initialised) { initTripDetailPanel(); }
@@ -2046,6 +2352,8 @@ function initTripProfilePanel() {
     }
 
     if (tripProfilePanelInitialised) {
+        applyTripProfileEditMode();
+        updateTripDescriptionDisplay();
         updateTripDescriptionSaveButtonState();
         return;
     }
@@ -2062,7 +2370,21 @@ function initTripProfilePanel() {
         tripDescriptionField.addEventListener('input', () => {
             const currentValue = tripDescriptionField.value || '';
             const lastValue = tripDescriptionState.lastAppliedDescription || '';
-            tripDescriptionState.isDirty = currentValue !== lastValue;
+            tripDescriptionState.isDirty = tripProfileEditState.active
+                && currentValue !== lastValue;
+            updateTripDescriptionSaveButtonState();
+            if (tripDescriptionStatusElement && !tripDescriptionStatusElement.hidden) {
+                showTripDescriptionStatus('');
+            }
+        });
+    }
+
+    if (tripNameInputElement) {
+        tripNameInputElement.addEventListener('input', () => {
+            const currentValue = tripNameInputElement.value ? tripNameInputElement.value.trim() : '';
+            const lastValue = tripDescriptionState.lastAppliedName ? tripDescriptionState.lastAppliedName.trim() : '';
+            tripDescriptionState.isNameDirty = tripProfileEditState.active
+                && currentValue !== lastValue;
             updateTripDescriptionSaveButtonState();
             if (tripDescriptionStatusElement && !tripDescriptionStatusElement.hidden) {
                 showTripDescriptionStatus('');
@@ -2071,6 +2393,8 @@ function initTripProfilePanel() {
     }
 
     tripProfilePanelInitialised = true;
+    applyTripProfileEditMode();
+    updateTripDescriptionDisplay();
     updateTripDescriptionSaveButtonState();
 }
 
@@ -2087,8 +2411,12 @@ function openTripProfile(tripId, options = {}) {
     tripDescriptionState.tripId = cleanedTripId;
     tripDescriptionState.isSaving = false;
     tripDescriptionState.isDirty = false;
+    tripDescriptionState.isNameDirty = false;
     tripDescriptionState.lastAppliedDescription = '';
+    tripDescriptionState.lastAppliedName = '';
     tripDescriptionState.triggerElement = triggerElement || null;
+
+    exitTripProfileEditMode({ force: true });
 
     if (tripDescriptionForm) {
         tripDescriptionForm.classList.remove('is-saving');
@@ -2097,6 +2425,17 @@ function openTripProfile(tripId, options = {}) {
 
     if (tripDescriptionField) {
         tripDescriptionField.disabled = false;
+    }
+
+    if (tripDescriptionDisplayElement) {
+        updateTripDescriptionDisplay('');
+    }
+    if (tripDescriptionUpdatedReadOnlyElement) {
+        tripDescriptionUpdatedReadOnlyElement.hidden = true;
+    }
+    if (tripDescriptionUpdatedReadOnlyTimeElement) {
+        tripDescriptionUpdatedReadOnlyTimeElement.textContent = '';
+        tripDescriptionUpdatedReadOnlyTimeElement.removeAttribute('dateTime');
     }
 
     if (tripProfilePanelElement) {
@@ -2123,8 +2462,12 @@ function closeTripProfileOverlay(options = {}) {
     tripDescriptionState.tripId = null;
     tripDescriptionState.isSaving = false;
     tripDescriptionState.isDirty = false;
+    tripDescriptionState.isNameDirty = false;
     tripDescriptionState.lastAppliedDescription = '';
+    tripDescriptionState.lastAppliedName = '';
     tripDescriptionState.triggerElement = null;
+
+    exitTripProfileEditMode({ force: true, restoreFocus: false });
 
     if (tripDescriptionForm) {
         tripDescriptionForm.classList.remove('is-saving');
@@ -2142,6 +2485,18 @@ function closeTripProfileOverlay(options = {}) {
     if (tripDescriptionUpdatedTimeElement) {
         tripDescriptionUpdatedTimeElement.textContent = '';
         tripDescriptionUpdatedTimeElement.removeAttribute('dateTime');
+    }
+
+    if (tripDescriptionUpdatedReadOnlyElement) {
+        tripDescriptionUpdatedReadOnlyElement.hidden = true;
+    }
+    if (tripDescriptionUpdatedReadOnlyTimeElement) {
+        tripDescriptionUpdatedReadOnlyTimeElement.textContent = '';
+        tripDescriptionUpdatedReadOnlyTimeElement.removeAttribute('dateTime');
+    }
+
+    if (tripDescriptionDisplayElement) {
+        updateTripDescriptionDisplay('');
     }
 
     showTripDescriptionStatus('');
@@ -2289,11 +2644,27 @@ function closeTripDetail(options = {}) {
 function attachTripProfileEscapeListener() {
     if (tripProfileEscapeListener) { return; }
     tripProfileEscapeListener = (event) => {
-        if (event.defaultPrevented) { return; }
-        if (event.key === 'Escape') {
+        if (event.defaultPrevented || event.key !== 'Escape') { return; }
+
+        const stopEvent = () => {
+            if (typeof event.stopImmediatePropagation === 'function') {
+                event.stopImmediatePropagation();
+            }
+            if (typeof event.stopPropagation === 'function') {
+                event.stopPropagation();
+            }
+        };
+
+        if (tripProfileEditState.active) {
             event.preventDefault();
-            closeTripDetail();
+            stopEvent();
+            handleTripDescriptionCancel();
+            return;
         }
+
+        event.preventDefault();
+        stopEvent();
+        closeTripDetail();
     };
     document.addEventListener('keydown', tripProfileEscapeListener);
 }
@@ -2319,11 +2690,21 @@ function showTripDetailView() {
     if (tripProfilePanelElement) {
         tripProfilePanelElement.scrollTop = 0;
     }
-    if (tripDescriptionField && !tripDescriptionState.isSaving) {
+    const preferredFocusTarget = (() => {
+        if (tripDetailBackButton && typeof tripDetailBackButton.focus === 'function') {
+            return tripDetailBackButton;
+        }
+        if (tripProfilePanelElement && typeof tripProfilePanelElement.focus === 'function') {
+            return tripProfilePanelElement;
+        }
+        return null;
+    })();
+
+    if (preferredFocusTarget) {
         try {
-            tripDescriptionField.focus({ preventScroll: true });
+            preferredFocusTarget.focus({ preventScroll: true });
         } catch (error) {
-            tripDescriptionField.focus();
+            preferredFocusTarget.focus();
         }
     }
     attachTripProfileEscapeListener();
@@ -2392,7 +2773,7 @@ function updateTripDetailHeader() {
 
 function updateTripDetailActions() {
     initTripDetailPanel();
-    if (!tripDetailActionsElement || !tripDetailDeleteButton) { return; }
+    if (!tripDetailActionsElement) { return; }
 
     const trip = tripDetailState.trip;
     const hasTrip = trip && trip.id;
@@ -2402,21 +2783,44 @@ function updateTripDetailActions() {
         const name = trip.name ? String(trip.name) : TRIP_NAME_FALLBACK;
         const displayName = name || TRIP_NAME_FALLBACK;
         tripDetailActionsElement.hidden = false;
-        tripDetailDeleteButton.disabled = false;
-        tripDetailDeleteButton.dataset.tripId = tripId;
-        if (displayName) {
-            tripDetailDeleteButton.setAttribute('aria-label', `Delete trip “${displayName}”`);
-            tripDetailDeleteButton.title = `Delete trip “${displayName}”`;
-        } else {
-            tripDetailDeleteButton.setAttribute('aria-label', 'Delete trip');
-            tripDetailDeleteButton.title = 'Delete trip';
+        const isSaving = Boolean(tripDescriptionState.isSaving);
+
+        if (tripDetailEditButton) {
+            const editLabel = displayName
+                ? `Edit trip “${displayName}”`
+                : 'Edit trip';
+            tripDetailEditButton.disabled = tripProfileEditState.active || isSaving;
+            tripDetailEditButton.dataset.tripId = tripId;
+            tripDetailEditButton.setAttribute('aria-label', editLabel);
+            tripDetailEditButton.title = editLabel;
+        }
+
+        if (tripDetailDeleteButton) {
+            tripDetailDeleteButton.dataset.tripId = tripId;
+            const deleteLabel = displayName
+                ? `Delete trip “${displayName}”`
+                : 'Delete trip';
+            tripDetailDeleteButton.setAttribute('aria-label', deleteLabel);
+            tripDetailDeleteButton.title = deleteLabel;
+            const canInteract = tripProfileEditState.active && !isSaving;
+            tripDetailDeleteButton.hidden = !tripProfileEditState.active;
+            tripDetailDeleteButton.disabled = !canInteract;
         }
     } else {
         tripDetailActionsElement.hidden = true;
-        tripDetailDeleteButton.disabled = true;
-        delete tripDetailDeleteButton.dataset.tripId;
-        tripDetailDeleteButton.removeAttribute('aria-label');
-        tripDetailDeleteButton.removeAttribute('title');
+        if (tripDetailEditButton) {
+            tripDetailEditButton.disabled = true;
+            delete tripDetailEditButton.dataset.tripId;
+            tripDetailEditButton.removeAttribute('aria-label');
+            tripDetailEditButton.removeAttribute('title');
+        }
+        if (tripDetailDeleteButton) {
+            tripDetailDeleteButton.hidden = true;
+            tripDetailDeleteButton.disabled = true;
+            delete tripDetailDeleteButton.dataset.tripId;
+            tripDetailDeleteButton.removeAttribute('aria-label');
+            tripDetailDeleteButton.removeAttribute('title');
+        }
     }
 }
 

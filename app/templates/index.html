@@ -225,16 +225,26 @@
                         <p class="trip-profile-eyebrow">Trip profile</p>
                         <h2 class="trip-profile-title" id="tripDetailTitle" data-default-text="Trip details">Trip details</h2>
                         <p class="trip-profile-subtitle" id="tripDetailSubtitle" data-default-text="Review the places assigned to this journey.">Review the places assigned to this journey.</p>
+                        <div class="trip-profile-name-field" id="tripNameField" hidden>
+                            <label class="trip-profile-description-label" for="tripNameInput">Trip name</label>
+                            <input type="text" id="tripNameInput" name="name" maxlength="120" autocomplete="off" placeholder="Trip name">
+                        </div>
                         <div class="trip-profile-meta" aria-live="polite">
                             <span id="tripDetailCount" class="trip-profile-meta-entry"></span>
                             <span id="tripDetailUpdated" class="trip-profile-meta-entry" hidden></span>
                         </div>
                         <div class="trip-profile-actions" id="tripDetailActions" hidden>
+                            <button type="button" class="trip-detail-edit" id="tripDetailEdit">Edit trip</button>
                             <button type="button" class="trip-detail-delete" id="tripDetailDelete">Delete trip</button>
+                            <button type="submit" class="trip-detail-save" id="tripDescriptionSave" form="tripDescriptionForm" disabled hidden>Save</button>
                         </div>
                     </div>
                 </div>
-                <form id="tripDescriptionForm" class="trip-profile-description" novalidate>
+                <div id="tripDescriptionDisplay" class="trip-profile-description-display" aria-live="polite"></div>
+                <div class="trip-profile-updated trip-profile-updated-readonly" id="tripDescriptionUpdatedReadOnly" hidden>
+                    Last updated <time id="tripDescriptionUpdatedReadOnlyTime"></time>
+                </div>
+                <form id="tripDescriptionForm" class="trip-profile-description" novalidate hidden>
                     <label class="trip-profile-description-label" for="tripDescriptionInput">Description</label>
                     <textarea id="tripDescriptionInput" name="description" rows="6" maxlength="2000" placeholder="Describe this trip"></textarea>
                     <div class="trip-profile-description-footer">
@@ -243,7 +253,6 @@
                         </div>
                         <div class="trip-profile-description-actions">
                             <button type="button" class="modal-button secondary" id="tripDescriptionCancel">Cancel</button>
-                            <button type="submit" class="modal-button primary" id="tripDescriptionSave" disabled>Save</button>
                         </div>
                     </div>
                 </form>
