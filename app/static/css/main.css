@@ -314,7 +314,9 @@ button, input, select { font-family: inherit; }
 
 .trip-profile-hero {
     position: relative;
-    padding: 28px 28px 10vw;
+    display: flex;
+    flex-direction: column;
+    padding: 28px 28px 32px;
     background: linear-gradient(135deg, rgba(17,24,39,0.95), rgba(59,130,246,0.65));
     color: #f9fafb;
     border-bottom-right-radius: 10px;
@@ -331,12 +333,14 @@ button, input, select { font-family: inherit; }
     height: 220px;
     background: radial-gradient(circle at center, rgba(255,255,255,0.4), rgba(59,130,246,0));
     opacity: 0.6;
+    pointer-events: none;
 }
 
 .trip-profile-close {
     position: absolute;
     top: 18px;
     right: 18px;
+    z-index: 2;
     border: none;
     width: 38px;
     height: 38px;
