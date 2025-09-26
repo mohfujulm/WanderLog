@@ -533,6 +533,70 @@ button, input, select { font-family: inherit; }
     font-style: italic;
 }
 
+.trip-profile-photos {
+    margin-top: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.trip-profile-photos[hidden] {
+    display: none;
+}
+
+.trip-profile-photos-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.trip-profile-photos-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #111827;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.trip-profile-photos-link {
+    font-size: 13px;
+    font-weight: 600;
+    color: #2563eb;
+    text-decoration: none;
+}
+
+.trip-profile-photos-link:hover,
+.trip-profile-photos-link:focus-visible {
+    text-decoration: underline;
+}
+
+.trip-profile-photos-empty {
+    font-size: 14px;
+    color: #6b7280;
+}
+
+.trip-profile-photos-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+}
+
+.trip-profile-photo-item {
+    position: relative;
+    overflow: hidden;
+    border-radius: 16px;
+    background: #e5e7eb;
+    min-height: 120px;
+}
+
+.trip-profile-photo-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
 .trip-profile-updated-readonly {
     margin-top: 8px;
 }
@@ -610,6 +674,38 @@ button, input, select { font-family: inherit; }
     resize: vertical;
     min-height: 140px;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.trip-profile-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.trip-profile-input-group input[type="url"] {
+    border: 1px solid rgba(209,213,219,0.9);
+    border-radius: 14px;
+    padding: 10px 14px;
+    font-size: 14px;
+    line-height: 1.4;
+    background: rgba(249,250,251,0.92);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.trip-profile-input-group input[type="url"]:focus {
+    outline: none;
+    border-color: #111827;
+    box-shadow: 0 0 0 3px rgba(17,24,39,0.15);
+}
+
+.trip-profile-input-group input[type="url"]:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.trip-profile-helper-text {
+    font-size: 12px;
+    color: #6b7280;
 }
 
 .trip-profile-description textarea:focus {

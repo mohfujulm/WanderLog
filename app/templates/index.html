@@ -265,12 +265,25 @@
                     </div>
                 </div>
                 <div id="tripDescriptionDisplay" class="trip-profile-description-display" aria-live="polite"></div>
+                <div id="tripPhotosSection" class="trip-profile-photos" aria-live="polite" hidden>
+                    <div class="trip-profile-photos-header">
+                        <h3 class="trip-profile-photos-title">Trip photos</h3>
+                        <a id="tripPhotosLink" class="trip-profile-photos-link" href="#" target="_blank" rel="noopener" hidden>Open album</a>
+                    </div>
+                    <p id="tripPhotosEmpty" class="trip-profile-photos-empty">Add a Google Photos album link to see photos here.</p>
+                    <div id="tripPhotosGallery" class="trip-profile-photos-gallery" role="list" hidden></div>
+                </div>
                 <div class="trip-profile-updated trip-profile-updated-readonly" id="tripDescriptionUpdatedReadOnly" hidden>
                     Last updated <time id="tripDescriptionUpdatedReadOnlyTime"></time>
                 </div>
                 <form id="tripDescriptionForm" class="trip-profile-description" novalidate hidden>
                     <label class="trip-profile-description-label" for="tripDescriptionInput">Description</label>
                     <textarea id="tripDescriptionInput" name="description" rows="6" maxlength="2000" placeholder="Describe this trip"></textarea>
+                    <div class="trip-profile-input-group">
+                        <label class="trip-profile-description-label" for="tripPhotosInput">Google Photos album link</label>
+                        <input type="url" id="tripPhotosInput" name="google_photos_url" placeholder="https://photos.app.goo.gl/" autocomplete="off">
+                        <p class="trip-profile-helper-text">Paste a shared Google Photos album link to display images for this trip.</p>
+                    </div>
                     <div class="trip-profile-description-footer">
                         <div class="trip-profile-updated" id="tripDescriptionUpdated" hidden>
                             Last updated <time id="tripDescriptionUpdatedTime"></time>
