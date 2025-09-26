@@ -19,6 +19,27 @@ _CacheEntry = tuple[float, List[str]]
 _CACHE: Dict[str, _CacheEntry] = {}
 
 
+def _is_profile_image_url(url: str) -> bool:
+    """Return ``True`` when ``url`` looks like a Google profile avatar."""
+
+    if not url:
+        return False
+
+    lowered = url.lower()
+
+    if "googleusercontent.com/a/" in lowered:
+        return True
+
+    profile_pattern = re.compile(r"=s\d{1,4}-(?:c|p)(?:$|[^a-z0-9])")
+    if profile_pattern.search(lowered):
+        return True
+
+    if "=s96" in lowered or "=s120" in lowered or "=s128" in lowered:
+        return True
+
+    return False
+
+
 def _clean_url(url: str) -> str:
     if not isinstance(url, str):
         return ""
@@ -83,6 +104,8 @@ def _extract_image_urls(html: str, *, max_images: int) -> List[str]:
         if base in seen_bases:
             continue
         seen_bases.add(base)
+        if _is_profile_image_url(candidate):
+            continue
         results.append(_normalise_resolution(candidate))
         if len(results) >= max_images:
             break

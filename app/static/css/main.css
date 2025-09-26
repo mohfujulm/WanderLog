@@ -597,6 +597,54 @@ button, input, select { font-family: inherit; }
     display: block;
 }
 
+.trip-profile-photo-item-selectable {
+    border: 2px solid transparent;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.trip-profile-photo-item-selectable .trip-profile-photo-toggle {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.2;
+    border: none;
+    border-radius: 999px;
+    background: rgba(17, 24, 39, 0.85);
+    color: #f9fafb;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.trip-profile-photo-item-selectable .trip-profile-photo-toggle:hover,
+.trip-profile-photo-item-selectable .trip-profile-photo-toggle:focus-visible {
+    background: rgba(37, 99, 235, 0.9);
+    transform: translateY(-1px);
+}
+
+.trip-profile-photo-item-selectable .trip-profile-photo-toggle:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+}
+
+.trip-profile-photo-item-selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+}
+
+.trip-profile-photo-item-selectable .trip-profile-photo-toggle[aria-pressed="true"],
+.trip-profile-photo-item-selected .trip-profile-photo-toggle {
+    background: #2563eb;
+    color: #fff;
+}
+
 .trip-profile-updated-readonly {
     margin-top: 8px;
 }

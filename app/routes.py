@@ -38,6 +38,9 @@ def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
             location_count = len(place_ids)
         else:
             location_count = 0
+        selected_photos = _normalise_photo_list(
+            trip.get('photo_urls') or trip.get('selected_photos') or trip.get('photos') or []
+        )
         return {
             'id': trip.get('id', ''),
             'name': trip.get('name', ''),
@@ -47,11 +50,17 @@ def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
             'latest_location_date': latest_location_date,
             'description': trip.get('description', ''),
             'google_photos_url': trip.get('google_photos_url', ''),
-            'photo_count': len(trip.get('photos', []) or []),
+            'selected_photos': selected_photos,
+            'photos': selected_photos,
+            'photo_count': len(selected_photos),
         }
 
     place_ids = getattr(trip, 'place_ids', []) or []
     location_count = len(place_ids) if isinstance(place_ids, list) else 0
+
+    selected_photos = _normalise_photo_list(
+        getattr(trip, 'photo_urls', []) or getattr(trip, 'photos', []) or []
+    )
 
     return {
         'id': getattr(trip, 'id', ''),
@@ -62,7 +71,9 @@ def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
         'latest_location_date': latest_location_date,
         'description': getattr(trip, 'description', ''),
         'google_photos_url': getattr(trip, 'google_photos_url', ''),
-        'photo_count': len(getattr(trip, 'photos', []) or []),
+        'selected_photos': selected_photos,
+        'photos': selected_photos,
+        'photo_count': len(selected_photos),
     }
 
 
@@ -79,6 +90,26 @@ def _clean_string(value: object) -> str:
         return ""
 
     return str(value).strip()
+
+
+def _normalise_photo_list(values) -> list[str]:
+    """Return a cleaned list of photo URLs from ``values``."""
+
+    if not isinstance(values, (list, tuple, set)):
+        return []
+
+    cleaned: list[str] = []
+    seen = set()
+    for entry in values:
+        if entry is None:
+            continue
+        candidate = str(entry).strip()
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        cleaned.append(candidate)
+
+    return cleaned
 
 
 def _extract_trip_place_ids(trip):
@@ -638,19 +669,32 @@ def api_get_trip(trip_id: str):
     ]
 
     photos_url = serialised_trip.get('google_photos_url') or getattr(trip, 'google_photos_url', '')
-    photos: list[str] = []
+    available_photos: list[str] = []
     if photos_url:
         try:
-            photos = fetch_album_images(photos_url)
+            available_photos = fetch_album_images(photos_url)
         except Exception:
-            photos = []
+            available_photos = []
 
-    serialised_trip['photo_count'] = len(photos)
+    selected_photos = _normalise_photo_list(
+        getattr(trip, 'photo_urls', []) or serialised_trip.get('selected_photos') or []
+    )
+
+    display_photos: list[str]
+    if available_photos:
+        filtered_selected = [url for url in selected_photos if url in available_photos]
+        display_photos = filtered_selected if filtered_selected else list(available_photos)
+    else:
+        display_photos = list(selected_photos)
+
+    serialised_trip['photo_count'] = len(display_photos)
 
     return jsonify({
         'trip': serialised_trip,
         'locations': locations,
-        'photos': photos,
+        'photos': display_photos,
+        'available_photos': available_photos,
+        'selected_photos': selected_photos,
     })
 
 
@@ -689,6 +733,7 @@ def api_update_trip(trip_id: str):
     name_value = payload.get('name', None)
     description_value = payload.get('description', None)
     photos_url_value = payload.get('google_photos_url', None)
+    photos_selection_value = payload.get('selected_photos', None)
 
     cleaned_name = None
     if name_value is not None:
@@ -734,7 +779,18 @@ def api_update_trip(trip_id: str):
             ), 400
         cleaned_photos_url = trimmed_photos
 
-    if cleaned_name is None and cleaned_description is None and cleaned_photos_url is None:
+    cleaned_photo_urls = None
+    if photos_selection_value is not None:
+        if not isinstance(photos_selection_value, (list, tuple, set)):
+            return jsonify(status='error', message='Provide a list of photo URLs.'), 400
+        cleaned_photo_urls = _normalise_photo_list(list(photos_selection_value))
+
+    if (
+        cleaned_name is None
+        and cleaned_description is None
+        and cleaned_photos_url is None
+        and cleaned_photo_urls is None
+    ):
         return jsonify(status='error', message='No updates were supplied.'), 400
 
     try:
@@ -743,28 +799,38 @@ def api_update_trip(trip_id: str):
             name=cleaned_name,
             description=cleaned_description,
             google_photos_url=cleaned_photos_url,
+            photo_urls=cleaned_photo_urls,
         )
     except ValueError as exc:
         return jsonify(status='error', message=str(exc)), 400
     except KeyError:
         return jsonify(status='error', message='Trip not found.'), 404
 
-    photos: list[str] = []
     photos_url = getattr(trip, 'google_photos_url', '')
+    available_photos: list[str] = []
     if photos_url:
         try:
-            photos = fetch_album_images(photos_url)
+            available_photos = fetch_album_images(photos_url)
         except Exception:
-            photos = []
+            available_photos = []
+
+    selected_photos = _normalise_photo_list(getattr(trip, 'photo_urls', []))
+    if available_photos:
+        filtered_selected = [url for url in selected_photos if url in available_photos]
+        display_photos = filtered_selected if filtered_selected else list(available_photos)
+    else:
+        display_photos = list(selected_photos)
 
     serialised = _serialise_trip(trip)
-    serialised['photo_count'] = len(photos)
+    serialised['photo_count'] = len(display_photos)
 
     return jsonify(
         status='success',
         message='Trip updated successfully.',
         trip=serialised,
-        photos=photos,
+        photos=display_photos,
+        available_photos=available_photos,
+        selected_photos=selected_photos,
     )
 
 
@@ -802,8 +868,19 @@ def api_create_trip():
                 ),
             ), 400
 
+    photos_selection_value = payload.get('selected_photos')
+    cleaned_photo_urls: list[str] = []
+    if photos_selection_value is not None:
+        if not isinstance(photos_selection_value, (list, tuple, set)):
+            return jsonify(status='error', message='Provide a list of photo URLs.'), 400
+        cleaned_photo_urls = _normalise_photo_list(list(photos_selection_value))
+
     try:
-        trip = trip_store.create_trip(name, google_photos_url=cleaned_photos_url)
+        trip = trip_store.create_trip(
+            name,
+            google_photos_url=cleaned_photos_url,
+            photo_urls=cleaned_photo_urls,
+        )
     except ValueError as exc:
         return jsonify(status='error', message=str(exc)), 400
 
@@ -815,13 +892,21 @@ def api_create_trip():
             photos = []
 
     serialised = _serialise_trip(trip)
-    serialised['photo_count'] = len(photos)
+    selected_photos = _normalise_photo_list(getattr(trip, 'photo_urls', []))
+    if photos:
+        filtered_selected = [url for url in selected_photos if url in photos]
+        display_photos = filtered_selected if filtered_selected else list(photos)
+    else:
+        display_photos = list(selected_photos)
+    serialised['photo_count'] = len(display_photos)
 
     return jsonify(
         status='success',
         message='Trip created successfully.',
         trip=serialised,
-        photos=photos,
+        photos=display_photos,
+        available_photos=photos,
+        selected_photos=selected_photos,
     ), 201
 
 
