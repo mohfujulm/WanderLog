@@ -3,7 +3,10 @@ from types import SimpleNamespace
 import pytest
 
 from app.config import GooglePhotosSettings
+from urllib.parse import parse_qs, urlparse
+
 from app.services.google_photos_api import GooglePhotosClient
+from app.scripts import google_photos_oauth
 from app.utils import google_photos
 
 
@@ -99,3 +102,26 @@ def test_fetch_album_images_filters_avatars(monkeypatch):
     results = google_photos.fetch_album_images("https://photos.app.goo.gl/demo")
 
     assert results == ["https://example.com/keep=w2048"]
+
+
+def test_oauth_helper_builds_expected_authorization_url():
+    config = google_photos_oauth.OAuthClientConfig(
+        client_id="client",
+        client_secret="secret",
+        redirect_port=9999,
+    )
+
+    url = google_photos_oauth._build_auth_url(config, scope="scope", state="state123")
+    parsed = urlparse(url)
+    params = parse_qs(parsed.query)
+
+    assert params["client_id"] == ["client"]
+    assert params["redirect_uri"] == [config.redirect_uri]
+    assert params["scope"] == ["scope"]
+    assert params["state"] == ["state123"]
+
+
+def test_oauth_helper_finds_free_port():
+    port = google_photos_oauth._find_free_port(9876)
+    assert isinstance(port, int)
+    assert 0 < port < 65536
