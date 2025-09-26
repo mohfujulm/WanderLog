@@ -34,6 +34,7 @@ class Trip:
     place_ids: List[str] = field(default_factory=list)
     description: str = ""
     google_photos_url: str = ""
+    photo_urls: List[str] = field(default_factory=list)
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
 
@@ -82,6 +83,16 @@ def _normalise_trip_data(raw: dict) -> Optional[Trip]:
         photos_candidate = str(photos_raw)
         google_photos_url = photos_candidate.strip()
 
+    photo_urls_raw = raw.get("photo_urls") or raw.get("photos") or []
+    photo_urls: List[str] = []
+    if isinstance(photo_urls_raw, list):
+        for entry in photo_urls_raw:
+            if entry is None:
+                continue
+            candidate = str(entry).strip()
+            if candidate:
+                photo_urls.append(candidate)
+
     created_at = str(raw.get("created_at") or raw.get("created") or "").strip()
     if not created_at:
         created_at = _utcnow_iso()
@@ -98,7 +109,25 @@ def _normalise_trip_data(raw: dict) -> Optional[Trip]:
         updated_at=updated_at,
         description=description,
         google_photos_url=google_photos_url,
+        photo_urls=photo_urls,
     )
+
+
+def _clean_photo_urls(values: Optional[Iterable[object]]) -> List[str]:
+    """Return a cleaned list of photo URLs from ``values``."""
+
+    urls: List[str] = []
+    if not values:
+        return urls
+
+    for entry in values:
+        if entry is None:
+            continue
+        candidate = str(entry).strip()
+        if candidate:
+            urls.append(candidate)
+
+    return urls
 
 
 def load_trips() -> None:
@@ -172,6 +201,7 @@ def create_trip(
     *,
     description: str = "",
     google_photos_url: str = "",
+    photo_urls: Optional[Iterable[object]] = None,
 ) -> Trip:
     """Create a new trip with ``name`` and persist it."""
 
@@ -185,6 +215,8 @@ def create_trip(
     raw_photos_url = str(google_photos_url or "")
     cleaned_photos_url = raw_photos_url.strip()
 
+    cleaned_photo_urls = _clean_photo_urls(photo_urls)
+
     _ensure_cache()
 
     trip = Trip(
@@ -192,6 +224,7 @@ def create_trip(
         name=cleaned_name,
         description=cleaned_description,
         google_photos_url=cleaned_photos_url,
+        photo_urls=cleaned_photo_urls,
     )
     _trips_cache.append(trip)
     save_trips()
@@ -350,6 +383,7 @@ def update_trip_metadata(
     name: Optional[str] = None,
     description: Optional[str] = None,
     google_photos_url: Optional[str] = None,
+    photo_urls: Optional[Iterable[object]] = None,
 ) -> Trip:
     """Update metadata for the trip identified by ``trip_id``."""
 
@@ -379,6 +413,12 @@ def update_trip_metadata(
         final_photos_url = raw_photos_url.strip()
         if final_photos_url != trip.google_photos_url:
             trip.google_photos_url = final_photos_url
+            updated = True
+
+    if photo_urls is not None:
+        cleaned_photo_urls = _clean_photo_urls(photo_urls)
+        if cleaned_photo_urls != trip.photo_urls:
+            trip.photo_urls = cleaned_photo_urls
             updated = True
 
     if updated:
