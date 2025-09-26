@@ -103,6 +103,7 @@ let tripPhotosSectionElement = null;
 let tripPhotosGalleryElement = null;
 let tripPhotosEmptyElement = null;
 let tripPhotosLinkElement = null;
+let tripPhotosConfigureButton = null;
 let tripPhotosInputElement = null;
 let tripLocationSearchInput = null;
 let tripLocationSortFieldSelect = null;
@@ -165,6 +166,8 @@ const tripDescriptionState = {
 const tripProfileEditState = {
     active: false,
 };
+
+let tripPhotoConfiguratorWindow = null;
 
 const manageModeState = {
     active: false,
@@ -2212,6 +2215,110 @@ function updateTripPhotosLink(url) {
     }
 }
 
+function handleTripPhotosConfigureClick(event) {
+    if (event) { event.preventDefault(); }
+    openTripPhotoConfigurator();
+}
+
+function openTripPhotoConfigurator() {
+    const tripId = tripDetailState.selectedTripId || tripDescriptionState.tripId || '';
+    const cleanedId = typeof tripId === 'string' ? tripId.trim() : String(tripId || '').trim();
+    if (!cleanedId) {
+        showTripDescriptionStatus('Open a trip to configure its photos.', true);
+        return;
+    }
+
+    const targetUrl = `/trips/${encodeURIComponent(cleanedId)}/photos/configure`;
+    const windowFeatures = 'width=1024,height=768,resizable=yes,scrollbars=yes';
+
+    if (tripPhotoConfiguratorWindow && !tripPhotoConfiguratorWindow.closed) {
+        try {
+            tripPhotoConfiguratorWindow.location.href = targetUrl;
+            tripPhotoConfiguratorWindow.focus();
+            return;
+        } catch (error) {
+            tripPhotoConfiguratorWindow = null;
+        }
+    }
+
+    tripPhotoConfiguratorWindow = window.open(targetUrl, 'tripPhotoConfigurator', windowFeatures);
+
+    if (tripPhotoConfiguratorWindow) {
+        try {
+            tripPhotoConfiguratorWindow.focus();
+        } catch (error) {
+            // Ignore focus errors.
+        }
+    } else {
+        showTripDescriptionStatus('Unable to open the photo configuration window.', true);
+    }
+}
+
+function updateTripPhotosConfigureButton() {
+    if (!tripPhotosConfigureButton) { return; }
+    const isEditing = Boolean(tripProfileEditState.active);
+    const hasTrip = Boolean(tripDetailState.selectedTripId);
+    const albumUrl = tripDescriptionState.lastAppliedPhotosUrl || '';
+    const availableList = Array.isArray(tripDetailState.availablePhotos)
+        ? tripDetailState.availablePhotos
+        : [];
+    const hasPhotos = Array.isArray(availableList) && availableList.length > 0;
+    const hasUnsavedAlbumChange = Boolean(tripDescriptionState.isPhotosUrlDirty);
+    const canOpen = isEditing && hasTrip && (albumUrl || hasPhotos) && !hasUnsavedAlbumChange;
+
+    tripPhotosConfigureButton.hidden = !isEditing;
+    tripPhotosConfigureButton.disabled = !canOpen || Boolean(tripDescriptionState.isSaving);
+
+    if (hasUnsavedAlbumChange) {
+        tripPhotosConfigureButton.title = 'Save the album link before configuring photos.';
+    } else {
+        tripPhotosConfigureButton.removeAttribute('title');
+    }
+}
+
+function handleTripPhotoConfiguratorMessage(event) {
+    if (!event || typeof event.data !== 'object' || event.data === null) { return; }
+    if (event.origin && event.origin !== window.location.origin) { return; }
+
+    if (event.data.type === 'trip-photo-configurator-closed') {
+        tripPhotoConfiguratorWindow = null;
+        return;
+    }
+
+    if (event.data.type !== 'trip-photos-updated') { return; }
+
+    const incomingTripIdRaw = event.data.tripId;
+    const incomingTripId = typeof incomingTripIdRaw === 'string'
+        ? incomingTripIdRaw.trim()
+        : String(incomingTripIdRaw || '').trim();
+    const activeTripId = typeof tripDetailState.selectedTripId === 'string'
+        ? tripDetailState.selectedTripId.trim()
+        : '';
+
+    if (!incomingTripId || incomingTripId !== activeTripId) { return; }
+
+    const selectedPhotos = normalisePhotoList(event.data.selected_photos);
+    const availablePhotos = Array.isArray(event.data.available_photos)
+        ? normalisePhotoList(event.data.available_photos)
+        : normalisePhotoList(tripDetailState.availablePhotos);
+    const displayPhotos = selectedPhotos.length > 0 ? selectedPhotos : availablePhotos;
+
+    tripDescriptionState.selectedPhotosDraft = [...selectedPhotos];
+    tripDescriptionState.isPhotosSelectionDirty = false;
+
+    updateTripPhotosSection({
+        photos: displayPhotos,
+        selectedPhotos,
+        availablePhotos,
+    });
+
+    if (tripProfileEditState.active) {
+        showTripDescriptionStatus('Trip photos updated successfully.');
+    }
+
+    updateTripPhotosConfigureButton();
+}
+
 function normalisePhotoList(list) {
     if (!Array.isArray(list)) { return []; }
     const seen = new Set();
@@ -2242,27 +2349,21 @@ function renderTripPhotosGallery() {
     if (!tripPhotosGalleryElement) { return; }
     tripPhotosGalleryElement.innerHTML = '';
 
-    const isEditing = Boolean(tripProfileEditState.active);
     const availableList = Array.isArray(tripDetailState.availablePhotos)
-        ? tripDetailState.availablePhotos
-        : [];
-    const selectedDraft = Array.isArray(tripDescriptionState.selectedPhotosDraft)
-        ? tripDescriptionState.selectedPhotosDraft
+        ? normalisePhotoList(tripDetailState.availablePhotos)
         : [];
     const selectedDisplay = Array.isArray(tripDetailState.photos)
-        ? tripDetailState.photos
+        ? normalisePhotoList(tripDetailState.photos)
         : [];
 
-    const gallerySources = isEditing
-        ? (availableList.length > 0 ? availableList : selectedDraft)
-        : selectedDisplay;
+    const gallerySources = selectedDisplay.length > 0 ? selectedDisplay : availableList;
 
     if (!Array.isArray(gallerySources) || gallerySources.length === 0) {
         tripPhotosGalleryElement.hidden = true;
         return;
     }
 
-    const selectedSet = new Set(normalisePhotoList(isEditing ? selectedDraft : selectedDisplay));
+    const selectedSet = new Set(selectedDisplay);
 
     gallerySources.forEach((photoUrl, index) => {
         const cleaned = typeof photoUrl === 'string'
@@ -2271,11 +2372,8 @@ function renderTripPhotosGallery() {
         if (!cleaned) { return; }
         const item = document.createElement('figure');
         item.className = 'trip-profile-photo-item';
-        if (isEditing) {
-            item.classList.add('trip-profile-photo-item-selectable');
-            if (selectedSet.has(cleaned)) {
-                item.classList.add('trip-profile-photo-item-selected');
-            }
+        if (selectedSet.has(cleaned)) {
+            item.classList.add('trip-profile-photo-item-selected');
         }
         const image = document.createElement('img');
         image.src = cleaned;
@@ -2283,17 +2381,6 @@ function renderTripPhotosGallery() {
         image.loading = 'lazy';
         image.decoding = 'async';
         item.appendChild(image);
-
-        if (isEditing) {
-            const toggle = document.createElement('button');
-            toggle.type = 'button';
-            toggle.className = 'trip-profile-photo-toggle';
-            toggle.dataset.photoUrl = cleaned;
-            const isSelected = selectedSet.has(cleaned);
-            toggle.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
-            toggle.textContent = isSelected ? 'Selected' : 'Select photo';
-            item.appendChild(toggle);
-        }
 
         tripPhotosGalleryElement.appendChild(item);
     });
@@ -2327,7 +2414,7 @@ function updateTripPhotosEmptyState(resolvedUrl) {
             return;
         }
         if (selectedDraft.length === 0) {
-            tripPhotosEmptyElement.textContent = 'Select the photos you want to display for this trip.';
+            tripPhotosEmptyElement.textContent = 'Use “Configure displayed photos” to choose which images appear for this trip.';
             tripPhotosEmptyElement.hidden = false;
             return;
         }
@@ -2362,30 +2449,34 @@ function updateTripPhotosSection(options = {}) {
         tripDetailState.availablePhotos = [];
     }
 
-    const hasSelectedOverride = Array.isArray(selectedPhotos);
-    let incomingSelected = hasSelectedOverride
+    const selectedOverride = Array.isArray(selectedPhotos)
         ? normalisePhotoList(selectedPhotos)
-        : (Array.isArray(photos) ? normalisePhotoList(photos) : null);
+        : null;
+    const photosOverride = Array.isArray(photos)
+        ? normalisePhotoList(photos)
+        : null;
 
-    if (hasSelectedOverride && incomingSelected && incomingSelected.length === 0 && Array.isArray(photos) && photos.length > 0) {
-        incomingSelected = normalisePhotoList(photos);
-    }
-
-    if (incomingSelected !== null) {
-        tripDescriptionState.lastAppliedSelectedPhotos = [...incomingSelected];
+    if (selectedOverride !== null) {
+        tripDescriptionState.lastAppliedSelectedPhotos = [...selectedOverride];
         if (!tripProfileEditState.active || !tripDescriptionState.isPhotosSelectionDirty) {
-            tripDetailState.photos = [...incomingSelected];
-            tripDescriptionState.selectedPhotosDraft = [...incomingSelected];
+            tripDescriptionState.selectedPhotosDraft = [...selectedOverride];
             tripDescriptionState.isPhotosSelectionDirty = false;
         }
-    } else if (!tripProfileEditState.active && !tripDescriptionState.isPhotosSelectionDirty) {
-        const fallback = normalisePhotoList(tripDescriptionState.lastAppliedSelectedPhotos);
-        tripDetailState.photos = [...fallback];
-        tripDescriptionState.selectedPhotosDraft = [...fallback];
     } else if (!Array.isArray(tripDescriptionState.selectedPhotosDraft)) {
-        tripDescriptionState.selectedPhotosDraft = Array.isArray(tripDetailState.photos)
-            ? [...tripDetailState.photos]
+        const fallbackDraft = Array.isArray(tripDetailState.photos)
+            ? normalisePhotoList(tripDetailState.photos)
             : [];
+        tripDescriptionState.selectedPhotosDraft = fallbackDraft;
+    }
+
+    if (!tripProfileEditState.active || !tripDescriptionState.isPhotosSelectionDirty) {
+        if (photosOverride !== null) {
+            tripDetailState.photos = [...photosOverride];
+        } else if (selectedOverride !== null) {
+            tripDetailState.photos = [...selectedOverride];
+        } else if (!Array.isArray(tripDetailState.photos)) {
+            tripDetailState.photos = [];
+        }
     }
 
     if (url !== undefined) {
@@ -2411,6 +2502,7 @@ function updateTripPhotosSection(options = {}) {
     renderTripPhotosGallery();
     updateTripPhotosLink(resolvedUrl);
     updateTripPhotosEmptyState(resolvedUrl);
+    updateTripPhotosConfigureButton();
 }
 
 function handleTripPhotoGalleryClick(event) {
@@ -2488,6 +2580,7 @@ function applyTripProfileEditMode() {
     updateTripDescriptionSaveButtonState();
     renderTripPhotosGallery();
     updateTripPhotosEmptyState();
+    updateTripPhotosConfigureButton();
 }
 
 function enterTripProfileEditMode() {
@@ -2607,6 +2700,7 @@ function setTripDescriptionSaving(isSaving) {
         tripDetailDeleteButton.disabled = saving || !tripProfileEditState.active;
     }
     updateTripDescriptionSaveButtonState();
+    updateTripPhotosConfigureButton();
 }
 
 function handleTripDetailEditClick(event) {
@@ -3193,11 +3287,17 @@ function initTripProfilePanel() {
     tripPhotosGalleryElement = document.getElementById('tripPhotosGallery');
     tripPhotosEmptyElement = document.getElementById('tripPhotosEmpty');
     tripPhotosLinkElement = document.getElementById('tripPhotosLink');
+    tripPhotosConfigureButton = document.getElementById('tripPhotosConfigure');
     tripPhotosInputElement = document.getElementById('tripPhotosInput');
 
     if (tripPhotosGalleryElement && !tripPhotosGalleryElement.dataset.initialised) {
         tripPhotosGalleryElement.addEventListener('click', handleTripPhotoGalleryClick);
         tripPhotosGalleryElement.dataset.initialised = 'true';
+    }
+
+    if (tripPhotosConfigureButton && !tripPhotosConfigureButton.dataset.initialised) {
+        tripPhotosConfigureButton.addEventListener('click', handleTripPhotosConfigureClick);
+        tripPhotosConfigureButton.dataset.initialised = 'true';
     }
 
     if (!tripDescriptionTitleElement) {
@@ -3514,6 +3614,15 @@ function closeTripDetail(options = {}) {
     tripDetailState.activeLocationId = null;
     tripDetailState.photos = [];
     tripDetailState.availablePhotos = [];
+
+    if (tripPhotoConfiguratorWindow && !tripPhotoConfiguratorWindow.closed) {
+        try {
+            tripPhotoConfiguratorWindow.close();
+        } catch (error) {
+            // Ignore close errors.
+        }
+    }
+    tripPhotoConfiguratorWindow = null;
 
     if (tripLocationSearchInput) { tripLocationSearchInput.value = ''; }
     if (tripLocationSortFieldSelect) { tripLocationSortFieldSelect.value = TRIP_LOCATION_SORT_FIELD_DATE; }
@@ -6404,6 +6513,8 @@ async function deleteMarker(markerId, markerInstance, triggerButton) {
         if (triggerButton) { triggerButton.disabled = false; }
     }
 }
+
+window.addEventListener('message', handleTripPhotoConfiguratorMessage);
 
 document.addEventListener('DOMContentLoaded', async () => {
     ensureManualPointModal();

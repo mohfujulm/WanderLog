@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Configure Trip Photos</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Raleway:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+</head>
+<body class="photo-selector-body">
+    <main class="photo-selector" aria-labelledby="photoSelectorTitle">
+        <header class="photo-selector-header">
+            <div>
+                <h1 id="photoSelectorTitle">Configure Trip Photos</h1>
+                <p class="photo-selector-trip-name">{{ trip.name }}</p>
+            </div>
+            {% if photos_url %}
+            <a class="photo-selector-album-link" href="{{ photos_url }}" target="_blank" rel="noopener">Open album</a>
+            {% endif %}
+        </header>
+        <section class="photo-selector-controls" aria-label="Photo selection controls">
+            <div class="photo-selector-actions">
+                <button type="button" id="photoSelectorSelectAll">Select all</button>
+                <button type="button" id="photoSelectorClearAll">Clear all</button>
+            </div>
+            <div class="photo-selector-summary">
+                <span id="photoSelectorSelectedCount">0</span> selected
+            </div>
+        </section>
+        <p id="photoSelectorStatus" class="photo-selector-status" role="status" aria-live="polite"></p>
+        <div id="photoSelectorGrid" class="photo-selector-grid" role="list"></div>
+        <footer class="photo-selector-footer">
+            <button type="button" id="photoSelectorClose" class="photo-selector-secondary">Close</button>
+            <button type="button" id="photoSelectorSave" class="photo-selector-primary">Save selection</button>
+        </footer>
+    </main>
+    <script>
+        window.tripPhotoSelectorConfig = {
+            tripId: {{ trip.id|tojson }},
+            tripName: {{ trip.name|tojson }},
+            photosUrl: {{ photos_url|tojson }},
+            availablePhotos: {{ available_photos|tojson }},
+            selectedPhotos: {{ selected_photos|tojson }}
+        };
+    </script>
+    <script src="{{ url_for('static', filename='js/photo_selector.js') }}" defer></script>
+</body>
+</html>

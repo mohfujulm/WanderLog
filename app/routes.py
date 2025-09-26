@@ -4,7 +4,7 @@ import json
 import os
 
 import pandas as pd
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, abort, jsonify, render_template, request
 
 from app.map_utils import dataframe_to_markers, filter_dataframe_by_date_range
 from app.utils.google_photos import fetch_album_images
@@ -628,6 +628,41 @@ def api_list_trips():
     return jsonify([
         _serialise_trip(trip, place_date_lookup=latest_dates) for trip in trips
     ])
+
+
+@main.route('/trips/<trip_id>/photos/configure', methods=['GET'])
+def view_trip_photo_configurator(trip_id: str):
+    """Render the standalone photo selection tool for ``trip_id``."""
+
+    identifier = (trip_id or '').strip()
+    if not identifier:
+        abort(404)
+
+    trip = trip_store.get_trip(identifier)
+    if trip is None:
+        abort(404)
+
+    serialised_trip = _serialise_trip(trip)
+
+    photos_url = serialised_trip.get('google_photos_url') or getattr(trip, 'google_photos_url', '')
+    available_photos: list[str] = []
+    if photos_url:
+        try:
+            available_photos = fetch_album_images(photos_url)
+        except Exception:
+            available_photos = []
+
+    selected_photos = _normalise_photo_list(
+        getattr(trip, 'photo_urls', []) or serialised_trip.get('selected_photos') or []
+    )
+
+    return render_template(
+        'photo_selector.html',
+        trip=serialised_trip,
+        photos_url=photos_url,
+        available_photos=available_photos,
+        selected_photos=selected_photos,
+    )
 
 
 @main.route('/api/trips/<trip_id>', methods=['GET'])
