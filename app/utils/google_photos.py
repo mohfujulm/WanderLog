@@ -5,12 +5,12 @@ from __future__ import annotations
 import re
 import time
 from html import unescape
-from typing import Dict, List
+from typing import Dict, List, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 _CACHE_TTL_SECONDS = 3600
-_DEFAULT_MAX_IMAGES = 50
+_DEFAULT_MAX_IMAGES: Optional[int] = None
 _USER_AGENT = (
     "Mozilla/5.0 (compatible; WanderLog/1.0; +https://github.com/)"
 )
@@ -78,7 +78,7 @@ def _normalise_resolution(url: str) -> str:
     return updated
 
 
-def _extract_image_urls(html: str, *, max_images: int) -> List[str]:
+def _extract_image_urls(html: str, *, max_images: Optional[int]) -> List[str]:
     if not html:
         return []
 
@@ -107,13 +107,15 @@ def _extract_image_urls(html: str, *, max_images: int) -> List[str]:
         if _is_profile_image_url(candidate):
             continue
         results.append(_normalise_resolution(candidate))
-        if len(results) >= max_images:
+        if max_images is not None and max_images > 0 and len(results) >= max_images:
             break
 
     return results
 
 
-def fetch_album_images(url: str, *, max_images: int = _DEFAULT_MAX_IMAGES) -> List[str]:
+def fetch_album_images(
+    url: str, *, max_images: Optional[int] = _DEFAULT_MAX_IMAGES
+) -> List[str]:
     """Return a list of high-resolution image URLs for a shared album."""
 
     cleaned_url = _clean_url(url)
@@ -123,10 +125,15 @@ def fetch_album_images(url: str, *, max_images: int = _DEFAULT_MAX_IMAGES) -> Li
     cache_entry = _CACHE.get(cleaned_url)
     now = time.time()
     if cache_entry and now - cache_entry[0] < _CACHE_TTL_SECONDS:
-        return list(cache_entry[1])
+        cached_images = list(cache_entry[1])
+        if max_images is not None and max_images > 0:
+            return cached_images[:max_images]
+        return cached_images
 
     html = _fetch_html(cleaned_url)
-    images = _extract_image_urls(html, max_images=max_images)
+    images = _extract_image_urls(html, max_images=None)
 
     _CACHE[cleaned_url] = (now, images)
+    if max_images is not None and max_images > 0:
+        return list(images[:max_images])
     return list(images)
