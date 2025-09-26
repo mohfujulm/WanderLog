@@ -652,11 +652,23 @@ button, input, select { font-family: inherit; }
     transition: background-color 0.2s ease, transform 0.2s ease;
 }
 
+html.photo-selector-html {
+    height: auto;
+    min-height: 100%;
+    overflow-y: auto;
+}
+
+html.photo-selector-html body {
+    height: auto;
+    min-height: 100vh;
+}
+
 .photo-selector-body {
     font-family: 'Raleway', 'Helvetica Neue', Arial, sans-serif;
     background: #f3f4f6;
     margin: 0;
     color: #111827;
+    overflow-y: auto;
 }
 
 .photo-selector {
