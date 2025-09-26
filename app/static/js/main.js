@@ -6079,6 +6079,19 @@ document.addEventListener('DOMContentLoaded', async () => {
             refreshMap();
         });
     }
+    const googlePhotosSignInButton = document.getElementById('googlePhotosSignInButton');
+    if (googlePhotosSignInButton) {
+        const authConfig = APP_CONFIG.googlePhotosAuth || {};
+        if (authConfig.connected) {
+            googlePhotosSignInButton.setAttribute('disabled', 'disabled');
+        } else {
+            googlePhotosSignInButton.addEventListener('click', (event) => {
+                event.preventDefault();
+                const startUrl = authConfig.startUrl || '/auth/google/start';
+                window.location.href = startUrl;
+            });
+        }
+    }
     const viewArchivedPointsButton = document.getElementById('viewArchivedPointsButton');
     if (viewArchivedPointsButton) {
         viewArchivedPointsButton.addEventListener('click', (event) => {

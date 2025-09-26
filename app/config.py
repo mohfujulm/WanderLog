@@ -19,6 +19,17 @@ class GooglePhotosSettings:
     token_url: str = "https://oauth2.googleapis.com/token"
 
 
+@dataclass(frozen=True)
+class GooglePhotosOAuthClientSettings:
+    """Configuration required to initiate the Google Photos OAuth flow."""
+
+    client_id: str
+    client_secret: str
+    scope: str = "https://www.googleapis.com/auth/photoslibrary.readonly"
+    auth_base_url: str = "https://accounts.google.com/o/oauth2/v2/auth"
+    token_url: str = "https://oauth2.googleapis.com/token"
+
+
 def load_google_photos_settings() -> GooglePhotosSettings:
     """Load configuration for the Google Photos API from environment variables."""
 
@@ -40,4 +51,22 @@ def load_google_photos_settings() -> GooglePhotosSettings:
         client_secret=client_secret,
         refresh_token=refresh_token,
         shared_album_id=shared_album_id or None,
+    )
+
+
+def load_google_photos_oauth_client_settings() -> GooglePhotosOAuthClientSettings:
+    """Return OAuth configuration without requiring a refresh token."""
+
+    client_id = os.getenv("GOOGLE_PHOTOS_CLIENT_ID", "").strip()
+    client_secret = os.getenv("GOOGLE_PHOTOS_CLIENT_SECRET", "").strip()
+
+    if not client_id or not client_secret:
+        raise RuntimeError(
+            "Missing Google Photos OAuth client configuration. Set GOOGLE_PHOTOS_CLIENT_ID "
+            "and GOOGLE_PHOTOS_CLIENT_SECRET."
+        )
+
+    return GooglePhotosOAuthClientSettings(
+        client_id=client_id,
+        client_secret=client_secret,
     )

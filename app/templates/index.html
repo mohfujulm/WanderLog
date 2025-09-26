@@ -38,6 +38,15 @@
                 <button class="overlay-button" type="button" id="refreshMapButton">Refresh Map</button>
                 <button class="overlay-button" type="button" id="viewArchivedPointsButton">View Archived Points</button>
                 <button class="overlay-button" type="button" id="manageModeToggle" data-manage-mode-toggle data-manage-mode-active-class="overlay-button-active" data-manage-mode-label-default="Enter Manage Mode" data-manage-mode-label-active="Exit Manage Mode">Enter Manage Mode</button>
+                {% if google_photos_auth_config.enabled %}
+                <h2 class="overlay-section-title" id="googlePhotosTitle">Google Photos</h2>
+                {% if google_photos_connected %}
+                <p class="overlay-helper-text overlay-helper-text-success" aria-live="polite">Google Photos is connected. Shared album images will appear on your trips automatically.</p>
+                {% else %}
+                <button class="overlay-button overlay-button-google" type="button" id="googlePhotosSignInButton">Sign in with Google</button>
+                <p class="overlay-helper-text">Authorize WanderLog to access the shared Google Photos album tied to your journeys.</p>
+                {% endif %}
+                {% endif %}
                 <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
                 <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
                 <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
@@ -336,6 +345,11 @@
             google_timeline: "{{ url_for('static', filename='assets/marker-pin-blue.svg') }}",
             manual: "{{ url_for('static', filename='assets/marker-pin-orange.svg') }}",
             default: "{{ url_for('static', filename='assets/marker-pin-gray.svg') }}",
+        },
+        googlePhotosAuth: {
+            enabled: {{ google_photos_auth_config.enabled | tojson }},
+            startUrl: {{ google_photos_auth_config.start_url | tojson }},
+            connected: {{ google_photos_connected | tojson }},
         },
     };
 </script>

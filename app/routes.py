@@ -2,11 +2,20 @@
 
 import json
 import os
+import secrets
+from urllib.parse import urlencode
 
 import pandas as pd
-from flask import Blueprint, jsonify, render_template, request
+import requests
+from flask import Blueprint, abort, jsonify, redirect, render_template, request, session, url_for
+from typing import Optional
 
 from app.map_utils import dataframe_to_markers, filter_dataframe_by_date_range
+from app.config import (
+    GooglePhotosOAuthClientSettings,
+    load_google_photos_oauth_client_settings,
+    load_google_photos_settings,
+)
 from app.utils.google_photos import fetch_album_images
 from app.utils.json_processing_functions import unique_visits_to_df
 from . import data_cache, trip_store
@@ -19,6 +28,123 @@ MAX_TRIP_NAME_LENGTH = 120
 MAX_TRIP_DESCRIPTION_LENGTH = 2000
 MAX_LOCATION_DESCRIPTION_LENGTH = 2000
 MAX_TRIP_PHOTOS_URL_LENGTH = 1000
+_OAUTH_STATE_SESSION_KEY = "google_photos_oauth_state"
+
+
+def _load_oauth_client_settings() -> Optional[GooglePhotosOAuthClientSettings]:
+    try:
+        return load_google_photos_oauth_client_settings()
+    except RuntimeError:
+        return None
+
+
+def _is_google_photos_connected() -> bool:
+    try:
+        load_google_photos_settings()
+    except RuntimeError:
+        return False
+    return True
+
+
+def _build_authorisation_url(settings: GooglePhotosOAuthClientSettings, redirect_uri: str, state: str) -> str:
+    params = {
+        "client_id": settings.client_id,
+        "redirect_uri": redirect_uri,
+        "response_type": "code",
+        "access_type": "offline",
+        "prompt": "consent",
+        "scope": settings.scope,
+        "state": state,
+    }
+    return f"{settings.auth_base_url}?{urlencode(params)}"
+
+
+@main.route("/auth/google/start")
+def google_photos_oauth_start():
+    settings = _load_oauth_client_settings()
+    if settings is None:
+        abort(404)
+
+    redirect_uri = url_for("main.google_photos_oauth_callback", _external=True)
+    state = secrets.token_urlsafe(32)
+    session[_OAUTH_STATE_SESSION_KEY] = state
+
+    return redirect(_build_authorisation_url(settings, redirect_uri, state))
+
+
+@main.route("/auth/google/callback")
+def google_photos_oauth_callback():
+    settings = _load_oauth_client_settings()
+    if settings is None:
+        abort(404)
+
+    stored_state = session.pop(_OAUTH_STATE_SESSION_KEY, None)
+    request_state = request.args.get("state", "")
+    if not stored_state or stored_state != request_state:
+        abort(400)
+
+    error = request.args.get("error")
+    if error:
+        return render_template("google_photos_oauth_result.html", error=error)
+
+    code = request.args.get("code")
+    if not code:
+        abort(400)
+
+    redirect_uri = url_for("main.google_photos_oauth_callback", _external=True)
+    payload = {
+        "client_id": settings.client_id,
+        "client_secret": settings.client_secret,
+        "code": code,
+        "grant_type": "authorization_code",
+        "redirect_uri": redirect_uri,
+    }
+
+    try:
+        response = requests.post(settings.token_url, data=payload, timeout=15)
+    except requests.RequestException as exc:  # pragma: no cover - network failure path
+        return render_template(
+            "google_photos_oauth_result.html",
+            error="Failed to exchange authorization code for tokens.",
+            exception=str(exc),
+        )
+
+    if response.status_code >= 400:
+        return render_template(
+            "google_photos_oauth_result.html",
+            error=(
+                "Google OAuth returned an error while exchanging the authorization code. "
+                f"Status {response.status_code}: {response.text.strip()}"
+            ),
+        )
+
+    try:
+        token_payload = response.json()
+    except ValueError:
+        return render_template(
+            "google_photos_oauth_result.html",
+            error="Received an unexpected response from Google OAuth; could not parse JSON.",
+        )
+
+    refresh_token = token_payload.get("refresh_token")
+    access_token = token_payload.get("access_token")
+    if not refresh_token:
+        return render_template(
+            "google_photos_oauth_result.html",
+            error=(
+                "Google OAuth did not return a refresh token. Ensure 'offline' access is allowed and "
+                "the client is configured correctly."
+            ),
+            token_payload=token_payload,
+            access_token=access_token,
+        )
+
+    return render_template(
+        "google_photos_oauth_result.html",
+        access_token=access_token,
+        refresh_token=refresh_token,
+        token_payload=token_payload,
+    )
 
 
 def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
@@ -288,7 +414,17 @@ def _serialise_trip_location(row, *, place_id: str = "", order: int = 0) -> dict
 def index():
     """Render the landing page."""
 
-    return render_template("index.html", mapbox_token=MAPBOX_ACCESS_TOKEN)
+    oauth_settings = _load_oauth_client_settings()
+
+    return render_template(
+        "index.html",
+        mapbox_token=MAPBOX_ACCESS_TOKEN,
+        google_photos_auth_config={
+            "enabled": bool(oauth_settings),
+            "start_url": url_for("main.google_photos_oauth_start") if oauth_settings else None,
+        },
+        google_photos_connected=_is_google_photos_connected(),
+    )
 
 
 @main.route('/api/update_timeline', methods=['POST'])

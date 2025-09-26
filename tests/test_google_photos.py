@@ -1,10 +1,11 @@
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
+import app.routes as routes
+from app import create_app
 from app.config import GooglePhotosSettings
-from urllib.parse import parse_qs, urlparse
-
 from app.services.google_photos_api import GooglePhotosClient
 from app.scripts import google_photos_oauth
 from app.utils import google_photos
@@ -38,6 +39,17 @@ class FakeSession:
         payload = self.media_pages[self.media_call_count]
         self.media_call_count += 1
         return FakeResponse(payload)
+
+
+@pytest.fixture
+def app_with_oauth(monkeypatch):
+    monkeypatch.setenv("FLASK_SECRET_KEY", "test-secret")
+    monkeypatch.setenv("GOOGLE_PHOTOS_CLIENT_ID", "client-id")
+    monkeypatch.setenv("GOOGLE_PHOTOS_CLIENT_SECRET", "client-secret")
+
+    app = create_app()
+    app.config.update(TESTING=True, SERVER_NAME="localhost")
+    return app
 
 
 def test_google_photos_client_paginates_until_token_exhausted():
@@ -125,3 +137,55 @@ def test_oauth_helper_finds_free_port():
     port = google_photos_oauth._find_free_port(9876)
     assert isinstance(port, int)
     assert 0 < port < 65536
+
+
+def test_google_photos_oauth_start_sets_state_and_redirects(app_with_oauth):
+    client = app_with_oauth.test_client()
+
+    response = client.get("/auth/google/start")
+
+    assert response.status_code == 302
+    assert "accounts.google.com" in response.headers["Location"]
+
+    parsed = urlparse(response.headers["Location"])
+    params = parse_qs(parsed.query)
+    assert params["response_type"] == ["code"]
+
+    with client.session_transaction() as flask_session:
+        assert routes._OAUTH_STATE_SESSION_KEY in flask_session
+        assert flask_session[routes._OAUTH_STATE_SESSION_KEY]
+
+
+def test_google_photos_oauth_callback_exposes_tokens(monkeypatch, app_with_oauth):
+    class TokenResponse:
+        status_code = 200
+        text = "{}"
+
+        def json(self):
+            return {"refresh_token": "refresh-token", "access_token": "access-token"}
+
+    monkeypatch.setattr(routes.requests, "post", lambda url, data, timeout: TokenResponse())
+
+    client = app_with_oauth.test_client()
+    with client.session_transaction() as flask_session:
+        flask_session[routes._OAUTH_STATE_SESSION_KEY] = "state-123"
+
+    response = client.get(
+        "/auth/google/callback",
+        query_string={"state": "state-123", "code": "auth-code"},
+    )
+
+    assert response.status_code == 200
+    assert b"Refresh token" in response.data
+    assert b"refresh-token" in response.data
+
+
+def test_google_photos_oauth_callback_rejects_invalid_state(app_with_oauth):
+    client = app_with_oauth.test_client()
+
+    response = client.get(
+        "/auth/google/callback",
+        query_string={"state": "unexpected", "code": "ignored"},
+    )
+
+    assert response.status_code == 400

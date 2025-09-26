@@ -1192,6 +1192,25 @@ button, input, select { font-family: inherit; }
                     text-align: right;
                     width: 100%; }
 
+.overlay-button-google { display: flex;
+                         align-items: center;
+                         justify-content: center;
+                         gap: 8px;
+                         font-weight: 600;
+                         background: #1a73e8;
+                         color: #fff;
+                         box-shadow: 0 12px 24px rgba(26, 115, 232, 0.25); }
+
+.overlay-button-google:hover,
+.overlay-button-google:focus-visible { background: #0c57c9;
+                                       color: #fff; }
+
+.overlay-button-google:disabled,
+.overlay-button-google[disabled] { background: rgba(26,115,232,0.35);
+                                   color: rgba(255,255,255,0.75);
+                                   cursor: not-allowed;
+                                   box-shadow: none; }
+
 .overlay-section-title { align-self: stretch;
                          padding-top: 3px;
                          font-size: 13px;
@@ -1200,6 +1219,14 @@ button, input, select { font-family: inherit; }
                          text-transform: uppercase;
                          color: #444;
                          text-align: right; }
+
+.overlay-helper-text {   margin: 8px 0 16px;
+                         font-size: 13px;
+                         line-height: 1.6;
+                         color: #5c6470;
+                         text-align: right; }
+
+.overlay-helper-text-success { color: #0f7a49; }
 
 .overlay-button:hover {     background: rgba(255,255,255,1);
                             transform: translateY(-2px);
