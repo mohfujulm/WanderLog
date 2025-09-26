@@ -7,6 +7,7 @@ import pandas as pd
 from flask import Blueprint, jsonify, render_template, request
 
 from app.map_utils import dataframe_to_markers, filter_dataframe_by_date_range
+from app.utils.google_photos import fetch_album_images
 from app.utils.json_processing_functions import unique_visits_to_df
 from . import data_cache, trip_store
 
@@ -17,6 +18,7 @@ MAX_ALIAS_LENGTH = 120
 MAX_TRIP_NAME_LENGTH = 120
 MAX_TRIP_DESCRIPTION_LENGTH = 2000
 MAX_LOCATION_DESCRIPTION_LENGTH = 2000
+MAX_TRIP_PHOTOS_URL_LENGTH = 1000
 
 
 def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
@@ -44,6 +46,8 @@ def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
             'updated_at': trip.get('updated_at'),
             'latest_location_date': latest_location_date,
             'description': trip.get('description', ''),
+            'google_photos_url': trip.get('google_photos_url', ''),
+            'photo_count': len(trip.get('photos', []) or []),
         }
 
     place_ids = getattr(trip, 'place_ids', []) or []
@@ -57,6 +61,8 @@ def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
         'updated_at': getattr(trip, 'updated_at', None),
         'latest_location_date': latest_location_date,
         'description': getattr(trip, 'description', ''),
+        'google_photos_url': getattr(trip, 'google_photos_url', ''),
+        'photo_count': len(getattr(trip, 'photos', []) or []),
     }
 
 
@@ -631,9 +637,20 @@ def api_get_trip(trip_id: str):
         for index, place_id in enumerate(cleaned_ids)
     ]
 
+    photos_url = serialised_trip.get('google_photos_url') or getattr(trip, 'google_photos_url', '')
+    photos: list[str] = []
+    if photos_url:
+        try:
+            photos = fetch_album_images(photos_url)
+        except Exception:
+            photos = []
+
+    serialised_trip['photo_count'] = len(photos)
+
     return jsonify({
         'trip': serialised_trip,
         'locations': locations,
+        'photos': photos,
     })
 
 
@@ -671,6 +688,7 @@ def api_update_trip(trip_id: str):
 
     name_value = payload.get('name', None)
     description_value = payload.get('description', None)
+    photos_url_value = payload.get('google_photos_url', None)
 
     cleaned_name = None
     if name_value is not None:
@@ -699,7 +717,24 @@ def api_update_trip(trip_id: str):
             ), 400
         cleaned_description = description_value
 
-    if cleaned_name is None and cleaned_description is None:
+    cleaned_photos_url = None
+    if photos_url_value is not None:
+        if not isinstance(photos_url_value, str):
+            photos_url_value = str(photos_url_value)
+        trimmed_photos = photos_url_value.strip()
+        if trimmed_photos and not trimmed_photos.lower().startswith(('http://', 'https://')):
+            return jsonify(status='error', message='Provide a valid Google Photos link.'), 400
+        if len(trimmed_photos) > MAX_TRIP_PHOTOS_URL_LENGTH:
+            return jsonify(
+                status='error',
+                message=(
+                    'Google Photos link must be '
+                    f'{MAX_TRIP_PHOTOS_URL_LENGTH} characters or fewer.'
+                ),
+            ), 400
+        cleaned_photos_url = trimmed_photos
+
+    if cleaned_name is None and cleaned_description is None and cleaned_photos_url is None:
         return jsonify(status='error', message='No updates were supplied.'), 400
 
     try:
@@ -707,16 +742,29 @@ def api_update_trip(trip_id: str):
             identifier,
             name=cleaned_name,
             description=cleaned_description,
+            google_photos_url=cleaned_photos_url,
         )
     except ValueError as exc:
         return jsonify(status='error', message=str(exc)), 400
     except KeyError:
         return jsonify(status='error', message='Trip not found.'), 404
 
+    photos: list[str] = []
+    photos_url = getattr(trip, 'google_photos_url', '')
+    if photos_url:
+        try:
+            photos = fetch_album_images(photos_url)
+        except Exception:
+            photos = []
+
+    serialised = _serialise_trip(trip)
+    serialised['photo_count'] = len(photos)
+
     return jsonify(
         status='success',
         message='Trip updated successfully.',
-        trip=_serialise_trip(trip),
+        trip=serialised,
+        photos=photos,
     )
 
 
@@ -737,15 +785,43 @@ def api_create_trip():
             message=f'Trip name must be {MAX_TRIP_NAME_LENGTH} characters or fewer.'
         ), 400
 
+    photos_url_value = payload.get('google_photos_url')
+    cleaned_photos_url = ''
+    if photos_url_value is not None:
+        if not isinstance(photos_url_value, str):
+            photos_url_value = str(photos_url_value)
+        cleaned_photos_url = photos_url_value.strip()
+        if cleaned_photos_url and not cleaned_photos_url.lower().startswith(('http://', 'https://')):
+            return jsonify(status='error', message='Provide a valid Google Photos link.'), 400
+        if len(cleaned_photos_url) > MAX_TRIP_PHOTOS_URL_LENGTH:
+            return jsonify(
+                status='error',
+                message=(
+                    'Google Photos link must be '
+                    f'{MAX_TRIP_PHOTOS_URL_LENGTH} characters or fewer.'
+                ),
+            ), 400
+
     try:
-        trip = trip_store.create_trip(name)
+        trip = trip_store.create_trip(name, google_photos_url=cleaned_photos_url)
     except ValueError as exc:
         return jsonify(status='error', message=str(exc)), 400
+
+    photos: list[str] = []
+    if cleaned_photos_url:
+        try:
+            photos = fetch_album_images(cleaned_photos_url)
+        except Exception:
+            photos = []
+
+    serialised = _serialise_trip(trip)
+    serialised['photo_count'] = len(photos)
 
     return jsonify(
         status='success',
         message='Trip created successfully.',
-        trip=_serialise_trip(trip),
+        trip=serialised,
+        photos=photos,
     ), 201
 
 
