@@ -11,6 +11,7 @@ from urllib.request import Request, urlopen
 
 _CACHE_TTL_SECONDS = 3600
 _DEFAULT_MAX_IMAGES: Optional[int] = None
+_FALLBACK_MAX_IMAGES = 10000
 _USER_AGENT = (
     "Mozilla/5.0 (compatible; WanderLog/1.0; +https://github.com/)"
 )
@@ -89,6 +90,9 @@ def _extract_image_urls(html: str, *, max_images: Optional[int]) -> List[str]:
         .replace("\\u0026", "&")
         .replace("\\u002f", "/")
     )
+    # Albums embed many URLs using JSON escaping ("\/"), so normalise those
+    # sequences as well to ensure we do not miss valid image sources.
+    normalised = normalised.replace("\\/", "/")
 
     pattern = re.compile(r"(?:https?:)?//lh3\.googleusercontent\.com/[^\s\"']+")
     matches = pattern.findall(normalised)
@@ -107,7 +111,14 @@ def _extract_image_urls(html: str, *, max_images: Optional[int]) -> List[str]:
         if _is_profile_image_url(candidate):
             continue
         results.append(_normalise_resolution(candidate))
-        if max_images is not None and max_images > 0 and len(results) >= max_images:
+
+        limit: Optional[int]
+        if max_images is not None and max_images > 0:
+            limit = max_images
+        else:
+            limit = _FALLBACK_MAX_IMAGES
+
+        if limit is not None and limit > 0 and len(results) >= limit:
             break
 
     return results

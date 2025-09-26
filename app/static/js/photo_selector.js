@@ -10,6 +10,7 @@
     const availableInitial = Array.isArray(config.availablePhotos) ? config.availablePhotos : [];
     let availablePhotos = normalisePhotoList(availableInitial);
     let selectedPhotos = normalisePhotoList(Array.isArray(config.selectedPhotos) ? config.selectedPhotos : []);
+    let lastInteractedIndex = null;
 
     const statusElement = document.getElementById('photoSelectorStatus');
     const gridElement = document.getElementById('photoSelectorGrid');
@@ -54,6 +55,7 @@
         if (!gridElement) { return; }
         const photos = getDisplayPhotos();
         gridElement.innerHTML = '';
+        lastInteractedIndex = null;
 
         if (!Array.isArray(photos) || photos.length === 0) {
             const emptyMessage = document.createElement('p');
@@ -86,6 +88,7 @@
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
             checkbox.value = cleaned;
+            checkbox.dataset.index = String(index);
             checkbox.checked = selectedSet.has(cleaned);
             label.appendChild(checkbox);
 
@@ -195,6 +198,54 @@
                 if (target.nextElementSibling) {
                     target.nextElementSibling.textContent = target.checked ? 'Selected' : 'Select photo';
                 }
+                const indexValue = target.dataset && target.dataset.index !== undefined ? Number(target.dataset.index) : NaN;
+                lastInteractedIndex = Number.isNaN(indexValue) ? lastInteractedIndex : indexValue;
+            });
+
+            gridElement.addEventListener('click', (event) => {
+                const rawTarget = event.target;
+                if (!(rawTarget instanceof Element)) { return; }
+
+                const label = rawTarget.closest('.photo-selector-toggle');
+                let checkbox = null;
+                if (rawTarget instanceof HTMLInputElement && rawTarget.type === 'checkbox') {
+                    checkbox = rawTarget;
+                } else if (label) {
+                    checkbox = label.querySelector('input[type="checkbox"]');
+                }
+
+                if (!(checkbox instanceof HTMLInputElement) || checkbox.type !== 'checkbox') {
+                    return;
+                }
+
+                const indexValue = checkbox.dataset && checkbox.dataset.index !== undefined ? Number(checkbox.dataset.index) : NaN;
+                if (!event.shiftKey || lastInteractedIndex === null || Number.isNaN(indexValue)) {
+                    lastInteractedIndex = Number.isNaN(indexValue) ? lastInteractedIndex : indexValue;
+                    return;
+                }
+
+                const checkboxes = Array.from(gridElement.querySelectorAll('input[type="checkbox"]'));
+                const start = Math.min(lastInteractedIndex, indexValue);
+                const end = Math.max(lastInteractedIndex, indexValue);
+                const shouldSelect = checkbox.checked;
+
+                for (let i = start; i <= end; i += 1) {
+                    const current = checkboxes[i];
+                    if (!current) { continue; }
+                    current.checked = shouldSelect;
+                    const labelElement = current.nextElementSibling;
+                    if (labelElement) {
+                        labelElement.textContent = shouldSelect ? 'Selected' : 'Select photo';
+                    }
+                }
+
+                selectedPhotos = normalisePhotoList(
+                    checkboxes
+                        .filter((input) => input.checked)
+                        .map((input) => input.value)
+                );
+                updateSelectedCount();
+                lastInteractedIndex = indexValue;
             });
         }
 
