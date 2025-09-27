@@ -14,6 +14,20 @@ _DEFAULT_FILENAME = "google_photos_tokens.json"
 _LOCK = Lock()
 
 
+def _candidate_directories():
+    """Yield directories that may contain the token store."""
+
+    root = Path(__file__).resolve().parents[2]
+    yield root / "instance"
+
+    home = Path.home()
+    if home:
+        yield home / ".config" / "wanderlog"
+        yield home / ".wanderlog"
+
+    yield Path.cwd()
+
+
 def _resolve_store_path() -> Path:
     """Return the file path used to persist Google Photos tokens."""
 
@@ -21,11 +35,19 @@ def _resolve_store_path() -> Path:
     if override:
         return Path(override).expanduser()
 
-    # Default to the repository root's ``instance`` directory so the token file
-    # lives outside the tracked source tree while remaining close to the app.
+    for directory in _candidate_directories():
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            continue
+
+        if os.access(directory, os.W_OK):
+            return directory / _DEFAULT_FILENAME
+
+    # If none of the candidates were writable fall back to the repository
+    # ``instance`` directory so callers can surface a helpful error downstream.
     root = Path(__file__).resolve().parents[2]
-    instance_dir = root / "instance"
-    return instance_dir / _DEFAULT_FILENAME
+    return (root / "instance") / _DEFAULT_FILENAME
 
 
 def get_token_store_path() -> Path:
@@ -98,14 +120,28 @@ def save_tokens(
         payload["token_payload"] = token_payload
 
     path = _resolve_store_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise RuntimeError(
+            "Unable to create the Google Photos token directory. Set "
+            "GOOGLE_PHOTOS_TOKEN_STORE_PATH to a writable location and retry."
+        ) from exc
 
     serialisable_payload = payload
 
-    with _LOCK:
-        with path.open("w", encoding="utf-8") as handle:
-            json.dump(serialisable_payload, handle, indent=2, sort_keys=True)
-            handle.write("\n")
+    try:
+        with _LOCK:
+            with path.open("w", encoding="utf-8") as handle:
+                json.dump(serialisable_payload, handle, indent=2, sort_keys=True)
+                handle.write("\n")
+    except OSError as exc:
+        raise RuntimeError(
+            "Unable to write the Google Photos token file at "
+            f"{path}. Set GOOGLE_PHOTOS_TOKEN_STORE_PATH to a writable "
+            "location and retry."
+        ) from exc
 
     return payload
 

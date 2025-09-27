@@ -1,4 +1,6 @@
 import json
+import os
+from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
@@ -334,6 +336,51 @@ def test_token_store_persists_refresh_token(token_store_path):
     assert on_disk["refresh_token"] == "stored-refresh"
     assert on_disk["access_token"] == "stored-access"
     assert on_disk["expires_at"] == 4600
+
+
+def test_token_store_falls_back_to_writable_directory(monkeypatch, tmp_path):
+    locked = tmp_path / "locked"
+    fallback = tmp_path / "fallback"
+
+    monkeypatch.delenv("GOOGLE_PHOTOS_TOKEN_STORE_PATH", raising=False)
+    monkeypatch.setattr(token_store, "_candidate_directories", lambda: [locked, fallback])
+
+    original_access = token_store.os.access
+
+    def fake_access(path, mode):
+        candidate = Path(path)
+        if candidate == locked:
+            return False
+        if candidate == fallback:
+            return True
+        return original_access(path, mode)
+
+    monkeypatch.setattr(token_store.os, "access", fake_access)
+
+    payload = token_store.save_tokens(refresh_token="fallback-token")
+
+    assert payload["refresh_token"] == "fallback-token"
+    stored_path = fallback / "google_photos_tokens.json"
+    assert stored_path.exists()
+
+
+def test_token_store_raises_helpful_error_for_unwritable_override(monkeypatch, tmp_path):
+    override = tmp_path / "tokens.json"
+    monkeypatch.setenv("GOOGLE_PHOTOS_TOKEN_STORE_PATH", str(override))
+
+    original_open = token_store.Path.open
+
+    def fake_open(self, *args, **kwargs):
+        if self == override:
+            raise PermissionError("denied")
+        return original_open(self, *args, **kwargs)
+
+    monkeypatch.setattr(token_store.Path, "open", fake_open)
+
+    with pytest.raises(RuntimeError) as exc:
+        token_store.save_tokens(refresh_token="value")
+
+    assert "GOOGLE_PHOTOS_TOKEN_STORE_PATH" in str(exc.value)
 
 
 def test_load_google_photos_settings_uses_saved_refresh_token(monkeypatch, token_store_path):
