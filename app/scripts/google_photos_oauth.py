@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from typing import Optional
 
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()
 
 _AUTH_BASE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _DEFAULT_SCOPE = "https://www.googleapis.com/auth/photoslibrary.readonly"

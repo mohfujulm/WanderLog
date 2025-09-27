@@ -6,6 +6,13 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
+from dotenv import load_dotenv
+
+# Ensure values from a local .env file are available before any configuration
+# helpers attempt to read from the environment. ``load_dotenv`` is a no-op when
+# the file does not exist which keeps imports lightweight for other callers.
+load_dotenv()
+
 
 @dataclass(frozen=True)
 class GooglePhotosSettings:
