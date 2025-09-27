@@ -16,9 +16,9 @@ from app.config import (
     load_google_photos_oauth_client_settings,
     load_google_photos_settings,
 )
-from app.services.google_photos_api import reset_google_photos_client
+from app.services.google_photos_api import GooglePhotosAPIError, reset_google_photos_client
 from app.services.google_photos_token_store import get_token_store_path, save_tokens
-from app.utils.google_photos import fetch_album_images
+from app.utils.google_photos import fetch_album_images, list_google_photos_albums
 from app.utils.json_processing_functions import unique_visits_to_df
 from . import data_cache, trip_store
 
@@ -30,6 +30,7 @@ MAX_TRIP_NAME_LENGTH = 120
 MAX_TRIP_DESCRIPTION_LENGTH = 2000
 MAX_LOCATION_DESCRIPTION_LENGTH = 2000
 MAX_TRIP_PHOTOS_URL_LENGTH = 1000
+MAX_TRIP_PHOTOS_ALBUM_TITLE_LENGTH = 200
 _OAUTH_STATE_SESSION_KEY = "google_photos_oauth_state"
 
 
@@ -160,6 +161,20 @@ def google_photos_oauth_callback():
     )
 
 
+@main.route('/api/google_photos/albums', methods=['GET'])
+def api_google_photos_albums():
+    """Return the albums available to the authenticated Google Photos user."""
+
+    try:
+        albums = list_google_photos_albums()
+    except RuntimeError as exc:
+        return jsonify(status='error', message=str(exc)), 400
+    except GooglePhotosAPIError as exc:
+        return jsonify(status='error', message=str(exc)), 502
+
+    return jsonify(albums)
+
+
 def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
     """Return a JSON-serialisable dictionary for ``trip``."""
 
@@ -186,6 +201,9 @@ def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
             'latest_location_date': latest_location_date,
             'description': trip.get('description', ''),
             'google_photos_url': trip.get('google_photos_url', ''),
+            'google_photos_album_id': trip.get('google_photos_album_id', ''),
+            'google_photos_album_title': trip.get('google_photos_album_title', ''),
+            'google_photos_product_url': trip.get('google_photos_product_url', ''),
             'photo_count': len(trip.get('photos', []) or []),
         }
 
@@ -201,6 +219,9 @@ def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
         'latest_location_date': latest_location_date,
         'description': getattr(trip, 'description', ''),
         'google_photos_url': getattr(trip, 'google_photos_url', ''),
+        'google_photos_album_id': getattr(trip, 'google_photos_album_id', ''),
+        'google_photos_album_title': getattr(trip, 'google_photos_album_title', ''),
+        'google_photos_product_url': getattr(trip, 'google_photos_product_url', ''),
         'photo_count': len(getattr(trip, 'photos', []) or []),
     }
 
@@ -786,11 +807,17 @@ def api_get_trip(trip_id: str):
         for index, place_id in enumerate(cleaned_ids)
     ]
 
-    photos_url = serialised_trip.get('google_photos_url') or getattr(trip, 'google_photos_url', '')
+    album_id = serialised_trip.get('google_photos_album_id') or getattr(trip, 'google_photos_album_id', '')
+    product_url = serialised_trip.get('google_photos_product_url') or getattr(trip, 'google_photos_product_url', '')
+    photos_url = (
+        product_url
+        or serialised_trip.get('google_photos_url')
+        or getattr(trip, 'google_photos_url', '')
+    )
     photos: list[str] = []
-    if photos_url:
+    if album_id or photos_url:
         try:
-            photos = fetch_album_images(photos_url)
+            photos = fetch_album_images(photos_url, album_id=str(album_id or '').strip() or None)
         except Exception:
             photos = []
 
@@ -838,6 +865,9 @@ def api_update_trip(trip_id: str):
     name_value = payload.get('name', None)
     description_value = payload.get('description', None)
     photos_url_value = payload.get('google_photos_url', None)
+    album_id_value = payload.get('google_photos_album_id', None)
+    album_title_value = payload.get('google_photos_album_title', None)
+    album_product_url_value = payload.get('google_photos_product_url', None)
 
     cleaned_name = None
     if name_value is not None:
@@ -883,7 +913,48 @@ def api_update_trip(trip_id: str):
             ), 400
         cleaned_photos_url = trimmed_photos
 
-    if cleaned_name is None and cleaned_description is None and cleaned_photos_url is None:
+    cleaned_album_id = None
+    if album_id_value is not None:
+        cleaned_album_id = str(album_id_value or '').strip()
+
+    cleaned_album_title = None
+    if album_title_value is not None:
+        album_title_candidate = str(album_title_value or '')
+        trimmed_album_title = album_title_candidate.strip()
+        if len(trimmed_album_title) > MAX_TRIP_PHOTOS_ALBUM_TITLE_LENGTH:
+            return jsonify(
+                status='error',
+                message=(
+                    'Album title must be '
+                    f'{MAX_TRIP_PHOTOS_ALBUM_TITLE_LENGTH} characters or fewer.'
+                ),
+            ), 400
+        cleaned_album_title = trimmed_album_title
+
+    cleaned_album_product_url = None
+    if album_product_url_value is not None:
+        product_candidate = str(album_product_url_value or '')
+        trimmed_product = product_candidate.strip()
+        if trimmed_product and not trimmed_product.lower().startswith(('http://', 'https://')):
+            return jsonify(status='error', message='Provide a valid Google Photos link.'), 400
+        if len(trimmed_product) > MAX_TRIP_PHOTOS_URL_LENGTH:
+            return jsonify(
+                status='error',
+                message=(
+                    'Google Photos link must be '
+                    f'{MAX_TRIP_PHOTOS_URL_LENGTH} characters or fewer.'
+                ),
+            ), 400
+        cleaned_album_product_url = trimmed_product
+
+    if (
+        cleaned_name is None
+        and cleaned_description is None
+        and cleaned_photos_url is None
+        and cleaned_album_id is None
+        and cleaned_album_title is None
+        and cleaned_album_product_url is None
+    ):
         return jsonify(status='error', message='No updates were supplied.'), 400
 
     try:
@@ -892,6 +963,9 @@ def api_update_trip(trip_id: str):
             name=cleaned_name,
             description=cleaned_description,
             google_photos_url=cleaned_photos_url,
+            google_photos_album_id=cleaned_album_id,
+            google_photos_album_title=cleaned_album_title,
+            google_photos_product_url=cleaned_album_product_url,
         )
     except ValueError as exc:
         return jsonify(status='error', message=str(exc)), 400
@@ -899,10 +973,12 @@ def api_update_trip(trip_id: str):
         return jsonify(status='error', message='Trip not found.'), 404
 
     photos: list[str] = []
-    photos_url = getattr(trip, 'google_photos_url', '')
-    if photos_url:
+    album_id = getattr(trip, 'google_photos_album_id', '')
+    product_url = getattr(trip, 'google_photos_product_url', '')
+    photos_url = product_url or getattr(trip, 'google_photos_url', '')
+    if album_id or photos_url:
         try:
-            photos = fetch_album_images(photos_url)
+            photos = fetch_album_images(photos_url, album_id=str(album_id or '').strip() or None)
         except Exception:
             photos = []
 
@@ -951,15 +1027,62 @@ def api_create_trip():
                 ),
             ), 400
 
+    album_id_value = payload.get('google_photos_album_id')
+    album_title_value = payload.get('google_photos_album_title')
+    album_product_url_value = payload.get('google_photos_product_url')
+
+    cleaned_album_id = ''
+    if album_id_value is not None:
+        cleaned_album_id = str(album_id_value or '').strip()
+
+    cleaned_album_title = ''
+    if album_title_value is not None:
+        album_title_candidate = str(album_title_value or '')
+        trimmed_album_title = album_title_candidate.strip()
+        if len(trimmed_album_title) > MAX_TRIP_PHOTOS_ALBUM_TITLE_LENGTH:
+            return jsonify(
+                status='error',
+                message=(
+                    'Album title must be '
+                    f'{MAX_TRIP_PHOTOS_ALBUM_TITLE_LENGTH} characters or fewer.'
+                ),
+            ), 400
+        cleaned_album_title = trimmed_album_title
+
+    cleaned_album_product_url = ''
+    if album_product_url_value is not None:
+        product_candidate = str(album_product_url_value or '')
+        trimmed_product = product_candidate.strip()
+        if trimmed_product and not trimmed_product.lower().startswith(('http://', 'https://')):
+            return jsonify(status='error', message='Provide a valid Google Photos link.'), 400
+        if len(trimmed_product) > MAX_TRIP_PHOTOS_URL_LENGTH:
+            return jsonify(
+                status='error',
+                message=(
+                    'Google Photos link must be '
+                    f'{MAX_TRIP_PHOTOS_URL_LENGTH} characters or fewer.'
+                ),
+            ), 400
+        cleaned_album_product_url = trimmed_product
+
     try:
-        trip = trip_store.create_trip(name, google_photos_url=cleaned_photos_url)
+        trip = trip_store.create_trip(
+            name,
+            google_photos_url=cleaned_photos_url,
+            google_photos_album_id=cleaned_album_id,
+            google_photos_album_title=cleaned_album_title,
+            google_photos_product_url=cleaned_album_product_url,
+        )
     except ValueError as exc:
         return jsonify(status='error', message=str(exc)), 400
 
     photos: list[str] = []
-    if cleaned_photos_url:
+    if cleaned_album_id or cleaned_photos_url or cleaned_album_product_url:
         try:
-            photos = fetch_album_images(cleaned_photos_url)
+            photos = fetch_album_images(
+                cleaned_album_product_url or cleaned_photos_url,
+                album_id=cleaned_album_id or None,
+            )
         except Exception:
             photos = []
 

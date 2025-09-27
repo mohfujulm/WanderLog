@@ -31,7 +31,7 @@ class _TokenCache:
 
 
 class GooglePhotosClient:
-    """Client capable of fetching media items from a shared album."""
+    """Client capable of fetching media items and albums from Google Photos."""
 
     def __init__(
         self,
@@ -53,17 +53,17 @@ class GooglePhotosClient:
     def settings(self) -> GooglePhotosSettings:
         return self._settings
 
-    def list_media_items(self, shared_album_id: str) -> List[Dict]:
-        """Return all media items for the specified shared album."""
+    def list_media_items(self, album_id: str) -> List[Dict]:
+        """Return all media items for the specified album."""
 
-        if not shared_album_id:
-            raise GooglePhotosAPIError("A shared album id is required to call mediaItems.search")
+        if not album_id:
+            raise GooglePhotosAPIError("An album id is required to call mediaItems.search")
 
         media_items: List[Dict] = []
         page_token: Optional[str] = None
 
         while True:
-            payload: Dict[str, object] = {"albumId": shared_album_id, "pageSize": _DEFAULT_PAGE_SIZE}
+            payload: Dict[str, object] = {"albumId": album_id, "pageSize": _DEFAULT_PAGE_SIZE}
             if page_token:
                 payload["pageToken"] = page_token
 
@@ -81,6 +81,29 @@ class GooglePhotosClient:
 
         return media_items
 
+    def list_albums(self) -> List[Dict]:
+        """Return the albums available to the authenticated user."""
+
+        personal_albums = self._list_collection("/v1/albums", "albums")
+        shared_albums = self._list_collection("/v1/sharedAlbums", "sharedAlbums")
+
+        combined: List[Dict] = []
+        seen: set[str] = set()
+
+        for album in personal_albums + shared_albums:
+            if not isinstance(album, dict):
+                continue
+            album_id = album.get("id")
+            if album_id is None:
+                continue
+            identifier = str(album_id).strip()
+            if not identifier or identifier in seen:
+                continue
+            seen.add(identifier)
+            combined.append(album)
+
+        return combined
+
     # ------------------------------------------------------------------
     def _authenticated_post(self, path: str, *, json: Dict[str, object]) -> Response:
         token = self._get_access_token()
@@ -97,6 +120,47 @@ class GooglePhotosClient:
                 f"Google Photos API returned {response.status_code}: {response.text.strip()}"
             )
         return response
+
+    def _authenticated_get(self, path: str, *, params: Optional[Dict[str, object]] = None) -> Response:
+        token = self._get_access_token()
+        url = f"{self._settings.api_base_url}{path}"
+        headers = {"Authorization": f"Bearer {token}"}
+
+        try:
+            response = self._session.get(url, params=params, headers=headers, timeout=15)
+        except requests.RequestException as exc:  # pragma: no cover - network failure path
+            raise GooglePhotosAPIError("Error calling Google Photos API") from exc
+
+        if response.status_code >= 400:
+            raise GooglePhotosAPIError(
+                f"Google Photos API returned {response.status_code}: {response.text.strip()}"
+            )
+        return response
+
+    def _list_collection(self, path: str, key: str) -> List[Dict]:
+        items: List[Dict] = []
+        page_token: Optional[str] = None
+
+        while True:
+            params: Dict[str, object] = {"pageSize": _DEFAULT_PAGE_SIZE}
+            if page_token:
+                params["pageToken"] = page_token
+
+            response = self._authenticated_get(path, params=params)
+            data = self._extract_json(response)
+
+            collection = data.get(key, []) or []
+            if not isinstance(collection, list):
+                raise GooglePhotosAPIError(
+                    f"Unexpected {key} payload from Google Photos API"
+                )
+            items.extend(item for item in collection if isinstance(item, dict))
+
+            page_token = data.get("nextPageToken")
+            if not page_token:
+                break
+
+        return items
 
     def _get_access_token(self) -> str:
         now = self._clock()

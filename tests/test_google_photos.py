@@ -81,6 +81,7 @@ def test_google_photos_client_paginates_until_token_exhausted():
 
 def test_fetch_album_images_uses_cache(monkeypatch):
     google_photos._CACHE.clear()
+    google_photos._ALBUM_CACHE = None
 
     calls = {"count": 0}
 
@@ -107,6 +108,7 @@ def test_fetch_album_images_uses_cache(monkeypatch):
 
 def test_fetch_album_images_filters_avatars(monkeypatch):
     google_photos._CACHE.clear()
+    google_photos._ALBUM_CACHE = None
 
     items = [
         {"mimeType": "image/jpeg", "baseUrl": "https://example.com/avatar", "filename": "avatar.jpg"},
@@ -123,6 +125,57 @@ def test_fetch_album_images_filters_avatars(monkeypatch):
     results = google_photos.fetch_album_images("https://photos.app.goo.gl/demo")
 
     assert results == ["https://example.com/keep=w2048"]
+
+
+def test_fetch_album_images_by_album_id(monkeypatch):
+    google_photos._CACHE.clear()
+    google_photos._ALBUM_CACHE = None
+
+    client = SimpleNamespace(
+        settings=SimpleNamespace(shared_album_id="album"),
+        list_media_items=lambda album_id: [
+            {"mimeType": "image/jpeg", "baseUrl": "https://example.com/album"},
+        ],
+    )
+    monkeypatch.setattr(google_photos, "get_google_photos_client", lambda: client)
+
+    results = google_photos.fetch_album_images(album_id="custom-id")
+
+    assert results == ["https://example.com/album=w2048"]
+    assert "id:custom-id" in google_photos._CACHE
+
+
+def test_list_google_photos_albums_sorts_and_deduplicates(monkeypatch):
+    google_photos._ALBUM_CACHE = None
+
+    albums = [
+        {
+            "id": "2",
+            "title": "Weekend Road Trip",
+            "mediaItemsCount": "5",
+            "productUrl": "https://photos.example/albums/2",
+        },
+        {
+            "id": "1",
+            "title": "Beach Day",
+            "coverPhotoBaseUrl": "https://photos.example/cover",
+            "productUrl": "https://photos.example/albums/1",
+        },
+        {
+            "id": "1",
+            "title": "Duplicate",
+            "productUrl": "https://photos.example/albums/1b",
+        },
+    ]
+
+    client = SimpleNamespace(list_albums=lambda: albums)
+    monkeypatch.setattr(google_photos, "get_google_photos_client", lambda: client)
+
+    result = google_photos.list_google_photos_albums(force_refresh=True)
+
+    assert [album["id"] for album in result] == ["1", "2"]
+    assert result[0]["title"] == "Beach Day"
+    assert result[0]["cover_photo_url"] == "https://photos.example/cover=w2048"
 
 
 def test_oauth_helper_builds_expected_authorization_url():
