@@ -38,6 +38,16 @@
                 <button class="overlay-button" type="button" id="refreshMapButton">Refresh Map</button>
                 <button class="overlay-button" type="button" id="viewArchivedPointsButton">View Archived Points</button>
                 <button class="overlay-button" type="button" id="manageModeToggle" data-manage-mode-toggle data-manage-mode-active-class="overlay-button-active" data-manage-mode-label-default="Enter Manage Mode" data-manage-mode-label-active="Exit Manage Mode">Enter Manage Mode</button>
+                {% if google_photos_auth_config.enabled %}
+                <h2 class="overlay-section-title" id="googlePhotosTitle">Google Photos</h2>
+                <div class="google-photos-controls">
+                    <button class="overlay-button overlay-button-google" type="button" id="googlePhotosSignInButton" {% if google_photos_connected %}hidden{% endif %}>Sign in with Google</button>
+                    <button class="overlay-button" type="button" id="googlePhotosSignOutButton" {% if not google_photos_connected %}hidden{% endif %}>Disconnect Google Photos</button>
+                    <p class="overlay-helper-text overlay-helper-text-success" id="googlePhotosConnectedMessage" aria-live="polite" {% if not google_photos_connected %}hidden{% endif %}>Google Photos is connected. Shared album images will appear on your trips automatically.</p>
+                    <p class="overlay-helper-text" id="googlePhotosHelperText" {% if google_photos_connected %}hidden{% endif %}>Authorize WanderLog to access the shared Google Photos album tied to your journeys.</p>
+                    <p class="overlay-helper-text overlay-helper-text-success" id="googlePhotosTokenStatus" hidden aria-live="polite"></p>
+                </div>
+                {% endif %}
                 <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
                 <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
                 <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
@@ -237,6 +247,19 @@
             </div>
         </div>
     </div>
+    <div id="googlePhotosAlbumModal" class="modal-overlay" aria-hidden="true" hidden>
+        <div class="modal-content modal-content-large" role="dialog" aria-modal="true" aria-labelledby="googlePhotosAlbumModalTitle" tabindex="-1">
+            <h2 id="googlePhotosAlbumModalTitle">Select Google Photos album</h2>
+            <p id="googlePhotosAlbumModalDescription" class="modal-description">Choose an album to link with this trip.</p>
+            <div id="googlePhotosAlbumStatus" class="modal-status" role="status" aria-live="polite" hidden></div>
+            <div id="googlePhotosAlbumError" class="google-photos-album-error" role="alert" hidden></div>
+            <div id="googlePhotosAlbumEmpty" class="google-photos-album-empty" hidden>No albums were found in your Google Photos library.</div>
+            <div id="googlePhotosAlbumList" class="google-photos-album-list" role="listbox" aria-labelledby="googlePhotosAlbumModalTitle"></div>
+            <div class="modal-actions">
+                <button type="button" class="modal-button secondary" id="googlePhotosAlbumCancel">Cancel</button>
+            </div>
+        </div>
+    </div>
     <div id="tripProfileOverlay" class="trip-profile-overlay" aria-hidden="true" hidden>
         <article id="tripProfilePanel" class="trip-profile-panel" role="dialog" aria-modal="false" aria-labelledby="tripDetailTitle">
             <div id="tripDetailView" class="trip-detail trip-profile-content" hidden aria-hidden="true">
@@ -283,6 +306,20 @@
                         <label class="trip-profile-description-label" for="tripPhotosInput">Google Photos album link</label>
                         <input type="url" id="tripPhotosInput" name="google_photos_url" placeholder="https://photos.app.goo.gl/" autocomplete="off">
                         <p class="trip-profile-helper-text">Paste a shared Google Photos album link to display images for this trip.</p>
+                    </div>
+                    <div class="trip-profile-input-group trip-photos-album-group">
+                        <span class="trip-profile-description-label">Link a Google Photos album</span>
+                        <div class="trip-photos-album-picker">
+                            <button type="button" class="trip-photos-album-button" id="tripPhotosAlbumSelect">Choose album</button>
+                            <div class="trip-photos-album-summary" id="tripPhotosAlbumSummary" hidden>
+                                <div class="trip-photos-album-summary-text">
+                                    <span id="tripPhotosAlbumTitle"></span>
+                                    <span id="tripPhotosAlbumCount" class="trip-photos-album-count" hidden></span>
+                                </div>
+                                <button type="button" class="trip-photos-album-clear" id="tripPhotosAlbumClear">Remove</button>
+                            </div>
+                        </div>
+                        <p class="trip-profile-helper-text" id="tripPhotosAlbumHelper">Select an album from your Google Photos library to automatically load pictures for this trip.</p>
                     </div>
                     <div class="trip-profile-description-footer">
                         <div class="trip-profile-updated" id="tripDescriptionUpdated" hidden>
@@ -336,6 +373,13 @@
             google_timeline: "{{ url_for('static', filename='assets/marker-pin-blue.svg') }}",
             manual: "{{ url_for('static', filename='assets/marker-pin-orange.svg') }}",
             default: "{{ url_for('static', filename='assets/marker-pin-gray.svg') }}",
+        },
+        googlePhotosAuth: {
+            enabled: {{ google_photos_auth_config.enabled | tojson }},
+            startUrl: {{ google_photos_auth_config.start_url | tojson }},
+            logoutUrl: {{ google_photos_auth_config.logout_url | tojson }},
+            statusUrl: {{ google_photos_auth_config.status_url | tojson }},
+            connected: {{ google_photos_connected | tojson }},
         },
     };
 </script>

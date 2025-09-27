@@ -708,6 +708,102 @@ button, input, select { font-family: inherit; }
     color: #6b7280;
 }
 
+.trip-photos-album-group {
+    margin-top: 8px;
+}
+
+.trip-photos-album-picker {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+.trip-photos-album-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid #1a73e8;
+    background-color: #1a73e8;
+    color: #ffffff;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.trip-photos-album-button:hover,
+.trip-photos-album-button:focus-visible {
+    background-color: #0c57c9;
+    box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.25);
+    outline: none;
+    transform: translateY(-1px);
+}
+
+.trip-photos-album-button:disabled,
+.trip-photos-album-button[disabled] {
+    cursor: not-allowed;
+    background-color: rgba(26, 115, 232, 0.35);
+    border-color: rgba(26, 115, 232, 0.35);
+    box-shadow: none;
+    transform: none;
+}
+
+.trip-photos-album-summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(60, 64, 67, 0.16);
+    background: rgba(248, 250, 252, 0.95);
+}
+
+.trip-photos-album-summary-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.trip-photos-album-summary-text span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.trip-photos-album-count {
+    color: #5f6368;
+    font-size: 12px;
+}
+
+.trip-photos-album-clear {
+    background: transparent;
+    border: none;
+    color: #1a73e8;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    padding: 0;
+    transition: color 0.2s ease;
+}
+
+.trip-photos-album-clear:hover,
+.trip-photos-album-clear:focus-visible {
+    color: #0c57c9;
+    text-decoration: underline;
+    outline: none;
+}
+
+.trip-photos-album-clear:disabled {
+    cursor: not-allowed;
+    color: rgba(95, 99, 104, 0.5);
+    text-decoration: none;
+}
+
 .trip-profile-description textarea:focus {
     outline: none;
     border-color: #111827;
@@ -717,6 +813,89 @@ button, input, select { font-family: inherit; }
 .trip-profile-description textarea:disabled {
     opacity: 0.7;
     cursor: not-allowed;
+}
+
+.modal-content-large {
+    width: min(90vw, 640px);
+}
+
+.google-photos-album-list {
+    margin-top: 16px;
+    max-height: 360px;
+    overflow-y: auto;
+    display: grid;
+    gap: 12px;
+}
+
+.google-photos-album-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid transparent;
+    background: rgba(248, 250, 252, 0.95);
+    cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.google-photos-album-item:hover,
+.google-photos-album-item:focus-visible,
+.google-photos-album-item[aria-selected="true"] {
+    border-color: #1a73e8;
+    box-shadow: 0 0 0 3px rgba(26, 115, 232, 0.2);
+    outline: none;
+    transform: translateY(-1px);
+}
+
+.google-photos-album-cover {
+    width: 64px;
+    height: 64px;
+    border-radius: 10px;
+    object-fit: cover;
+    background: #eceff1;
+    flex-shrink: 0;
+}
+
+.google-photos-album-cover-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #5f6368;
+    font-size: 11px;
+    text-align: center;
+    padding: 4px;
+}
+
+.google-photos-album-details {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    text-align: left;
+}
+
+.google-photos-album-title {
+    font-weight: 600;
+    color: #202124;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.google-photos-album-meta {
+    font-size: 13px;
+    color: #5f6368;
+}
+
+.google-photos-album-error {
+    margin-top: 16px;
+    color: #b00020;
+}
+
+.google-photos-album-empty {
+    margin-top: 16px;
+    color: #5f6368;
 }
 
 .trip-profile-description-footer {
@@ -1192,6 +1371,25 @@ button, input, select { font-family: inherit; }
                     text-align: right;
                     width: 100%; }
 
+.overlay-button-google { display: flex;
+                         align-items: center;
+                         justify-content: center;
+                         gap: 8px;
+                         font-weight: 600;
+                         background: #1a73e8;
+                         color: #fff;
+                         box-shadow: 0 12px 24px rgba(26, 115, 232, 0.25); }
+
+.overlay-button-google:hover,
+.overlay-button-google:focus-visible { background: #0c57c9;
+                                       color: #fff; }
+
+.overlay-button-google:disabled,
+.overlay-button-google[disabled] { background: rgba(26,115,232,0.35);
+                                   color: rgba(255,255,255,0.75);
+                                   cursor: not-allowed;
+                                   box-shadow: none; }
+
 .overlay-section-title { align-self: stretch;
                          padding-top: 3px;
                          font-size: 13px;
@@ -1200,6 +1398,15 @@ button, input, select { font-family: inherit; }
                          text-transform: uppercase;
                          color: #444;
                          text-align: right; }
+
+.overlay-helper-text {   margin: 8px 0 16px;
+                         font-size: 13px;
+                         line-height: 1.6;
+                         color: #5c6470;
+                         text-align: right; }
+
+.overlay-helper-text-success { color: #0f7a49; }
+.overlay-helper-text-warning { color: #b45309; }
 
 .overlay-button:hover {     background: rgba(255,255,255,1);
                             transform: translateY(-2px);
