@@ -13,7 +13,7 @@ from requests import Response
 from app.config import GooglePhotosSettings, load_google_photos_settings
 
 _LOGGER = logging.getLogger(__name__)
-_DEFAULT_PAGE_SIZE = 100
+_DEFAULT_PAGE_SIZE = 50
 _TOKEN_EXPIRY_SAFETY_WINDOW = 60  # seconds
 
 
