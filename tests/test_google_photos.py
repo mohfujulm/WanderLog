@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
 
@@ -7,6 +8,7 @@ import app.routes as routes
 from app import create_app
 from app.config import GooglePhotosSettings
 from app.services.google_photos_api import GooglePhotosClient
+from app.services import google_photos_token_store as token_store
 from app.scripts import google_photos_oauth
 from app.utils import google_photos
 
@@ -42,7 +44,14 @@ class FakeSession:
 
 
 @pytest.fixture
-def app_with_oauth(monkeypatch):
+def token_store_path(tmp_path, monkeypatch):
+    path = tmp_path / "tokens.json"
+    monkeypatch.setenv("GOOGLE_PHOTOS_TOKEN_STORE_PATH", str(path))
+    return path
+
+
+@pytest.fixture
+def app_with_oauth(monkeypatch, token_store_path):
     monkeypatch.setenv("FLASK_SECRET_KEY", "test-secret")
     monkeypatch.setenv("GOOGLE_PHOTOS_CLIENT_ID", "client-id")
     monkeypatch.setenv("GOOGLE_PHOTOS_CLIENT_SECRET", "client-secret")
@@ -156,7 +165,7 @@ def test_google_photos_oauth_start_sets_state_and_redirects(app_with_oauth):
         assert flask_session[routes._OAUTH_STATE_SESSION_KEY]
 
 
-def test_google_photos_oauth_callback_exposes_tokens(monkeypatch, app_with_oauth):
+def test_google_photos_oauth_callback_persists_tokens(monkeypatch, app_with_oauth, token_store_path):
     class TokenResponse:
         status_code = 200
         text = "{}"
@@ -165,6 +174,12 @@ def test_google_photos_oauth_callback_exposes_tokens(monkeypatch, app_with_oauth
             return {"refresh_token": "refresh-token", "access_token": "access-token"}
 
     monkeypatch.setattr(routes.requests, "post", lambda url, data, timeout: TokenResponse())
+    resets = {"count": 0}
+
+    def fake_reset():
+        resets["count"] += 1
+
+    monkeypatch.setattr(routes, "reset_google_photos_client", fake_reset)
 
     client = app_with_oauth.test_client()
     with client.session_transaction() as flask_session:
@@ -176,8 +191,12 @@ def test_google_photos_oauth_callback_exposes_tokens(monkeypatch, app_with_oauth
     )
 
     assert response.status_code == 200
-    assert b"Refresh token" in response.data
-    assert b"refresh-token" in response.data
+    assert b"WanderLog saved your Google Photos credentials" in response.data
+    assert str(token_store_path).encode("utf-8") in response.data
+    stored = json.loads(token_store_path.read_text())
+    assert stored["refresh_token"] == "refresh-token"
+    assert stored["access_token"] == "access-token"
+    assert resets["count"] == 1
 
 
 def test_google_photos_oauth_callback_rejects_invalid_state(app_with_oauth):
@@ -189,3 +208,29 @@ def test_google_photos_oauth_callback_rejects_invalid_state(app_with_oauth):
     )
 
     assert response.status_code == 400
+
+
+def test_token_store_persists_refresh_token(token_store_path):
+    payload = token_store.save_tokens(
+        refresh_token="stored-refresh",
+        access_token="stored-access",
+        expires_in=3600,
+        clock=lambda: 1000,
+    )
+
+    assert payload["refresh_token"] == "stored-refresh"
+    on_disk = json.loads(token_store_path.read_text())
+    assert on_disk["refresh_token"] == "stored-refresh"
+    assert on_disk["access_token"] == "stored-access"
+    assert on_disk["expires_at"] == 4600
+
+
+def test_load_google_photos_settings_uses_saved_refresh_token(monkeypatch, token_store_path):
+    token_store.save_tokens(refresh_token="persisted", access_token="ignored")
+    monkeypatch.setenv("GOOGLE_PHOTOS_CLIENT_ID", "client-id")
+    monkeypatch.setenv("GOOGLE_PHOTOS_CLIENT_SECRET", "client-secret")
+    monkeypatch.delenv("GOOGLE_PHOTOS_REFRESH_TOKEN", raising=False)
+
+    settings = routes.load_google_photos_settings()
+
+    assert settings.refresh_token == "persisted"

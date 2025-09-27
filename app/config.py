@@ -8,6 +8,8 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
+from app.services.google_photos_token_store import load_refresh_token
+
 # Ensure values from a local .env file are available before any configuration
 # helpers attempt to read from the environment. ``load_dotenv`` is a no-op when
 # the file does not exist which keeps imports lightweight for other callers.
@@ -43,14 +45,19 @@ def load_google_photos_settings() -> GooglePhotosSettings:
     client_id = os.getenv("GOOGLE_PHOTOS_CLIENT_ID", "").strip()
     client_secret = os.getenv("GOOGLE_PHOTOS_CLIENT_SECRET", "").strip()
     refresh_token = os.getenv("GOOGLE_PHOTOS_REFRESH_TOKEN", "").strip()
+    if not refresh_token:
+        stored_refresh_token = load_refresh_token()
+        if stored_refresh_token:
+            refresh_token = stored_refresh_token
     shared_album_id = os.getenv("GOOGLE_PHOTOS_SHARED_ALBUM_ID")
     if shared_album_id:
         shared_album_id = shared_album_id.strip()
 
     if not client_id or not client_secret or not refresh_token:
         raise RuntimeError(
-            "Missing Google Photos OAuth configuration. Set GOOGLE_PHOTOS_CLIENT_ID, "
-            "GOOGLE_PHOTOS_CLIENT_SECRET, and GOOGLE_PHOTOS_REFRESH_TOKEN."
+            "Missing Google Photos OAuth configuration. Set GOOGLE_PHOTOS_CLIENT_ID and "
+            "GOOGLE_PHOTOS_CLIENT_SECRET, then connect Google Photos through the in-app "
+            "sign-in flow."
         )
 
     return GooglePhotosSettings(

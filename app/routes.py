@@ -16,6 +16,8 @@ from app.config import (
     load_google_photos_oauth_client_settings,
     load_google_photos_settings,
 )
+from app.services.google_photos_api import reset_google_photos_client
+from app.services.google_photos_token_store import get_token_store_path, save_tokens
 from app.utils.google_photos import fetch_album_images
 from app.utils.json_processing_functions import unique_visits_to_df
 from . import data_cache, trip_store
@@ -139,11 +141,22 @@ def google_photos_oauth_callback():
             access_token=access_token,
         )
 
+    expires_in = token_payload.get("expires_in")
+    save_tokens(
+        refresh_token=refresh_token,
+        access_token=access_token,
+        expires_in=expires_in,
+        token_payload=token_payload,
+    )
+    reset_google_photos_client()
+
     return render_template(
         "google_photos_oauth_result.html",
         access_token=access_token,
         refresh_token=refresh_token,
         token_payload=token_payload,
+        token_store_path=str(get_token_store_path()),
+        stored=True,
     )
 
 

@@ -159,3 +159,10 @@ def get_google_photos_client() -> GooglePhotosClient:
             _LOGGER.warning("Google Photos client is not configured: %s", exc)
             raise
     return _client_instance
+
+
+def reset_google_photos_client() -> None:
+    """Clear the cached GooglePhotosClient instance."""
+
+    global _client_instance
+    _client_instance = None
