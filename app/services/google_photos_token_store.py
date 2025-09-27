@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
 from time import time
@@ -12,6 +13,16 @@ from typing import Any, Dict, Optional
 _TOKEN_STORE_ENV_VAR = "GOOGLE_PHOTOS_TOKEN_STORE_PATH"
 _DEFAULT_FILENAME = "google_photos_tokens.json"
 _LOCK = Lock()
+
+
+@dataclass(frozen=True)
+class AccessTokenStatus:
+    """Description of the currently stored Google Photos access token."""
+
+    refresh_token_present: bool
+    access_token_present: bool
+    access_token_valid: bool
+    access_token_expires_at: Optional[float]
 
 
 def _candidate_directories():
@@ -146,7 +157,67 @@ def save_tokens(
     return payload
 
 
+def clear_tokens() -> bool:
+    """Remove the persisted token payload, if present."""
+
+    path = _resolve_store_path()
+
+    with _LOCK:
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            raise RuntimeError(
+                "Unable to delete the Google Photos token file at "
+                f"{path}. Set GOOGLE_PHOTOS_TOKEN_STORE_PATH to a writable "
+                "location and retry."
+            ) from exc
+
+    return True
+
+
+def get_access_token_status(*, clock=time) -> AccessTokenStatus:
+    """Return information about the stored access token and its expiry."""
+
+    data = load_tokens()
+
+    refresh_token = data.get("refresh_token")
+    refresh_token_present = isinstance(refresh_token, str) and bool(refresh_token.strip())
+
+    access_token = data.get("access_token")
+    access_token_present = isinstance(access_token, str) and bool(access_token.strip())
+
+    expires_at_raw = data.get("expires_at")
+    expires_at: Optional[float] = None
+    if expires_at_raw is not None:
+        try:
+            expires_at = float(expires_at_raw)
+        except (TypeError, ValueError):
+            expires_at = None
+
+    now: Optional[float]
+    try:
+        now = float(clock())
+    except (TypeError, ValueError):
+        now = None
+
+    access_token_valid = False
+    if access_token_present and expires_at is not None and now is not None:
+        access_token_valid = now < expires_at
+
+    return AccessTokenStatus(
+        refresh_token_present=refresh_token_present,
+        access_token_present=access_token_present,
+        access_token_valid=access_token_valid,
+        access_token_expires_at=expires_at,
+    )
+
+
 __all__ = [
+    "AccessTokenStatus",
+    "clear_tokens",
+    "get_access_token_status",
     "get_token_store_path",
     "load_refresh_token",
     "load_tokens",

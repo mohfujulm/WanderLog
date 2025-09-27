@@ -11,6 +11,7 @@ import requests
 from requests import Response
 
 from app.config import GooglePhotosSettings, load_google_photos_settings
+from app.services.google_photos_token_store import save_tokens
 
 _LOGGER = logging.getLogger(__name__)
 _DEFAULT_PAGE_SIZE = 50
@@ -215,6 +216,16 @@ class GooglePhotosClient:
             raise GooglePhotosAPIError("Invalid expires_in value in token response") from exc
 
         self._token_cache = _TokenCache(access_token=access_token, expires_at=expires_at)
+        try:
+            save_tokens(
+                refresh_token=self._settings.refresh_token,
+                access_token=access_token,
+                expires_in=expires_in,
+            )
+        except RuntimeError:
+            # Ignore persistence errors during refresh; callers can continue using
+            # the in-memory token cache and surface storage issues elsewhere.
+            pass
         return access_token
 
     def _extract_json(self, response: Response) -> Dict:

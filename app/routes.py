@@ -17,7 +17,12 @@ from app.config import (
     load_google_photos_settings,
 )
 from app.services.google_photos_api import GooglePhotosAPIError, reset_google_photos_client
-from app.services.google_photos_token_store import get_token_store_path, save_tokens
+from app.services.google_photos_token_store import (
+    clear_tokens,
+    get_access_token_status,
+    get_token_store_path,
+    save_tokens,
+)
 from app.utils.google_photos import fetch_album_images, list_google_photos_albums
 from app.utils.json_processing_functions import unique_visits_to_df
 from . import data_cache, trip_store
@@ -161,6 +166,25 @@ def google_photos_oauth_callback():
     )
 
 
+@main.route("/auth/google/logout", methods=["POST"])
+def google_photos_logout():
+    session.pop(_OAUTH_STATE_SESSION_KEY, None)
+    os.environ.pop("GOOGLE_PHOTOS_REFRESH_TOKEN", None)
+
+    try:
+        cleared = clear_tokens()
+    except RuntimeError as exc:
+        return jsonify(status="error", message=str(exc)), 500
+
+    reset_google_photos_client()
+
+    message = "Google Photos disconnected."
+    if not cleared:
+        message = "Google Photos credentials cleared from memory."
+
+    return jsonify(status="success", message=message, tokens_removed=cleared)
+
+
 @main.route('/api/google_photos/albums', methods=['GET'])
 def api_google_photos_albums():
     """Return the albums available to the authenticated Google Photos user."""
@@ -173,6 +197,20 @@ def api_google_photos_albums():
         return jsonify(status='error', message=str(exc)), 502
 
     return jsonify(albums)
+
+
+@main.route('/api/google_photos/token_status', methods=['GET'])
+def api_google_photos_token_status():
+    status = get_access_token_status()
+
+    return jsonify(
+        status='ok',
+        connected=_is_google_photos_connected(),
+        refresh_token_present=status.refresh_token_present,
+        access_token_present=status.access_token_present,
+        access_token_valid=status.access_token_valid,
+        access_token_expires_at=status.access_token_expires_at,
+    )
 
 
 def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
@@ -456,6 +494,8 @@ def index():
         google_photos_auth_config={
             "enabled": bool(oauth_settings),
             "start_url": url_for("main.google_photos_oauth_start") if oauth_settings else None,
+            "logout_url": url_for("main.google_photos_logout"),
+            "status_url": url_for("main.api_google_photos_token_status"),
         },
         google_photos_connected=_is_google_photos_connected(),
     )

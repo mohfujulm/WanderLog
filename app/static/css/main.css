@@ -1406,6 +1406,7 @@ button, input, select { font-family: inherit; }
                          text-align: right; }
 
 .overlay-helper-text-success { color: #0f7a49; }
+.overlay-helper-text-warning { color: #b45309; }
 
 .overlay-button:hover {     background: rgba(255,255,255,1);
                             transform: translateY(-2px);

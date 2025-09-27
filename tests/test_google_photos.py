@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
@@ -80,7 +81,7 @@ def app_with_oauth(monkeypatch, token_store_path):
     return app
 
 
-def test_google_photos_client_paginates_until_token_exhausted():
+def test_google_photos_client_paginates_until_token_exhausted(token_store_path):
     pages = [
         {"mediaItems": [{"id": "1"}], "nextPageToken": "next"},
         {"mediaItems": [{"id": "2"}, {"id": "3"}]},
@@ -98,7 +99,7 @@ def test_google_photos_client_paginates_until_token_exhausted():
     assert session.token_call_count == 1
 
 
-def test_google_photos_client_retries_without_page_size_on_400():
+def test_google_photos_client_retries_without_page_size_on_400(token_store_path):
     error_payload = {"error": {"message": "Page size must be less than or equal to 50."}}
     pages = [
         FakeResponse(error_payload, status_code=400, text=json.dumps(error_payload)),
@@ -217,7 +218,7 @@ def test_list_google_photos_albums_sorts_and_deduplicates(monkeypatch):
     assert result[0]["cover_photo_url"] == "https://photos.example/cover=w2048"
 
 
-def test_google_photos_client_album_listing_retries_without_page_size():
+def test_google_photos_client_album_listing_retries_without_page_size(token_store_path):
     error_payload = {"error": {"message": "Page size must be less than or equal to 50."}}
     album_pages = [
         FakeResponse(error_payload, status_code=400, text=json.dumps(error_payload)),
@@ -321,6 +322,43 @@ def test_google_photos_oauth_callback_rejects_invalid_state(app_with_oauth):
     )
 
     assert response.status_code == 400
+
+
+def test_google_photos_logout_clears_token_store_and_env(monkeypatch, app_with_oauth, token_store_path):
+    token_store.save_tokens(refresh_token="stored-refresh", access_token="stored-access", expires_in=3600)
+    monkeypatch.setenv("GOOGLE_PHOTOS_REFRESH_TOKEN", "env-refresh")
+
+    client = app_with_oauth.test_client()
+    response = client.post("/auth/google/logout")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["status"] == "success"
+    assert payload["tokens_removed"] is True
+    assert not token_store_path.exists()
+    assert "GOOGLE_PHOTOS_REFRESH_TOKEN" not in os.environ
+
+
+def test_google_photos_token_status_reports_validity(app_with_oauth, token_store_path):
+    now = time.time()
+    token_store.save_tokens(
+        refresh_token="stored-refresh",
+        access_token="stored-access",
+        expires_in=3600,
+        clock=lambda: now,
+    )
+
+    client = app_with_oauth.test_client()
+    response = client.get("/api/google_photos/token_status")
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["status"] == "ok"
+    assert payload["connected"] is True
+    assert payload["refresh_token_present"] is True
+    assert payload["access_token_present"] is True
+    assert payload["access_token_valid"] is True
+    assert payload["access_token_expires_at"] >= now
 
 
 def test_token_store_persists_refresh_token(token_store_path):

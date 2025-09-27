@@ -40,12 +40,13 @@
                 <button class="overlay-button" type="button" id="manageModeToggle" data-manage-mode-toggle data-manage-mode-active-class="overlay-button-active" data-manage-mode-label-default="Enter Manage Mode" data-manage-mode-label-active="Exit Manage Mode">Enter Manage Mode</button>
                 {% if google_photos_auth_config.enabled %}
                 <h2 class="overlay-section-title" id="googlePhotosTitle">Google Photos</h2>
-                {% if google_photos_connected %}
-                <p class="overlay-helper-text overlay-helper-text-success" aria-live="polite">Google Photos is connected. Shared album images will appear on your trips automatically.</p>
-                {% else %}
-                <button class="overlay-button overlay-button-google" type="button" id="googlePhotosSignInButton">Sign in with Google</button>
-                <p class="overlay-helper-text">Authorize WanderLog to access the shared Google Photos album tied to your journeys.</p>
-                {% endif %}
+                <div class="google-photos-controls">
+                    <button class="overlay-button overlay-button-google" type="button" id="googlePhotosSignInButton" {% if google_photos_connected %}hidden{% endif %}>Sign in with Google</button>
+                    <button class="overlay-button" type="button" id="googlePhotosSignOutButton" {% if not google_photos_connected %}hidden{% endif %}>Disconnect Google Photos</button>
+                    <p class="overlay-helper-text overlay-helper-text-success" id="googlePhotosConnectedMessage" aria-live="polite" {% if not google_photos_connected %}hidden{% endif %}>Google Photos is connected. Shared album images will appear on your trips automatically.</p>
+                    <p class="overlay-helper-text" id="googlePhotosHelperText" {% if google_photos_connected %}hidden{% endif %}>Authorize WanderLog to access the shared Google Photos album tied to your journeys.</p>
+                    <p class="overlay-helper-text overlay-helper-text-success" id="googlePhotosTokenStatus" hidden aria-live="polite"></p>
+                </div>
                 {% endif %}
                 <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
                 <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
@@ -376,6 +377,8 @@
         googlePhotosAuth: {
             enabled: {{ google_photos_auth_config.enabled | tojson }},
             startUrl: {{ google_photos_auth_config.start_url | tojson }},
+            logoutUrl: {{ google_photos_auth_config.logout_url | tojson }},
+            statusUrl: {{ google_photos_auth_config.status_url | tojson }},
             connected: {{ google_photos_connected | tojson }},
         },
     };

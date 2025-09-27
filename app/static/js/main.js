@@ -115,6 +115,11 @@ let googlePhotosAlbumStatusElement = null;
 let googlePhotosAlbumErrorElement = null;
 let googlePhotosAlbumEmptyElement = null;
 let googlePhotosAlbumModalController = null;
+let googlePhotosSignInButtonElement = null;
+let googlePhotosSignOutButtonElement = null;
+let googlePhotosConnectedMessageElement = null;
+let googlePhotosHelperMessageElement = null;
+let googlePhotosTokenStatusElement = null;
 let tripLocationSearchInput = null;
 let tripLocationSortFieldSelect = null;
 let tripLocationSortDirectionButton = null;
@@ -2197,6 +2202,149 @@ function showTripDescriptionStatus(message, isError = false) {
         tripDescriptionStatusElement.classList.add('trip-description-status-error');
     } else {
         tripDescriptionStatusElement.classList.remove('trip-description-status-error');
+    }
+}
+
+function updateGooglePhotosConnectionUI(connected) {
+    const authConfig = APP_CONFIG.googlePhotosAuth || {};
+    authConfig.connected = Boolean(connected);
+
+    if (googlePhotosSignInButtonElement) {
+        googlePhotosSignInButtonElement.hidden = Boolean(connected);
+        if (connected) {
+            googlePhotosSignInButtonElement.setAttribute('disabled', 'disabled');
+        } else {
+            googlePhotosSignInButtonElement.removeAttribute('disabled');
+        }
+    }
+
+    if (googlePhotosSignOutButtonElement) {
+        googlePhotosSignOutButtonElement.hidden = !connected;
+        googlePhotosSignOutButtonElement.disabled = false;
+    }
+
+    if (googlePhotosConnectedMessageElement) {
+        googlePhotosConnectedMessageElement.hidden = !connected;
+    }
+
+    if (googlePhotosHelperMessageElement) {
+        googlePhotosHelperMessageElement.hidden = Boolean(connected);
+    }
+
+    if (!connected) {
+        updateGooglePhotosTokenStatusDisplay(null);
+    }
+}
+
+function updateGooglePhotosTokenStatusDisplay(status) {
+    if (!googlePhotosTokenStatusElement) { return; }
+
+    googlePhotosTokenStatusElement.classList.remove('overlay-helper-text-success', 'overlay-helper-text-warning');
+
+    if (!status || !status.connected) {
+        googlePhotosTokenStatusElement.hidden = true;
+        googlePhotosTokenStatusElement.textContent = '';
+        return;
+    }
+
+    if (!status.access_token_present) {
+        googlePhotosTokenStatusElement.hidden = false;
+        googlePhotosTokenStatusElement.textContent = 'Awaiting the first Google Photos access token. WanderLog will request one automatically when it loads album data.';
+        googlePhotosTokenStatusElement.classList.add('overlay-helper-text-warning');
+        return;
+    }
+
+    if (status.access_token_valid) {
+        let expiryMessage = '';
+        const expiresAt = status.access_token_expires_at;
+        if (typeof expiresAt === 'number' && Number.isFinite(expiresAt)) {
+            const expiryDate = new Date(expiresAt * 1000);
+            expiryMessage = ` Token expires at ${expiryDate.toLocaleString()}.`;
+        }
+        googlePhotosTokenStatusElement.hidden = false;
+        googlePhotosTokenStatusElement.textContent = `Google Photos access token is valid.${expiryMessage}`;
+        googlePhotosTokenStatusElement.classList.add('overlay-helper-text-success');
+    } else {
+        googlePhotosTokenStatusElement.hidden = false;
+        googlePhotosTokenStatusElement.textContent = 'Stored Google Photos access token expired. WanderLog will refresh it automatically on the next request.';
+        googlePhotosTokenStatusElement.classList.add('overlay-helper-text-warning');
+    }
+}
+
+async function refreshGooglePhotosTokenStatus() {
+    const authConfig = APP_CONFIG.googlePhotosAuth || {};
+    if (!authConfig.statusUrl) { return; }
+
+    try {
+        const response = await fetch(authConfig.statusUrl, { headers: { Accept: 'application/json' } });
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || (result && result.status === 'error')) {
+            const message = result && result.message ? result.message : 'Failed to load Google Photos status.';
+            throw new Error(message);
+        }
+
+        updateGooglePhotosTokenStatusDisplay(result);
+    } catch (error) {
+        console.error('Failed to refresh Google Photos token status', error);
+    }
+}
+
+function initGooglePhotosControls() {
+    googlePhotosSignInButtonElement = document.getElementById('googlePhotosSignInButton');
+    googlePhotosSignOutButtonElement = document.getElementById('googlePhotosSignOutButton');
+    googlePhotosConnectedMessageElement = document.getElementById('googlePhotosConnectedMessage');
+    googlePhotosHelperMessageElement = document.getElementById('googlePhotosHelperText');
+    googlePhotosTokenStatusElement = document.getElementById('googlePhotosTokenStatus');
+
+    const authConfig = APP_CONFIG.googlePhotosAuth || {};
+    updateGooglePhotosConnectionUI(Boolean(authConfig.connected));
+
+    if (googlePhotosSignInButtonElement && !googlePhotosSignInButtonElement.dataset.initialised) {
+        googlePhotosSignInButtonElement.dataset.initialised = 'true';
+        googlePhotosSignInButtonElement.addEventListener('click', (event) => {
+            event.preventDefault();
+            const startUrl = authConfig.startUrl || '/auth/google/start';
+            window.location.href = startUrl;
+        });
+    }
+
+    if (googlePhotosSignOutButtonElement && !googlePhotosSignOutButtonElement.dataset.initialised) {
+        googlePhotosSignOutButtonElement.dataset.initialised = 'true';
+        googlePhotosSignOutButtonElement.addEventListener('click', async (event) => {
+            event.preventDefault();
+            if (googlePhotosSignOutButtonElement.disabled) { return; }
+
+            googlePhotosSignOutButtonElement.disabled = true;
+
+            try {
+                const logoutUrl = authConfig.logoutUrl || '/auth/google/logout';
+                const response = await fetch(logoutUrl, {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                });
+                const result = await response.json().catch(() => ({}));
+
+                if (!response.ok || (result && result.status === 'error')) {
+                    const message = result && result.message ? result.message : 'Failed to disconnect Google Photos.';
+                    throw new Error(message);
+                }
+
+                updateGooglePhotosConnectionUI(false);
+                updateGooglePhotosTokenStatusDisplay(null);
+                showStatus(result.message || 'Google Photos disconnected.');
+            } catch (error) {
+                console.error('Failed to disconnect Google Photos', error);
+                showStatus(error.message || 'Failed to disconnect Google Photos.', true);
+                if (googlePhotosSignOutButtonElement) {
+                    googlePhotosSignOutButtonElement.disabled = false;
+                }
+            }
+        });
+    }
+
+    if (authConfig.connected) {
+        refreshGooglePhotosTokenStatus();
     }
 }
 
@@ -6543,6 +6691,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     ensureArchivedPointsModal();
     initManageModeControls();
     initTripsPanel();
+    initGooglePhotosControls();
     await loadTripsPanelData();
     const storedMapState = loadStoredMapState();
     const storedFilterState = (storedMapState && typeof storedMapState.filters === 'object')
@@ -6605,19 +6754,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             event.preventDefault();
             refreshMap();
         });
-    }
-    const googlePhotosSignInButton = document.getElementById('googlePhotosSignInButton');
-    if (googlePhotosSignInButton) {
-        const authConfig = APP_CONFIG.googlePhotosAuth || {};
-        if (authConfig.connected) {
-            googlePhotosSignInButton.setAttribute('disabled', 'disabled');
-        } else {
-            googlePhotosSignInButton.addEventListener('click', (event) => {
-                event.preventDefault();
-                const startUrl = authConfig.startUrl || '/auth/google/start';
-                window.location.href = startUrl;
-            });
-        }
     }
     const viewArchivedPointsButton = document.getElementById('viewArchivedPointsButton');
     if (viewArchivedPointsButton) {
