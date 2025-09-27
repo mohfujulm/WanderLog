@@ -10,6 +10,12 @@ from dotenv import load_dotenv
 
 from app.services.google_photos_token_store import load_refresh_token
 
+GOOGLE_PHOTOS_READONLY_SCOPE = "https://www.googleapis.com/auth/photoslibrary.readonly"
+GOOGLE_PHOTOS_SHARING_SCOPE = "https://www.googleapis.com/auth/photoslibrary.sharing"
+DEFAULT_GOOGLE_PHOTOS_OAUTH_SCOPE = (
+    f"{GOOGLE_PHOTOS_READONLY_SCOPE} {GOOGLE_PHOTOS_SHARING_SCOPE}"
+)
+
 # Ensure values from a local .env file are available before any configuration
 # helpers attempt to read from the environment. ``load_dotenv`` is a no-op when
 # the file does not exist which keeps imports lightweight for other callers.
@@ -34,7 +40,7 @@ class GooglePhotosOAuthClientSettings:
 
     client_id: str
     client_secret: str
-    scope: str = "https://www.googleapis.com/auth/photoslibrary.readonly"
+    scope: str = DEFAULT_GOOGLE_PHOTOS_OAUTH_SCOPE
     auth_base_url: str = "https://accounts.google.com/o/oauth2/v2/auth"
     token_url: str = "https://oauth2.googleapis.com/token"
 

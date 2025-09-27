@@ -9,7 +9,7 @@ import pytest
 
 import app.routes as routes
 from app import create_app
-from app.config import GooglePhotosSettings
+from app.config import DEFAULT_GOOGLE_PHOTOS_OAUTH_SCOPE, GooglePhotosSettings
 from app.services.google_photos_api import GooglePhotosClient
 from app.services import google_photos_token_store as token_store
 from app.scripts import google_photos_oauth
@@ -273,6 +273,7 @@ def test_google_photos_oauth_start_sets_state_and_redirects(app_with_oauth):
     parsed = urlparse(response.headers["Location"])
     params = parse_qs(parsed.query)
     assert params["response_type"] == ["code"]
+    assert params["scope"] == [DEFAULT_GOOGLE_PHOTOS_OAUTH_SCOPE]
 
     with client.session_transaction() as flask_session:
         assert routes._OAUTH_STATE_SESSION_KEY in flask_session

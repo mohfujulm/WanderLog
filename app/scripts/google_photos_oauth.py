@@ -20,10 +20,12 @@ from typing import Optional
 import requests
 from dotenv import load_dotenv
 
+from app.config import DEFAULT_GOOGLE_PHOTOS_OAUTH_SCOPE
+
 load_dotenv()
 
 _AUTH_BASE_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-_DEFAULT_SCOPE = "https://www.googleapis.com/auth/photoslibrary.readonly"
+_DEFAULT_SCOPE = DEFAULT_GOOGLE_PHOTOS_OAUTH_SCOPE
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -164,7 +166,10 @@ def parse_args() -> argparse.Namespace:
         "--scope",
         dest="scope",
         default=_DEFAULT_SCOPE,
-        help="OAuth scope to request (default: photoslibrary.readonly)",
+        help=(
+            "OAuth scope to request (default: photoslibrary.readonly and "
+            "photoslibrary.sharing)"
+        ),
     )
     parser.add_argument(
         "--redirect-port",
