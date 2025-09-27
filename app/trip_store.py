@@ -34,6 +34,9 @@ class Trip:
     place_ids: List[str] = field(default_factory=list)
     description: str = ""
     google_photos_url: str = ""
+    google_photos_album_id: str = ""
+    google_photos_album_title: str = ""
+    google_photos_product_url: str = ""
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
 
@@ -82,6 +85,24 @@ def _normalise_trip_data(raw: dict) -> Optional[Trip]:
         photos_candidate = str(photos_raw)
         google_photos_url = photos_candidate.strip()
 
+    album_id_raw = raw.get("google_photos_album_id") or raw.get("photos_album_id")
+    if album_id_raw is None:
+        google_photos_album_id = ""
+    else:
+        google_photos_album_id = str(album_id_raw).strip()
+
+    album_title_raw = raw.get("google_photos_album_title") or raw.get("photos_album_title")
+    if album_title_raw is None:
+        google_photos_album_title = ""
+    else:
+        google_photos_album_title = str(album_title_raw).strip()
+
+    product_url_raw = raw.get("google_photos_product_url") or raw.get("photos_product_url")
+    if product_url_raw is None:
+        google_photos_product_url = ""
+    else:
+        google_photos_product_url = str(product_url_raw).strip()
+
     created_at = str(raw.get("created_at") or raw.get("created") or "").strip()
     if not created_at:
         created_at = _utcnow_iso()
@@ -98,6 +119,9 @@ def _normalise_trip_data(raw: dict) -> Optional[Trip]:
         updated_at=updated_at,
         description=description,
         google_photos_url=google_photos_url,
+        google_photos_album_id=google_photos_album_id,
+        google_photos_album_title=google_photos_album_title,
+        google_photos_product_url=google_photos_product_url,
     )
 
 
@@ -172,6 +196,9 @@ def create_trip(
     *,
     description: str = "",
     google_photos_url: str = "",
+    google_photos_album_id: str = "",
+    google_photos_album_title: str = "",
+    google_photos_product_url: str = "",
 ) -> Trip:
     """Create a new trip with ``name`` and persist it."""
 
@@ -185,6 +212,10 @@ def create_trip(
     raw_photos_url = str(google_photos_url or "")
     cleaned_photos_url = raw_photos_url.strip()
 
+    cleaned_album_id = str(google_photos_album_id or "").strip()
+    cleaned_album_title = str(google_photos_album_title or "").strip()
+    cleaned_product_url = str(google_photos_product_url or "").strip()
+
     _ensure_cache()
 
     trip = Trip(
@@ -192,6 +223,9 @@ def create_trip(
         name=cleaned_name,
         description=cleaned_description,
         google_photos_url=cleaned_photos_url,
+        google_photos_album_id=cleaned_album_id,
+        google_photos_album_title=cleaned_album_title,
+        google_photos_product_url=cleaned_product_url,
     )
     _trips_cache.append(trip)
     save_trips()
@@ -350,6 +384,9 @@ def update_trip_metadata(
     name: Optional[str] = None,
     description: Optional[str] = None,
     google_photos_url: Optional[str] = None,
+    google_photos_album_id: Optional[str] = None,
+    google_photos_album_title: Optional[str] = None,
+    google_photos_product_url: Optional[str] = None,
 ) -> Trip:
     """Update metadata for the trip identified by ``trip_id``."""
 
@@ -379,6 +416,27 @@ def update_trip_metadata(
         final_photos_url = raw_photos_url.strip()
         if final_photos_url != trip.google_photos_url:
             trip.google_photos_url = final_photos_url
+            updated = True
+
+    if google_photos_album_id is not None:
+        raw_album_id = str(google_photos_album_id or "")
+        final_album_id = raw_album_id.strip()
+        if final_album_id != trip.google_photos_album_id:
+            trip.google_photos_album_id = final_album_id
+            updated = True
+
+    if google_photos_album_title is not None:
+        raw_title = str(google_photos_album_title or "")
+        final_title = raw_title.strip()
+        if final_title != trip.google_photos_album_title:
+            trip.google_photos_album_title = final_title
+            updated = True
+
+    if google_photos_product_url is not None:
+        raw_product_url = str(google_photos_product_url or "")
+        final_product_url = raw_product_url.strip()
+        if final_product_url != trip.google_photos_product_url:
+            trip.google_photos_product_url = final_product_url
             updated = True
 
     if updated:

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Google Photos Authorization</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            color-scheme: light dark;
+        }
+        body {
+            font-family: "Raleway", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            margin: 0;
+            padding: 2.5rem 1.25rem;
+            background: #f4f5f8;
+            color: #1c1f26;
+        }
+        main {
+            max-width: 720px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 16px;
+            padding: 2.5rem;
+            box-shadow: 0 20px 40px rgba(31, 41, 55, 0.08);
+        }
+        h1 {
+            margin-top: 0;
+            font-size: 2rem;
+            letter-spacing: -0.03em;
+        }
+        .status {
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin-bottom: 2rem;
+            background: #eef6ff;
+            color: #1c3d5a;
+            border: 1px solid rgba(52, 120, 246, 0.2);
+        }
+        .status.error {
+            background: #fdecec;
+            color: #641e16;
+            border-color: rgba(220, 53, 69, 0.25);
+        }
+        code {
+            font-family: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 0.95rem;
+            background: rgba(15, 23, 42, 0.08);
+            border-radius: 6px;
+            padding: 0.2rem 0.4rem;
+        }
+        pre {
+            background: rgba(15, 23, 42, 0.06);
+            padding: 1rem;
+            border-radius: 12px;
+            overflow-x: auto;
+            font-size: 0.9rem;
+            line-height: 1.45;
+        }
+        dl {
+            margin: 0 0 2rem;
+            display: grid;
+            grid-template-columns: minmax(160px, 200px) 1fr;
+            gap: 0.5rem 1rem;
+        }
+        dt {
+            font-weight: 600;
+            color: #3a4459;
+        }
+        dd {
+            margin: 0;
+            word-break: break-all;
+        }
+        a.button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            background: #3478f6;
+            color: #fff;
+            padding: 0.75rem 1.5rem;
+            border-radius: 999px;
+            text-decoration: none;
+            font-weight: 600;
+            transition: background 0.2s ease;
+        }
+        a.button:hover,
+        a.button:focus {
+            background: #255fcb;
+        }
+        p {
+            line-height: 1.6;
+            margin-top: 0;
+        }
+        ul {
+            margin: 1rem 0 2rem;
+            padding-left: 1.5rem;
+        }
+        li + li {
+            margin-top: 0.25rem;
+        }
+    </style>
+</head>
+<body>
+    <main>
+        <h1>Google Photos authorization</h1>
+        {% if error %}
+        <div class="status error" role="alert">
+            <strong>Authorization failed:</strong>
+            <p>{{ error }}</p>
+            {% if exception %}<p><code>{{ exception }}</code></p>{% endif %}
+        </div>
+        <p>Return to WanderLog and try the sign-in flow again after resolving the issue above.</p>
+        {% else %}
+        <div class="status" role="status" aria-live="polite">
+            <strong>Success!</strong>
+            <p>WanderLog saved your Google Photos credentials and will reuse them automatically.</p>
+        </div>
+        {% if token_store_path %}
+        <p>The connection details are stored at <code>{{ token_store_path }}</code>. Keep this file safe.</p>
+        {% endif %}
+        <dl>
+            {% if refresh_token %}
+            <dt>Refresh token</dt>
+            <dd><code>{{ refresh_token }}</code></dd>
+            {% endif %}
+            {% if access_token %}
+            <dt>Access token</dt>
+            <dd><code>{{ access_token }}</code></dd>
+            {% endif %}
+        </dl>
+        <p>You can close this tab and return to WanderLog—the "Sign in with Google" button should now show as connected.</p>
+        {% if token_payload %}
+        <p>The full token response from Google is shown below for reference:</p>
+        <pre>{{ token_payload | tojson(indent=2) }}</pre>
+        {% endif %}
+        {% endif %}
+        <p><a class="button" href="{{ url_for('main.index') }}">Back to WanderLog</a></p>
+    </main>
+</body>
+</html>
