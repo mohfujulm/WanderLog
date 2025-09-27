@@ -14,10 +14,10 @@ from app.utils import google_photos
 
 
 class FakeResponse:
-    def __init__(self, payload, status_code=200):
+    def __init__(self, payload, status_code=200, text=None):
         self._payload = payload
         self.status_code = status_code
-        self.text = "payload"
+        self.text = "payload" if text is None else text
 
     def json(self):
         if isinstance(self._payload, Exception):
@@ -26,20 +26,37 @@ class FakeResponse:
 
 
 class FakeSession:
-    def __init__(self, media_pages):
+    def __init__(self, media_pages, album_pages=None):
         self.media_pages = list(media_pages)
+        self.album_pages = list(album_pages or [])
         self.media_call_count = 0
+        self.album_call_count = 0
         self.token_call_count = 0
+        self.media_requests = []
+        self.album_requests = []
 
     def post(self, url, json=None, headers=None, data=None, timeout=None):
         if json is None:
             self.token_call_count += 1
             return FakeResponse({"access_token": "token", "expires_in": 3600})
 
+        self.media_requests.append(dict(json) if json is not None else {})
         if self.media_call_count >= len(self.media_pages):
             pytest.fail("Unexpected extra mediaItems.search call")
         payload = self.media_pages[self.media_call_count]
         self.media_call_count += 1
+        if isinstance(payload, FakeResponse):
+            return payload
+        return FakeResponse(payload)
+
+    def get(self, url, params=None, headers=None, timeout=None):
+        self.album_requests.append(dict(params) if params is not None else {})
+        if self.album_call_count >= len(self.album_pages):
+            pytest.fail("Unexpected extra list call")
+        payload = self.album_pages[self.album_call_count]
+        self.album_call_count += 1
+        if isinstance(payload, FakeResponse):
+            return payload
         return FakeResponse(payload)
 
 
@@ -77,6 +94,26 @@ def test_google_photos_client_paginates_until_token_exhausted():
     assert [item["id"] for item in items] == ["1", "2", "3"]
     assert session.media_call_count == 2
     assert session.token_call_count == 1
+
+
+def test_google_photos_client_retries_without_page_size_on_400():
+    error_payload = {"error": {"message": "Page size must be less than or equal to 50."}}
+    pages = [
+        FakeResponse(error_payload, status_code=400, text=json.dumps(error_payload)),
+        {"mediaItems": [{"id": "1"}]},
+    ]
+    session = FakeSession(pages)
+    settings = GooglePhotosSettings(
+        client_id="id", client_secret="secret", refresh_token="refresh", shared_album_id="album"
+    )
+    client = GooglePhotosClient(settings, session=session, clock=lambda: 0)
+
+    items = client.list_media_items("album")
+
+    assert [item["id"] for item in items] == ["1"]
+    assert session.media_call_count == 2
+    assert session.media_requests[0].get("pageSize") == 50
+    assert "pageSize" not in session.media_requests[1]
 
 
 def test_fetch_album_images_uses_cache(monkeypatch):
@@ -176,6 +213,27 @@ def test_list_google_photos_albums_sorts_and_deduplicates(monkeypatch):
     assert [album["id"] for album in result] == ["1", "2"]
     assert result[0]["title"] == "Beach Day"
     assert result[0]["cover_photo_url"] == "https://photos.example/cover=w2048"
+
+
+def test_google_photos_client_album_listing_retries_without_page_size():
+    error_payload = {"error": {"message": "Page size must be less than or equal to 50."}}
+    album_pages = [
+        FakeResponse(error_payload, status_code=400, text=json.dumps(error_payload)),
+        {"albums": [{"id": "1", "title": "Album"}]},
+        {"sharedAlbums": []},
+    ]
+    session = FakeSession([], album_pages=album_pages)
+    settings = GooglePhotosSettings(
+        client_id="id", client_secret="secret", refresh_token="refresh", shared_album_id="album"
+    )
+    client = GooglePhotosClient(settings, session=session, clock=lambda: 0)
+
+    albums = client.list_albums()
+
+    assert [album.get("id") for album in albums] == ["1"]
+    assert session.album_call_count == 3
+    assert session.album_requests[0].get("pageSize") == 50
+    assert "pageSize" not in session.album_requests[1]
 
 
 def test_oauth_helper_builds_expected_authorization_url():

@@ -14,6 +14,7 @@ from app.config import GooglePhotosSettings, load_google_photos_settings
 
 _LOGGER = logging.getLogger(__name__)
 _DEFAULT_PAGE_SIZE = 50
+_PAGE_SIZE_ERROR_SUBSTRING = "page size must be less than or equal to 50"
 _TOKEN_EXPIRY_SAFETY_WINDOW = 60  # seconds
 
 
@@ -61,13 +62,22 @@ class GooglePhotosClient:
 
         media_items: List[Dict] = []
         page_token: Optional[str] = None
+        use_page_size = True
 
         while True:
-            payload: Dict[str, object] = {"albumId": album_id, "pageSize": _DEFAULT_PAGE_SIZE}
+            payload: Dict[str, object] = {"albumId": album_id}
+            if use_page_size:
+                payload["pageSize"] = _DEFAULT_PAGE_SIZE
             if page_token:
                 payload["pageToken"] = page_token
 
-            response = self._authenticated_post("/v1/mediaItems:search", json=payload)
+            try:
+                response = self._authenticated_post("/v1/mediaItems:search", json=payload)
+            except GooglePhotosAPIError as exc:
+                if use_page_size and _should_retry_without_page_size(exc):
+                    use_page_size = False
+                    continue
+                raise
             data = self._extract_json(response)
 
             items = data.get("mediaItems", []) or []
@@ -140,13 +150,22 @@ class GooglePhotosClient:
     def _list_collection(self, path: str, key: str) -> List[Dict]:
         items: List[Dict] = []
         page_token: Optional[str] = None
+        use_page_size = True
 
         while True:
-            params: Dict[str, object] = {"pageSize": _DEFAULT_PAGE_SIZE}
+            params: Dict[str, object] = {}
+            if use_page_size:
+                params["pageSize"] = _DEFAULT_PAGE_SIZE
             if page_token:
                 params["pageToken"] = page_token
 
-            response = self._authenticated_get(path, params=params)
+            try:
+                response = self._authenticated_get(path, params=params)
+            except GooglePhotosAPIError as exc:
+                if use_page_size and _should_retry_without_page_size(exc):
+                    use_page_size = False
+                    continue
+                raise
             data = self._extract_json(response)
 
             collection = data.get(key, []) or []
@@ -207,6 +226,11 @@ class GooglePhotosClient:
         if not isinstance(payload, dict):
             raise GooglePhotosAPIError("Unexpected payload returned by Google Photos API")
         return payload
+
+
+def _should_retry_without_page_size(error: GooglePhotosAPIError) -> bool:
+    message = str(error).lower()
+    return _PAGE_SIZE_ERROR_SUBSTRING in message
 
 
 _client_instance: Optional[GooglePhotosClient] = None
