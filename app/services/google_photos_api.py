@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
 from requests import Response
@@ -17,6 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 _DEFAULT_PAGE_SIZE = 50
 _PAGE_SIZE_ERROR_SUBSTRING = "page size must be less than or equal to 50"
 _TOKEN_EXPIRY_SAFETY_WINDOW = 60  # seconds
+_INSUFFICIENT_SCOPE_SUBSTRING = "insufficient authentication scopes"
 
 
 class GooglePhotosAPIError(RuntimeError):
@@ -127,9 +128,7 @@ class GooglePhotosClient:
             raise GooglePhotosAPIError("Error calling Google Photos API") from exc
 
         if response.status_code >= 400:
-            raise GooglePhotosAPIError(
-                f"Google Photos API returned {response.status_code}: {response.text.strip()}"
-            )
+            raise self._build_api_error(response)
         return response
 
     def _authenticated_get(self, path: str, *, params: Optional[Dict[str, object]] = None) -> Response:
@@ -143,9 +142,7 @@ class GooglePhotosClient:
             raise GooglePhotosAPIError("Error calling Google Photos API") from exc
 
         if response.status_code >= 400:
-            raise GooglePhotosAPIError(
-                f"Google Photos API returned {response.status_code}: {response.text.strip()}"
-            )
+            raise self._build_api_error(response)
         return response
 
     def _list_collection(self, path: str, key: str) -> List[Dict]:
@@ -166,6 +163,12 @@ class GooglePhotosClient:
                 if use_page_size and _should_retry_without_page_size(exc):
                     use_page_size = False
                     continue
+                if path.endswith("sharedAlbums") and _is_insufficient_scope_message(str(exc)):
+                    _LOGGER.info(
+                        "Skipping shared album listing because Google Photos access lacks the "
+                        "sharing scope"
+                    )
+                    break
                 raise
             data = self._extract_json(response)
 
@@ -238,10 +241,58 @@ class GooglePhotosClient:
             raise GooglePhotosAPIError("Unexpected payload returned by Google Photos API")
         return payload
 
+    def _build_api_error(self, response: Response) -> GooglePhotosAPIError:
+        details = _extract_error_details(response)
+        message = details.get("message") if isinstance(details, dict) else None
+        if response.status_code == 403 and _is_insufficient_scope_details(details):
+            reported = message or str(details.get("status", "")).strip()
+            if not reported:
+                reported = "Request had insufficient authentication scopes."
+            return GooglePhotosAPIError(
+                "Google Photos access is missing the sharing permission required for shared "
+                "albums (Google reported: "
+                f"{reported}). Disconnect Google Photos from the WanderLog settings page and "
+                "sign in again so the read-only and sharing scopes can be granted."
+            )
+
+        if message:
+            return GooglePhotosAPIError(
+                f"Google Photos API returned {response.status_code}: {message}"
+            )
+
+        return GooglePhotosAPIError(
+            f"Google Photos API returned {response.status_code}: {response.text.strip()}"
+        )
+
 
 def _should_retry_without_page_size(error: GooglePhotosAPIError) -> bool:
     message = str(error).lower()
     return _PAGE_SIZE_ERROR_SUBSTRING in message
+
+
+def _extract_error_details(response: Response) -> Dict[str, Any]:
+    try:
+        payload = response.json()
+    except ValueError:
+        return {}
+
+    if not isinstance(payload, dict):
+        return {}
+
+    error = payload.get("error")
+    if isinstance(error, dict):
+        return error
+    return {}
+
+
+def _is_insufficient_scope_details(details: Dict[str, Any]) -> bool:
+    message = str(details.get("message", "")).lower()
+    status = str(details.get("status", "")).lower()
+    return _INSUFFICIENT_SCOPE_SUBSTRING in message or _INSUFFICIENT_SCOPE_SUBSTRING in status
+
+
+def _is_insufficient_scope_message(message: str) -> bool:
+    return _INSUFFICIENT_SCOPE_SUBSTRING in message.lower()
 
 
 _client_instance: Optional[GooglePhotosClient] = None

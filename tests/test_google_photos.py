@@ -10,7 +10,7 @@ import pytest
 import app.routes as routes
 from app import create_app
 from app.config import DEFAULT_GOOGLE_PHOTOS_OAUTH_SCOPE, GooglePhotosSettings
-from app.services.google_photos_api import GooglePhotosClient
+from app.services.google_photos_api import GooglePhotosAPIError, GooglePhotosClient
 from app.services import google_photos_token_store as token_store
 from app.scripts import google_photos_oauth
 from app.utils import google_photos
@@ -237,6 +237,53 @@ def test_google_photos_client_album_listing_retries_without_page_size(token_stor
     assert session.album_call_count == 3
     assert session.album_requests[0].get("pageSize") == 50
     assert "pageSize" not in session.album_requests[1]
+
+
+def test_google_photos_client_skips_shared_albums_without_scope(token_store_path):
+    error_payload = {
+        "error": {
+            "code": 403,
+            "message": "Request had insufficient authentication scopes.",
+            "status": "PERMISSION_DENIED",
+        }
+    }
+    album_pages = [
+        {"albums": [{"id": "1", "title": "Album"}]},
+        FakeResponse(error_payload, status_code=403, text=json.dumps(error_payload)),
+    ]
+    session = FakeSession([], album_pages=album_pages)
+    settings = GooglePhotosSettings(
+        client_id="id", client_secret="secret", refresh_token="refresh", shared_album_id="album"
+    )
+    client = GooglePhotosClient(settings, session=session, clock=lambda: 0)
+
+    albums = client.list_albums()
+
+    assert [album.get("id") for album in albums] == ["1"]
+    assert session.album_call_count == 2
+
+
+def test_google_photos_client_explains_missing_scope_error(token_store_path):
+    error_payload = {
+        "error": {
+            "code": 403,
+            "message": "Request had insufficient authentication scopes.",
+            "status": "PERMISSION_DENIED",
+        }
+    }
+    media_pages = [FakeResponse(error_payload, status_code=403, text=json.dumps(error_payload))]
+    session = FakeSession(media_pages, album_pages=[])
+    settings = GooglePhotosSettings(
+        client_id="id", client_secret="secret", refresh_token="refresh", shared_album_id="album"
+    )
+    client = GooglePhotosClient(settings, session=session, clock=lambda: 0)
+
+    with pytest.raises(GooglePhotosAPIError) as exc:
+        client.list_media_items("album")
+
+    message = str(exc.value)
+    assert "sharing" in message
+    assert "sign in again" in message
 
 
 def test_oauth_helper_builds_expected_authorization_url():
