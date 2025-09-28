@@ -2747,6 +2747,10 @@ async function openGooglePhotosModal() {
     googlePhotosState.modal.selectedAlbumId = tripDescriptionState.lastAppliedAlbumId || googlePhotosState.currentAlbumId || '';
     googlePhotosState.modal.selectedAlbumTitle = tripDescriptionState.lastAppliedAlbumTitle || googlePhotosState.currentAlbumTitle || '';
     googlePhotosState.modal.selectedAlbumUrl = tripDescriptionState.lastAppliedPhotosUrl || googlePhotosState.currentAlbumUrl || '';
+    const cleanedId = googlePhotosState.modal.selectedAlbumId
+        ? googlePhotosState.modal.selectedAlbumId.trim()
+        : '';
+    googlePhotosState.modal.selectedAlbumId = cleanedId;
     const defaultHighlights = (cleanedId
         && cleanedId === (tripDescriptionState.lastAppliedAlbumId || googlePhotosState.currentAlbumId || ''))
         ? tripDescriptionState.lastAppliedHighlights
