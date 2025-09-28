@@ -8,6 +8,10 @@ from . import data_cache, trip_store
 def create_app():
     load_dotenv()
 
+    if os.getenv("FLASK_ENV") not in {"production", "prod"}:
+        os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")
+        os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
+
     app = Flask(__name__)
 
     secret_key = (
