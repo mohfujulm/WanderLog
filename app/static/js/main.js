@@ -2422,7 +2422,7 @@ function updateGooglePhotosControls() {
     }
 
     if (tripPhotosManageButton) {
-        const canManage = isAuthenticated && hasTrip && isEditing && !isSaving && !isChecking;
+        const canManage = hasTrip && !isSaving && !isChecking;
         tripPhotosManageButton.disabled = !canManage;
     }
 
