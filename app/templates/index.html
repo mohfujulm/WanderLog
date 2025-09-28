@@ -237,6 +237,32 @@
             </div>
         </div>
     </div>
+    <div id="googlePhotosModal" class="modal-overlay" aria-hidden="true" hidden>
+        <div class="modal-content google-photos-modal" role="dialog" aria-modal="true" aria-labelledby="googlePhotosModalTitle" tabindex="-1">
+            <h2 id="googlePhotosModalTitle">Manage Google Photos album</h2>
+            <div class="google-photos-modal-body">
+                <div id="googlePhotosModalAuthPrompt" class="google-photos-modal-message" hidden>
+                    <p>Sign in with your Google account to browse albums and pick highlight photos.</p>
+                    <button type="button" class="modal-button primary" id="googlePhotosModalSignIn">Sign in with Google</button>
+                </div>
+                <div id="googlePhotosModalLoading" class="google-photos-modal-message" hidden>Loading…</div>
+                <div id="googlePhotosModalError" class="google-photos-modal-message google-photos-modal-error" role="alert" hidden></div>
+                <div id="googlePhotosAlbumSection" class="google-photos-section" hidden>
+                    <h3 class="google-photos-heading">Select an album</h3>
+                    <div id="googlePhotosAlbumList" class="google-photos-album-list" role="list"></div>
+                </div>
+                <div id="googlePhotosPhotosSection" class="google-photos-section" hidden>
+                    <h3 class="google-photos-heading">Choose highlight photos</h3>
+                    <p id="googlePhotosSelectionHint" class="google-photos-hint">Select the photos you want to feature on this trip.</p>
+                    <div id="googlePhotosPhotoGrid" class="google-photos-photo-grid" role="list"></div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="modal-button secondary" id="googlePhotosModalCancel">Cancel</button>
+                <button type="button" class="modal-button primary" id="googlePhotosModalSave" disabled>Save</button>
+            </div>
+        </div>
+    </div>
     <div id="tripProfileOverlay" class="trip-profile-overlay" aria-hidden="true" hidden>
         <article id="tripProfilePanel" class="trip-profile-panel" role="dialog" aria-modal="false" aria-labelledby="tripDetailTitle">
             <div id="tripDetailView" class="trip-detail trip-profile-content" hidden aria-hidden="true">
@@ -268,9 +294,18 @@
                 <div id="tripPhotosSection" class="trip-profile-photos" aria-live="polite" hidden>
                     <div class="trip-profile-photos-header">
                         <h3 class="trip-profile-photos-title">Trip photos</h3>
+                        <div class="trip-profile-photos-actions">
+                            <button type="button" class="trip-profile-photos-button" id="googlePhotosSignInButton">Sign in with Google</button>
+                            <button type="button" class="trip-profile-photos-button" id="googlePhotosSignOutButton" hidden>Sign out</button>
+                            <button type="button" class="trip-profile-photos-button trip-profile-photos-manage" id="tripPhotosManageButton" disabled>Manage album</button>
+                            <button type="button" class="trip-profile-photos-button trip-profile-photos-remove" id="tripPhotosRemoveButton" hidden>Remove album</button>
+                        </div>
+                    </div>
+                    <div class="trip-profile-photos-info" id="tripPhotosAlbumInfo">
+                        <p id="tripPhotosAlbumName" class="trip-profile-photos-album">No album linked.</p>
                         <a id="tripPhotosLink" class="trip-profile-photos-link" href="#" target="_blank" rel="noopener" hidden>Open album</a>
                     </div>
-                    <p id="tripPhotosEmpty" class="trip-profile-photos-empty">Add a Google Photos album link to see photos here.</p>
+                    <p id="tripPhotosEmpty" class="trip-profile-photos-empty">Connect a Google Photos album to showcase highlights from your trip.</p>
                     <div id="tripPhotosGallery" class="trip-profile-photos-gallery" role="list" hidden></div>
                 </div>
                 <div class="trip-profile-updated trip-profile-updated-readonly" id="tripDescriptionUpdatedReadOnly" hidden>
@@ -279,10 +314,8 @@
                 <form id="tripDescriptionForm" class="trip-profile-description" novalidate hidden>
                     <label class="trip-profile-description-label" for="tripDescriptionInput">Description</label>
                     <textarea id="tripDescriptionInput" name="description" rows="6" maxlength="2000" placeholder="Describe this trip"></textarea>
-                    <div class="trip-profile-input-group">
-                        <label class="trip-profile-description-label" for="tripPhotosInput">Google Photos album link</label>
-                        <input type="url" id="tripPhotosInput" name="google_photos_url" placeholder="https://photos.app.goo.gl/" autocomplete="off">
-                        <p class="trip-profile-helper-text">Paste a shared Google Photos album link to display images for this trip.</p>
+                    <div class="trip-profile-input-group trip-profile-album-editor">
+                        <p class="trip-profile-helper-text">Use the Manage album button to link Google Photos and select highlight images for this trip.</p>
                     </div>
                     <div class="trip-profile-description-footer">
                         <div class="trip-profile-updated" id="tripDescriptionUpdated" hidden>

@@ -2,12 +2,22 @@
 
 import json
 import os
+import re
 
 import pandas as pd
-from flask import Blueprint, jsonify, render_template, request
+from flask import (
+    Blueprint,
+    current_app,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 
 from app.map_utils import dataframe_to_markers, filter_dataframe_by_date_range
-from app.utils.google_photos import fetch_album_images
+from app.utils import google_photos
 from app.utils.json_processing_functions import unique_visits_to_df
 from . import data_cache, trip_store
 
@@ -19,6 +29,51 @@ MAX_TRIP_NAME_LENGTH = 120
 MAX_TRIP_DESCRIPTION_LENGTH = 2000
 MAX_LOCATION_DESCRIPTION_LENGTH = 2000
 MAX_TRIP_PHOTOS_URL_LENGTH = 1000
+
+_GOOGLE_CREDENTIALS_SESSION_KEY = 'google_photos_credentials'
+_GOOGLE_STATE_SESSION_KEY = 'google_photos_oauth_state'
+
+
+def _serialise_highlights(raw_highlights) -> list[dict]:
+    """Return a JSON-friendly representation of highlight entries."""
+
+    results: list[dict] = []
+    if not isinstance(raw_highlights, list):
+        return results
+
+    for entry in raw_highlights:
+        if not isinstance(entry, dict):
+            continue
+
+        media_id = str(entry.get('id') or '').strip()
+        if not media_id:
+            continue
+
+        base_url_raw = entry.get('base_url') or entry.get('baseUrl') or ''
+        base_url = str(base_url_raw).strip()
+
+        product_url_raw = entry.get('product_url') or entry.get('productUrl') or ''
+        product_url = str(product_url_raw).strip()
+
+        filename_raw = entry.get('filename') or ''
+        filename = str(filename_raw).strip()
+
+        mime_type_raw = entry.get('mime_type') or entry.get('mimeType') or ''
+        mime_type = str(mime_type_raw).strip()
+
+        payload: dict[str, str] = {'id': media_id}
+        if base_url:
+            payload['base_url'] = base_url
+        if product_url:
+            payload['product_url'] = product_url
+        if filename:
+            payload['filename'] = filename
+        if mime_type:
+            payload['mime_type'] = mime_type
+
+        results.append(payload)
+
+    return results
 
 
 def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
@@ -38,6 +93,7 @@ def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
             location_count = len(place_ids)
         else:
             location_count = 0
+        highlights = _serialise_highlights(trip.get('google_photos_highlights') or [])
         return {
             'id': trip.get('id', ''),
             'name': trip.get('name', ''),
@@ -47,11 +103,15 @@ def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
             'latest_location_date': latest_location_date,
             'description': trip.get('description', ''),
             'google_photos_url': trip.get('google_photos_url', ''),
-            'photo_count': len(trip.get('photos', []) or []),
+            'google_photos_album_id': trip.get('google_photos_album_id', ''),
+            'google_photos_album_title': trip.get('google_photos_album_title', ''),
+            'google_photos_highlights': highlights,
+            'photo_count': len(highlights),
         }
 
     place_ids = getattr(trip, 'place_ids', []) or []
     location_count = len(place_ids) if isinstance(place_ids, list) else 0
+    highlights = _serialise_highlights(getattr(trip, 'google_photos_highlights', []) or [])
 
     return {
         'id': getattr(trip, 'id', ''),
@@ -62,8 +122,127 @@ def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
         'latest_location_date': latest_location_date,
         'description': getattr(trip, 'description', ''),
         'google_photos_url': getattr(trip, 'google_photos_url', ''),
-        'photo_count': len(getattr(trip, 'photos', []) or []),
+        'google_photos_album_id': getattr(trip, 'google_photos_album_id', ''),
+        'google_photos_album_title': getattr(trip, 'google_photos_album_title', ''),
+        'google_photos_highlights': highlights,
+        'photo_count': len(highlights),
     }
+
+
+def _ensure_high_res_base_url(url: str) -> str:
+    """Normalise Google Photos base URLs to a high-resolution variant."""
+
+    cleaned = (url or '').strip()
+    if not cleaned:
+        return ''
+
+    cleaned = re.sub(r'=w\d+', '=w2048', cleaned)
+    cleaned = re.sub(r'-w\d+', '-w2048', cleaned)
+    cleaned = re.sub(r'=h\d+', '=h2048', cleaned)
+    cleaned = re.sub(r'-h\d+', '-h2048', cleaned)
+
+    has_width = bool(re.search(r'([=-])w\d+', cleaned))
+    has_height = bool(re.search(r'([=-])h\d+', cleaned))
+
+    if not has_width:
+        if '=' in cleaned:
+            if cleaned.endswith('='):
+                cleaned = f'{cleaned}w2048'
+            else:
+                cleaned = f'{cleaned}-w2048'
+        else:
+            cleaned = f'{cleaned}=w2048'
+
+    if not has_height:
+        if '=' in cleaned:
+            if cleaned.endswith('='):
+                cleaned = f'{cleaned}h2048'
+            else:
+                cleaned = f'{cleaned}-h2048'
+        else:
+            cleaned = f'{cleaned}-h2048'
+
+    return cleaned
+
+
+def _build_highlight_urls(highlights: list[dict]) -> list[str]:
+    urls: list[str] = []
+    for entry in highlights:
+        if not isinstance(entry, dict):
+            continue
+        base_url = entry.get('base_url') or entry.get('baseUrl')
+        if not base_url:
+            continue
+        cleaned = str(base_url).strip()
+        if cleaned:
+            urls.append(_ensure_high_res_base_url(cleaned))
+    return urls
+
+
+def _normalise_highlight_payload(raw_highlights, *, default_product_url: str = '') -> list[dict]:
+    """Normalise highlight payloads received from the client."""
+
+    if not isinstance(raw_highlights, list):
+        return []
+
+    cleaned: list[dict] = []
+    for entry in raw_highlights:
+        if not isinstance(entry, dict):
+            continue
+
+        media_id = str(entry.get('id') or '').strip()
+        if not media_id:
+            continue
+
+        base_url_raw = entry.get('base_url') or entry.get('baseUrl') or ''
+        base_url = _ensure_high_res_base_url(base_url_raw)
+        if not base_url:
+            continue
+
+        product_url_raw = entry.get('product_url') or entry.get('productUrl') or default_product_url
+        product_url = str(product_url_raw or '').strip()
+
+        filename = str(entry.get('filename') or '').strip()
+        mime_type = str(entry.get('mime_type') or entry.get('mimeType') or '').strip()
+
+        highlight_entry: dict[str, str] = {'id': media_id, 'base_url': base_url}
+        if product_url:
+            highlight_entry['product_url'] = product_url
+        if filename:
+            highlight_entry['filename'] = filename
+        if mime_type:
+            highlight_entry['mime_type'] = mime_type
+
+        cleaned.append(highlight_entry)
+
+    return cleaned
+
+
+def _get_google_credentials():
+    """Return stored Google Photos credentials if available."""
+
+    raw_credentials = session.get(_GOOGLE_CREDENTIALS_SESSION_KEY)
+    if not isinstance(raw_credentials, dict):
+        return None
+
+    try:
+        credentials = google_photos.credentials_from_dict(raw_credentials)
+    except google_photos.GooglePhotosError:
+        session.pop(_GOOGLE_CREDENTIALS_SESSION_KEY, None)
+        return None
+
+    if credentials is None:
+        session.pop(_GOOGLE_CREDENTIALS_SESSION_KEY, None)
+        return None
+
+    try:
+        google_photos.ensure_valid_credentials(credentials)
+    except Exception:
+        session.pop(_GOOGLE_CREDENTIALS_SESSION_KEY, None)
+        return None
+
+    session[_GOOGLE_CREDENTIALS_SESSION_KEY] = google_photos.credentials_to_dict(credentials)
+    return credentials
 
 
 def _clean_string(value: object) -> str:
@@ -289,6 +468,124 @@ def index():
     """Render the landing page."""
 
     return render_template("index.html", mapbox_token=MAPBOX_ACCESS_TOKEN)
+
+
+@main.route('/auth/google')
+def google_photos_login():
+    """Initiate the Google Photos OAuth flow."""
+
+    if not google_photos.is_configured():
+        return redirect(url_for('main.index', googleAuth='unavailable'))
+
+    redirect_uri = url_for('main.google_photos_callback', _external=True)
+
+    try:
+        flow = google_photos.build_flow(redirect_uri)
+    except google_photos.GooglePhotosError:
+        return redirect(url_for('main.index', googleAuth='unavailable'))
+
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='consent',
+    )
+    session[_GOOGLE_STATE_SESSION_KEY] = state
+    return redirect(authorization_url)
+
+
+@main.route('/auth/google/callback')
+def google_photos_callback():
+    """Handle the Google Photos OAuth redirect."""
+
+    stored_state = session.pop(_GOOGLE_STATE_SESSION_KEY, None)
+
+    if not google_photos.is_configured():
+        return redirect(url_for('main.index', googleAuth='unavailable'))
+
+    redirect_uri = url_for('main.google_photos_callback', _external=True)
+
+    try:
+        flow = google_photos.build_flow(redirect_uri, state=stored_state)
+        flow.fetch_token(authorization_response=request.url)
+    except Exception:
+        session.pop(_GOOGLE_CREDENTIALS_SESSION_KEY, None)
+        return redirect(url_for('main.index', googleAuth='error'))
+
+    session[_GOOGLE_CREDENTIALS_SESSION_KEY] = google_photos.credentials_to_dict(flow.credentials)
+    return redirect(url_for('main.index', googleAuth='success'))
+
+
+@main.route('/auth/google/session', methods=['GET', 'DELETE'])
+def google_photos_session():
+    """Return the authentication status or revoke credentials."""
+
+    if request.method == 'DELETE':
+        session.pop(_GOOGLE_CREDENTIALS_SESSION_KEY, None)
+        session.pop(_GOOGLE_STATE_SESSION_KEY, None)
+        return jsonify(status='success')
+
+    credentials = _get_google_credentials()
+    authenticated = credentials is not None
+    scopes = list(credentials.scopes) if authenticated else []
+    return jsonify({'authenticated': authenticated, 'scopes': scopes})
+
+
+@main.route('/api/google/photos/albums', methods=['GET'])
+def api_google_photos_albums():
+    """Return the authenticated user's Google Photos albums."""
+
+    credentials = _get_google_credentials()
+    if credentials is None:
+        return jsonify(status='error', message='Google Photos account not connected.'), 401
+
+    try:
+        albums = google_photos.list_albums(credentials)
+    except google_photos.GooglePhotosError as exc:
+        return jsonify(status='error', message=str(exc)), 502
+
+    payload = [
+        {
+            'id': album.id,
+            'title': album.title,
+            'product_url': album.product_url,
+            'cover_photo_base_url': _ensure_high_res_base_url(album.cover_photo_base_url),
+            'media_items_count': album.media_items_count,
+        }
+        for album in albums
+    ]
+
+    return jsonify(status='success', albums=payload)
+
+
+@main.route('/api/google/photos/albums/<album_id>/media', methods=['GET'])
+def api_google_photos_album_media(album_id: str):
+    """Return media items for ``album_id``."""
+
+    credentials = _get_google_credentials()
+    if credentials is None:
+        return jsonify(status='error', message='Google Photos account not connected.'), 401
+
+    cleaned_album_id = (album_id or '').strip()
+    if not cleaned_album_id:
+        return jsonify(status='error', message='A valid album ID is required.'), 400
+
+    try:
+        media_items = google_photos.list_media_items(credentials, cleaned_album_id)
+    except google_photos.GooglePhotosError as exc:
+        return jsonify(status='error', message=str(exc)), 502
+
+    payload = [
+        {
+            'id': item.id,
+            'base_url': _ensure_high_res_base_url(item.base_url),
+            'product_url': item.product_url,
+            'mime_type': item.mime_type,
+            'filename': item.filename,
+        }
+        for item in media_items
+    ]
+
+    return jsonify(status='success', media_items=payload)
 
 
 @main.route('/api/update_timeline', methods=['POST'])
@@ -637,20 +934,14 @@ def api_get_trip(trip_id: str):
         for index, place_id in enumerate(cleaned_ids)
     ]
 
-    photos_url = serialised_trip.get('google_photos_url') or getattr(trip, 'google_photos_url', '')
-    photos: list[str] = []
-    if photos_url:
-        try:
-            photos = fetch_album_images(photos_url)
-        except Exception:
-            photos = []
-
-    serialised_trip['photo_count'] = len(photos)
+    highlights = serialised_trip.get('google_photos_highlights') or []
+    photo_urls = _build_highlight_urls(highlights)
+    serialised_trip['photo_count'] = len(photo_urls)
 
     return jsonify({
         'trip': serialised_trip,
         'locations': locations,
-        'photos': photos,
+        'photos': photo_urls,
     })
 
 
@@ -749,20 +1040,71 @@ def api_update_trip(trip_id: str):
     except KeyError:
         return jsonify(status='error', message='Trip not found.'), 404
 
-    photos: list[str] = []
-    photos_url = getattr(trip, 'google_photos_url', '')
-    if photos_url:
-        try:
-            photos = fetch_album_images(photos_url)
-        except Exception:
-            photos = []
-
     serialised = _serialise_trip(trip)
+    highlights = serialised.get('google_photos_highlights') or []
+    photos = _build_highlight_urls(highlights)
     serialised['photo_count'] = len(photos)
 
     return jsonify(
         status='success',
         message='Trip updated successfully.',
+        trip=serialised,
+        photos=photos,
+    )
+
+
+@main.route('/api/trips/<trip_id>/photos', methods=['PATCH'])
+def api_update_trip_photos(trip_id: str):
+    """Update the Google Photos album and highlights for ``trip_id``."""
+
+    identifier = (trip_id or '').strip()
+    if not identifier:
+        return jsonify(status='error', message='A valid trip ID is required.'), 400
+
+    payload = request.get_json(silent=True) or {}
+
+    album_id_value = payload.get('album_id') or payload.get('google_photos_album_id')
+    album_title_value = payload.get('album_title') or payload.get('google_photos_album_title')
+    album_url_value = (
+        payload.get('album_url')
+        or payload.get('album_product_url')
+        or payload.get('google_photos_url')
+        or ''
+    )
+
+    cleaned_album_id = str(album_id_value or '').strip()
+    cleaned_album_title = str(album_title_value or '').strip()
+
+    if album_url_value is None:
+        album_url_value = ''
+    if not isinstance(album_url_value, str):
+        album_url_value = str(album_url_value)
+    cleaned_album_url = album_url_value.strip()
+
+    highlights_raw = payload.get('highlights') or payload.get('google_photos_highlights') or []
+    cleaned_highlights = _normalise_highlight_payload(highlights_raw, default_product_url=cleaned_album_url)
+
+    try:
+        trip = trip_store.update_trip_metadata(
+            identifier,
+            google_photos_url=cleaned_album_url if cleaned_album_id else '',
+            google_photos_album_id=cleaned_album_id,
+            google_photos_album_title=cleaned_album_title,
+            google_photos_highlights=cleaned_highlights,
+        )
+    except ValueError as exc:
+        return jsonify(status='error', message=str(exc)), 400
+    except KeyError:
+        return jsonify(status='error', message='Trip not found.'), 404
+
+    serialised = _serialise_trip(trip)
+    highlights = serialised.get('google_photos_highlights') or []
+    photos = _build_highlight_urls(highlights)
+    serialised['photo_count'] = len(photos)
+
+    return jsonify(
+        status='success',
+        message='Trip photos updated successfully.',
         trip=serialised,
         photos=photos,
     )
@@ -785,36 +1127,51 @@ def api_create_trip():
             message=f'Trip name must be {MAX_TRIP_NAME_LENGTH} characters or fewer.'
         ), 400
 
-    photos_url_value = payload.get('google_photos_url')
-    cleaned_photos_url = ''
-    if photos_url_value is not None:
-        if not isinstance(photos_url_value, str):
-            photos_url_value = str(photos_url_value)
-        cleaned_photos_url = photos_url_value.strip()
-        if cleaned_photos_url and not cleaned_photos_url.lower().startswith(('http://', 'https://')):
-            return jsonify(status='error', message='Provide a valid Google Photos link.'), 400
-        if len(cleaned_photos_url) > MAX_TRIP_PHOTOS_URL_LENGTH:
-            return jsonify(
-                status='error',
-                message=(
-                    'Google Photos link must be '
-                    f'{MAX_TRIP_PHOTOS_URL_LENGTH} characters or fewer.'
-                ),
-            ), 400
+    photos_url_value = (
+        payload.get('album_url')
+        or payload.get('album_product_url')
+        or payload.get('google_photos_url')
+        or ''
+    )
+    if photos_url_value is None:
+        photos_url_value = ''
+    if not isinstance(photos_url_value, str):
+        photos_url_value = str(photos_url_value)
+    cleaned_photos_url = photos_url_value.strip()
+    if cleaned_photos_url and not cleaned_photos_url.lower().startswith(('http://', 'https://')):
+        return jsonify(status='error', message='Provide a valid Google Photos link.'), 400
+    if len(cleaned_photos_url) > MAX_TRIP_PHOTOS_URL_LENGTH:
+        return jsonify(
+            status='error',
+            message=(
+                'Google Photos link must be '
+                f'{MAX_TRIP_PHOTOS_URL_LENGTH} characters or fewer.'
+            ),
+        ), 400
+
+    album_id_value = payload.get('album_id') or payload.get('google_photos_album_id')
+    album_title_value = payload.get('album_title') or payload.get('google_photos_album_title')
+
+    cleaned_album_id = str(album_id_value or '').strip()
+    cleaned_album_title = str(album_title_value or '').strip()
+
+    highlights_raw = payload.get('highlights') or payload.get('google_photos_highlights') or []
+    cleaned_highlights = _normalise_highlight_payload(highlights_raw, default_product_url=cleaned_photos_url)
 
     try:
-        trip = trip_store.create_trip(name, google_photos_url=cleaned_photos_url)
+        trip = trip_store.create_trip(
+            name,
+            google_photos_url=cleaned_photos_url if cleaned_album_id else cleaned_photos_url,
+            google_photos_album_id=cleaned_album_id,
+            google_photos_album_title=cleaned_album_title,
+            google_photos_highlights=cleaned_highlights,
+        )
     except ValueError as exc:
         return jsonify(status='error', message=str(exc)), 400
 
-    photos: list[str] = []
-    if cleaned_photos_url:
-        try:
-            photos = fetch_album_images(cleaned_photos_url)
-        except Exception:
-            photos = []
-
     serialised = _serialise_trip(trip)
+    highlights = serialised.get('google_photos_highlights') or []
+    photos = _build_highlight_urls(highlights)
     serialised['photo_count'] = len(photos)
 
     return jsonify(

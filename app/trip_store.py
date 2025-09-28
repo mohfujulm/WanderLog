@@ -34,6 +34,9 @@ class Trip:
     place_ids: List[str] = field(default_factory=list)
     description: str = ""
     google_photos_url: str = ""
+    google_photos_album_id: str = ""
+    google_photos_album_title: str = ""
+    google_photos_highlights: List[dict] = field(default_factory=list)
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
 
@@ -48,6 +51,48 @@ def _ensure_cache() -> None:
 
     if _trips_cache is None:
         load_trips()
+
+
+def _normalise_highlights(raw) -> List[dict]:
+    """Return a normalised list of highlight dictionaries."""
+
+    highlights: List[dict] = []
+    if not isinstance(raw, list):
+        return highlights
+
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+
+        media_id = str(entry.get("id") or "").strip()
+        if not media_id:
+            continue
+
+        base_url_raw = entry.get("base_url") or entry.get("baseUrl") or ""
+        base_url = str(base_url_raw).strip()
+
+        product_url_raw = entry.get("product_url") or entry.get("productUrl") or ""
+        product_url = str(product_url_raw).strip()
+
+        filename_raw = entry.get("filename") or ""
+        filename = str(filename_raw).strip()
+
+        mime_type_raw = entry.get("mime_type") or entry.get("mimeType") or ""
+        mime_type = str(mime_type_raw).strip()
+
+        highlight: dict = {"id": media_id}
+        if base_url:
+            highlight["base_url"] = base_url
+        if product_url:
+            highlight["product_url"] = product_url
+        if filename:
+            highlight["filename"] = filename
+        if mime_type:
+            highlight["mime_type"] = mime_type
+
+        highlights.append(highlight)
+
+    return highlights
 
 
 def _normalise_trip_data(raw: dict) -> Optional[Trip]:
@@ -82,6 +127,16 @@ def _normalise_trip_data(raw: dict) -> Optional[Trip]:
         photos_candidate = str(photos_raw)
         google_photos_url = photos_candidate.strip()
 
+    album_id_raw = raw.get("google_photos_album_id") or ""
+    google_photos_album_id = str(album_id_raw).strip()
+
+    album_title_raw = raw.get("google_photos_album_title") or ""
+    google_photos_album_title = str(album_title_raw).strip()
+
+    highlights = _normalise_highlights(
+        raw.get("google_photos_highlights") or raw.get("google_photos_photos") or []
+    )
+
     created_at = str(raw.get("created_at") or raw.get("created") or "").strip()
     if not created_at:
         created_at = _utcnow_iso()
@@ -98,6 +153,9 @@ def _normalise_trip_data(raw: dict) -> Optional[Trip]:
         updated_at=updated_at,
         description=description,
         google_photos_url=google_photos_url,
+        google_photos_album_id=google_photos_album_id,
+        google_photos_album_title=google_photos_album_title,
+        google_photos_highlights=highlights,
     )
 
 
@@ -172,6 +230,9 @@ def create_trip(
     *,
     description: str = "",
     google_photos_url: str = "",
+    google_photos_album_id: str = "",
+    google_photos_album_title: str = "",
+    google_photos_highlights: Optional[List[dict]] = None,
 ) -> Trip:
     """Create a new trip with ``name`` and persist it."""
 
@@ -187,11 +248,18 @@ def create_trip(
 
     _ensure_cache()
 
+    album_id = str(google_photos_album_id or "").strip()
+    album_title = str(google_photos_album_title or "").strip()
+    highlights = _normalise_highlights(google_photos_highlights or [])
+
     trip = Trip(
         id=uuid4().hex,
         name=cleaned_name,
         description=cleaned_description,
         google_photos_url=cleaned_photos_url,
+        google_photos_album_id=album_id,
+        google_photos_album_title=album_title,
+        google_photos_highlights=highlights,
     )
     _trips_cache.append(trip)
     save_trips()
@@ -350,6 +418,9 @@ def update_trip_metadata(
     name: Optional[str] = None,
     description: Optional[str] = None,
     google_photos_url: Optional[str] = None,
+    google_photos_album_id: Optional[str] = None,
+    google_photos_album_title: Optional[str] = None,
+    google_photos_highlights: Optional[List[dict]] = None,
 ) -> Trip:
     """Update metadata for the trip identified by ``trip_id``."""
 
@@ -379,6 +450,24 @@ def update_trip_metadata(
         final_photos_url = raw_photos_url.strip()
         if final_photos_url != trip.google_photos_url:
             trip.google_photos_url = final_photos_url
+            updated = True
+
+    if google_photos_album_id is not None:
+        cleaned_album_id = str(google_photos_album_id or "").strip()
+        if cleaned_album_id != trip.google_photos_album_id:
+            trip.google_photos_album_id = cleaned_album_id
+            updated = True
+
+    if google_photos_album_title is not None:
+        cleaned_album_title = str(google_photos_album_title or "").strip()
+        if cleaned_album_title != trip.google_photos_album_title:
+            trip.google_photos_album_title = cleaned_album_title
+            updated = True
+
+    if google_photos_highlights is not None:
+        highlights = _normalise_highlights(google_photos_highlights)
+        if highlights != trip.google_photos_highlights:
+            trip.google_photos_highlights = highlights
             updated = True
 
     if updated:

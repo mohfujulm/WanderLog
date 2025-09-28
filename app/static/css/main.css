@@ -559,6 +559,95 @@ button, input, select { font-family: inherit; }
     letter-spacing: 0.08em;
 }
 
+.trip-profile-photos-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.trip-profile-photos-button {
+    border: none;
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background: rgba(37, 99, 235, 0.08);
+    color: #1f2937;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.15);
+    flex-shrink: 0;
+}
+
+.trip-profile-photos-button:hover:not(:disabled) {
+    background: rgba(37, 99, 235, 0.16);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.18);
+}
+
+.trip-profile-photos-button:focus-visible {
+    outline: 2px solid rgba(37, 99, 235, 0.55);
+    outline-offset: 2px;
+}
+
+.trip-profile-photos-button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: inset 0 0 0 1px rgba(107, 114, 128, 0.3);
+}
+
+.trip-profile-photos-manage {
+    background: #2563eb;
+    color: #fff;
+    box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25);
+}
+
+.trip-profile-photos-manage:hover:not(:disabled) {
+    background: #1d4ed8;
+    box-shadow: 0 8px 18px rgba(37, 99, 235, 0.35);
+}
+
+.trip-profile-photos-manage:focus-visible {
+    outline-color: rgba(37, 99, 235, 0.7);
+}
+
+.trip-profile-photos-remove {
+    background: rgba(248, 113, 113, 0.2);
+    color: #7f1d1d;
+    box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.35);
+}
+
+.trip-profile-photos-remove:hover:not(:disabled) {
+    background: rgba(248, 113, 113, 0.3);
+    box-shadow: 0 6px 16px rgba(248, 113, 113, 0.25);
+}
+
+.trip-profile-photos-remove:focus-visible {
+    outline-color: rgba(220, 38, 38, 0.6);
+}
+
+.trip-profile-photos-info {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.trip-profile-photos-album {
+    font-size: 14px;
+    font-weight: 600;
+    color: #374151;
+    word-break: break-word;
+}
+
 .trip-profile-photos-link {
     font-size: 13px;
     font-weight: 600;
@@ -1476,6 +1565,191 @@ button, input, select { font-family: inherit; }
                     flex-direction: column;
                     gap: 16px;
                     outline: none; }
+
+.google-photos-modal {
+    width: min(820px, 100%);
+    max-height: min(90vh, 760px);
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.google-photos-modal-body {
+    padding: 24px;
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.google-photos-modal .modal-actions {
+    padding: 16px 24px;
+    background: #f9fafb;
+    border-top: 1px solid rgba(229, 231, 235, 0.9);
+    margin-top: 0;
+}
+
+.google-photos-modal-message {
+    text-align: center;
+    font-size: 14px;
+    color: #4b5563;
+    padding: 12px 16px;
+    background: rgba(249, 250, 251, 0.85);
+    border-radius: 12px;
+}
+
+.google-photos-modal-error {
+    color: #7f1d1d;
+    background: rgba(254, 226, 226, 0.85);
+    border: 1px solid rgba(220, 38, 38, 0.35);
+}
+
+.google-photos-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.google-photos-heading {
+    font-size: 15px;
+    font-weight: 600;
+    color: #111827;
+}
+
+.google-photos-hint {
+    font-size: 13px;
+    color: #6b7280;
+}
+
+.google-photos-album-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+.google-photos-album-item {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(17, 24, 39, 0.08);
+    background: #ffffff;
+    cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    text-align: left;
+}
+
+.google-photos-album-item:hover,
+.google-photos-album-item:focus-visible {
+    border-color: rgba(37, 99, 235, 0.55);
+    box-shadow: 0 6px 18px rgba(37, 99, 235, 0.15);
+    outline: none;
+}
+
+.google-photos-album-item.is-selected {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+    background: rgba(239, 246, 255, 0.85);
+}
+
+.google-photos-album-cover {
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #f3f4f6;
+}
+
+.google-photos-album-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.google-photos-album-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: #111827;
+}
+
+.google-photos-album-count {
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.google-photos-photo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
+}
+
+.google-photos-photo-item {
+    position: relative;
+    border: none;
+    padding: 0;
+    border-radius: 14px;
+    overflow: hidden;
+    cursor: pointer;
+    background: #f3f4f6;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    aspect-ratio: 4 / 3;
+}
+
+.google-photos-photo-item:hover,
+.google-photos-photo-item:focus-visible {
+    box-shadow: 0 10px 24px rgba(17, 24, 39, 0.18);
+    transform: translateY(-2px);
+    outline: none;
+}
+
+.google-photos-photo-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.google-photos-photo-item.is-selected::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 3px solid rgba(37, 99, 235, 0.85);
+    box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.45);
+    border-radius: inherit;
+    pointer-events: none;
+}
+
+.google-photos-photo-item.is-selected::before {
+    content: '✓';
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    background: #2563eb;
+    color: #fff;
+    border-radius: 999px;
+    padding: 2px 6px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+@media (max-width: 768px) {
+    .google-photos-modal {
+        width: min(100%, 640px);
+    }
+
+    .google-photos-album-list {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    }
+
+    .google-photos-photo-grid {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    }
+}
 
 .modal-content h2 { font-size: 20px;
                     margin-bottom: 4px; }
