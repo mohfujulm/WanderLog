@@ -402,6 +402,17 @@ def google_auth_start():
         prompt='consent',
     )
     session['google_oauth_state'] = state
+    current_app.logger.info(
+        "Starting Google OAuth flow",
+        extra={
+            'google_oauth': {
+                'phase': 'start',
+                'state': state,
+                'authorization_url': authorization_url,
+                'session_keys': list(session.keys()),
+            }
+        },
+    )
     return redirect(authorization_url)
 
 
@@ -420,6 +431,18 @@ def google_auth_callback():
     flow = _create_google_flow()
 
     try:
+        current_app.logger.info(
+            "Fetching Google OAuth token",
+            extra={
+                'google_oauth': {
+                    'phase': 'callback_fetch_token',
+                    'request_url': request.url,
+                    'request_args': request.args.to_dict(flat=False),
+                    'stored_state': state,
+                    'incoming_state': incoming_state,
+                }
+            },
+        )
         flow.fetch_token(authorization_response=request.url)
     except Exception:
         current_app.logger.exception('Failed to fetch Google OAuth token')
@@ -428,6 +451,25 @@ def google_auth_callback():
         return redirect(url_for('main.index'))
 
     credentials = flow.credentials
+    try:
+        credentials_payload = json.loads(credentials.to_json())
+    except Exception:
+        credentials_payload = {
+            'token': getattr(credentials, 'token', None),
+            'refresh_token': getattr(credentials, 'refresh_token', None),
+            'scopes': getattr(credentials, 'scopes', None),
+            'expiry': getattr(credentials, 'expiry', None),
+        }
+
+    current_app.logger.info(
+        "Received Google OAuth credentials",
+        extra={
+            'google_oauth': {
+                'phase': 'callback_credentials',
+                'credentials': credentials_payload,
+            }
+        },
+    )
     token_request = google_requests.Request(session=requests.Session())
 
     try:
@@ -448,6 +490,16 @@ def google_auth_callback():
         session.pop('google_oauth_state', None)
         return redirect(url_for('main.index'))
 
+    current_app.logger.info(
+        "Verified Google ID token",
+        extra={
+            'google_oauth': {
+                'phase': 'callback_verify',
+                'id_info': id_info,
+                'user': user,
+            }
+        },
+    )
     session['google_user'] = user
     session.pop('google_oauth_state', None)
 
