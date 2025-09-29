@@ -72,6 +72,21 @@
                     </span>
                     <span data-auth-button-label>{{ auth_button_label }}</span>
                 </a>
+                <button
+                    type="button"
+                    class="overlay-button auth-card-albums-button"
+                    data-auth-albums-button
+                    data-auth-albums-default-label="View Google Photos Albums"
+                    data-auth-albums-loading-label="Loading albums..."
+                    {% if not google_user %}hidden disabled{% endif %}
+                >
+                    <span data-auth-albums-button-label>View Google Photos Albums</span>
+                </button>
+                <div class="auth-card-albums" data-auth-albums-section hidden>
+                    <p class="auth-card-albums-empty" data-auth-albums-empty hidden>No albums found for this account.</p>
+                    <p class="auth-card-albums-error" data-auth-albums-error role="alert" hidden></p>
+                    <ul class="auth-card-albums-list" data-auth-albums-list hidden></ul>
+                </div>
             </section>
             {% endif %}
             <div class="overlay-tabs-wrapper">

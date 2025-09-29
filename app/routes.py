@@ -2,6 +2,7 @@
 
 import json
 import os
+from typing import Optional
 
 import pandas as pd
 import requests
@@ -18,6 +19,7 @@ from flask import (
 )
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
+from google.oauth2.credentials import Credentials as GoogleCredentials
 from google_auth_oauthlib.flow import Flow
 
 from app.map_utils import dataframe_to_markers, filter_dataframe_by_date_range
@@ -33,6 +35,13 @@ MAX_TRIP_NAME_LENGTH = 120
 MAX_TRIP_DESCRIPTION_LENGTH = 2000
 MAX_LOCATION_DESCRIPTION_LENGTH = 2000
 MAX_TRIP_PHOTOS_URL_LENGTH = 1000
+
+_GOOGLE_OAUTH_SCOPES = [
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "https://www.googleapis.com/auth/photoslibrary.readonly",
+]
 
 
 def _is_google_auth_configured() -> bool:
@@ -63,14 +72,75 @@ def _create_google_flow() -> Flow:
                 "redirect_uris": [redirect_uri],
             }
         },
-        scopes=[
-            "openid",
-            "https://www.googleapis.com/auth/userinfo.email",
-            "https://www.googleapis.com/auth/userinfo.profile",
-        ],
+        scopes=list(_GOOGLE_OAUTH_SCOPES),
     )
     flow.redirect_uri = redirect_uri
     return flow
+
+
+def _clear_google_credentials() -> None:
+    session.pop('google_credentials', None)
+
+
+def _store_google_credentials(credentials) -> None:
+    if not credentials:
+        _clear_google_credentials()
+        return
+
+    try:
+        session['google_credentials'] = credentials.to_json()
+    except Exception:
+        payload = {
+            'token': getattr(credentials, 'token', None),
+            'refresh_token': getattr(credentials, 'refresh_token', None),
+            'token_uri': getattr(credentials, 'token_uri', None),
+            'client_id': getattr(credentials, 'client_id', None),
+            'client_secret': getattr(credentials, 'client_secret', None),
+            'scopes': list(getattr(credentials, 'scopes', []) or _GOOGLE_OAUTH_SCOPES),
+        }
+        expiry = getattr(credentials, 'expiry', None)
+        if expiry is not None:
+            try:
+                payload['expiry'] = expiry.isoformat()
+            except Exception:
+                payload['expiry'] = None
+        session['google_credentials'] = json.dumps(payload)
+
+
+def _load_google_credentials() -> Optional[GoogleCredentials]:
+    raw_credentials = session.get('google_credentials')
+    if not raw_credentials:
+        return None
+
+    if isinstance(raw_credentials, str):
+        try:
+            data = json.loads(raw_credentials)
+        except (TypeError, ValueError):
+            _clear_google_credentials()
+            return None
+    elif isinstance(raw_credentials, dict):
+        data = raw_credentials
+    else:
+        _clear_google_credentials()
+        return None
+
+    client_id = current_app.config.get('GOOGLE_CLIENT_ID')
+    client_secret = current_app.config.get('GOOGLE_CLIENT_SECRET')
+    if client_id:
+        data.setdefault('client_id', client_id)
+    if client_secret:
+        data.setdefault('client_secret', client_secret)
+
+    try:
+        credentials = GoogleCredentials.from_authorized_user_info(
+            data,
+            scopes=_GOOGLE_OAUTH_SCOPES,
+        )
+    except Exception:
+        _clear_google_credentials()
+        return None
+
+    return credentials
 
 
 def _normalise_google_user(data):
@@ -447,6 +517,7 @@ def google_auth_callback():
         current_app.logger.exception('Failed to fetch Google OAuth token')
         session.pop('google_user', None)
         session.pop('google_oauth_state', None)
+        _clear_google_credentials()
         return redirect(url_for('main.index'))
 
     credentials = flow.credentials
@@ -481,12 +552,14 @@ def google_auth_callback():
         current_app.logger.exception('Failed to verify Google ID token')
         session.pop('google_user', None)
         session.pop('google_oauth_state', None)
+        _clear_google_credentials()
         return redirect(url_for('main.index'))
 
     user = _normalise_google_user(id_info)
     if not user:
         session.pop('google_user', None)
         session.pop('google_oauth_state', None)
+        _clear_google_credentials()
         return redirect(url_for('main.index'))
 
     current_app.logger.info(
@@ -501,6 +574,7 @@ def google_auth_callback():
     )
     session['google_user'] = user
     session.pop('google_oauth_state', None)
+    _store_google_credentials(credentials)
 
     return redirect(url_for('main.index'))
 
@@ -511,6 +585,7 @@ def logout():
 
     session.pop('google_user', None)
     session.pop('google_oauth_state', None)
+    _clear_google_credentials()
     return redirect(url_for('main.index'))
 
 
@@ -526,6 +601,86 @@ def api_auth_status():
         return jsonify(authenticated=False, user=None)
 
     return jsonify(authenticated=True, user=user)
+
+
+@main.route('/api/google/photos/albums')
+def api_google_photos_albums():
+    """Return Google Photos albums for the authenticated user."""
+
+    if not _is_google_auth_configured():
+        return jsonify(error='Google OAuth is not configured.'), 400
+
+    user = _normalise_google_user(session.get('google_user'))
+    if not user:
+        return jsonify(error='You must be signed in with Google to view albums.'), 401
+
+    credentials = _load_google_credentials()
+    if not credentials:
+        return jsonify(error='Google authentication credentials are missing. Please sign in again.'), 401
+
+    try:
+        if credentials.expired and credentials.refresh_token:
+            credentials.refresh(google_requests.Request(session=requests.Session()))
+    except Exception:
+        current_app.logger.exception('Failed to refresh Google credentials')
+        _clear_google_credentials()
+        return jsonify(error='Failed to refresh Google credentials. Please sign in again.'), 401
+
+    if not credentials.valid:
+        _clear_google_credentials()
+        return jsonify(error='Google credentials are invalid. Please sign in again.'), 401
+
+    _store_google_credentials(credentials)
+
+    try:
+        page_size = int(request.args.get('pageSize', 20))
+    except (TypeError, ValueError):
+        page_size = 20
+    page_size = max(1, min(page_size, 50))
+
+    params = {'pageSize': page_size}
+    page_token = request.args.get('pageToken')
+    if page_token:
+        params['pageToken'] = page_token
+
+    try:
+        response = requests.get(
+            'https://photoslibrary.googleapis.com/v1/albums',
+            headers={'Authorization': f'Bearer {credentials.token}'},
+            params=params,
+            timeout=15,
+        )
+    except Exception:
+        current_app.logger.exception('Failed to contact Google Photos API')
+        return jsonify(error='Unable to contact Google Photos. Please try again later.'), 502
+
+    if response.status_code != 200:
+        current_app.logger.error(
+            'Google Photos API returned an error',
+            extra={
+                'google_oauth': {
+                    'phase': 'albums_request',
+                    'status_code': response.status_code,
+                    'response_text': response.text,
+                }
+            },
+        )
+        return jsonify(error='Google Photos request failed. Please try again later.'), 502
+
+    payload = response.json() if response.content else {}
+    albums = []
+    for album in payload.get('albums', []) or []:
+        if not isinstance(album, dict):
+            continue
+        albums.append({
+            'id': album.get('id'),
+            'title': album.get('title'),
+            'productUrl': album.get('productUrl'),
+            'mediaItemsCount': album.get('mediaItemsCount'),
+            'coverPhotoBaseUrl': album.get('coverPhotoBaseUrl'),
+        })
+
+    return jsonify(albums=albums, nextPageToken=payload.get('nextPageToken'))
 
 
 @main.route('/api/update_timeline', methods=['POST'])
