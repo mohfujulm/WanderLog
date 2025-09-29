@@ -33,9 +33,13 @@ environment:
    FLASK_SECRET_KEY=<any-random-string>
    GOOGLE_CLIENT_ID=<your-client-id>
    GOOGLE_CLIENT_SECRET=<your-client-secret>
+   OAUTHLIB_INSECURE_TRANSPORT=1
    ```
 
-   The file already contains placeholders for these values.
+   The file already contains placeholders for these values. The
+   `OAUTHLIB_INSECURE_TRANSPORT` line allows the callback to run over HTTP during
+   local development; remove it or set the value to `0` before deploying to
+   production.
 
 4. Start the development server:
 
