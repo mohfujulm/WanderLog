@@ -218,6 +218,48 @@ def _normalise_highlight_payload(raw_highlights, *, default_product_url: str = '
     return cleaned
 
 
+def _serialise_google_album(album) -> dict:
+    """Return a JSON-friendly representation of a Google Photos album."""
+
+    if album is None:
+        return {}
+
+    album_id = _clean_string(getattr(album, 'id', ''))
+    title = getattr(album, 'title', '') or ''
+    product_url = getattr(album, 'product_url', '') or ''
+    cover_photo_base_url = getattr(album, 'cover_photo_base_url', '') or ''
+    media_items_count = getattr(album, 'media_items_count', 0) or 0
+
+    return {
+        'id': album_id,
+        'title': title,
+        'product_url': product_url,
+        'cover_photo_base_url': cover_photo_base_url,
+        'media_items_count': int(media_items_count),
+    }
+
+
+def _serialise_google_media_item(media_item) -> dict:
+    """Return a JSON-friendly representation of a Google Photos media item."""
+
+    if media_item is None:
+        return {}
+
+    media_id = _clean_string(getattr(media_item, 'id', ''))
+    base_url = getattr(media_item, 'base_url', '') or ''
+    product_url = getattr(media_item, 'product_url', '') or ''
+    mime_type = getattr(media_item, 'mime_type', '') or ''
+    filename = getattr(media_item, 'filename', '') or ''
+
+    return {
+        'id': media_id,
+        'base_url': base_url,
+        'product_url': product_url,
+        'mime_type': mime_type,
+        'filename': filename,
+    }
+
+
 def _get_google_credentials():
     """Return stored Google Photos credentials if available."""
 
@@ -568,6 +610,56 @@ def api_google_photos_picker_token():
         token_type='Bearer',
         expires_at=expires_at,
     )
+
+
+@main.route('/api/google/photos/albums')
+def api_google_photos_albums():
+    """Return the authenticated user's Google Photos albums."""
+
+    if not google_photos.is_configured():
+        return jsonify(status='error', message='Google Photos integration is disabled.'), 503
+
+    credentials = _get_google_credentials()
+    if credentials is None:
+        return jsonify(status='error', message='Google Photos account not connected.'), 401
+
+    try:
+        albums = google_photos.list_albums(credentials)
+    except google_photos.GooglePhotosError as exc:
+        session.pop(_GOOGLE_CREDENTIALS_SESSION_KEY, None)
+        return jsonify(status='error', message=str(exc)), 502
+
+    session[_GOOGLE_CREDENTIALS_SESSION_KEY] = google_photos.credentials_to_dict(credentials)
+
+    payload = [_serialise_google_album(album) for album in albums]
+    return jsonify(status='success', albums=payload)
+
+
+@main.route('/api/google/photos/albums/<album_id>/media-items')
+def api_google_photos_album_items(album_id: str):
+    """Return media items for ``album_id`` from Google Photos."""
+
+    if not google_photos.is_configured():
+        return jsonify(status='error', message='Google Photos integration is disabled.'), 503
+
+    cleaned_album_id = (album_id or '').strip()
+    if not cleaned_album_id:
+        return jsonify(status='error', message='A valid album identifier is required.'), 400
+
+    credentials = _get_google_credentials()
+    if credentials is None:
+        return jsonify(status='error', message='Google Photos account not connected.'), 401
+
+    try:
+        media_items = google_photos.list_media_items(credentials, cleaned_album_id)
+    except google_photos.GooglePhotosError as exc:
+        session.pop(_GOOGLE_CREDENTIALS_SESSION_KEY, None)
+        return jsonify(status='error', message=str(exc)), 502
+
+    session[_GOOGLE_CREDENTIALS_SESSION_KEY] = google_photos.credentials_to_dict(credentials)
+
+    payload = [_serialise_google_media_item(item) for item in media_items]
+    return jsonify(status='success', media_items=payload)
 
 
 @main.route('/api/update_timeline', methods=['POST'])

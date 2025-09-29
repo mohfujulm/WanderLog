@@ -237,9 +237,40 @@
             </div>
         </div>
     </div>
-    <div id="googlePhotosPickerLoading" class="google-photos-picker-loading" hidden aria-live="polite">
-        <span class="spinner" aria-hidden="true"></span>
-        <span class="google-photos-picker-loading-text">Preparing Google Photos…</span>
+    <div id="googlePhotosModal" class="modal-overlay" aria-hidden="true" hidden>
+        <div class="modal-content google-photos-modal" role="dialog" aria-modal="true" aria-labelledby="googlePhotosModalTitle" tabindex="-1">
+            <div class="google-photos-modal-header">
+                <h2 id="googlePhotosModalTitle">Manage Google Photos</h2>
+                <button type="button" class="modal-close" id="googlePhotosModalClose" aria-label="Close Google Photos manager">&times;</button>
+            </div>
+            <div class="google-photos-modal-body">
+                <div id="googlePhotosModalStatus" class="google-photos-modal-status" role="status" aria-live="polite" hidden></div>
+                <div class="google-photos-modal-columns">
+                    <section class="google-photos-modal-section" aria-labelledby="googlePhotosAlbumsTitle">
+                        <div class="google-photos-modal-section-header">
+                            <h3 id="googlePhotosAlbumsTitle">Albums</h3>
+                            <p class="google-photos-modal-helper">Choose an album from your Google Photos library.</p>
+                        </div>
+                        <div id="googlePhotosAlbumsLoading" class="google-photos-modal-loading" hidden>Loading albums…</div>
+                        <div id="googlePhotosAlbumsEmpty" class="google-photos-modal-empty" hidden>No albums found in your Google Photos library.</div>
+                        <div id="googlePhotosAlbumList" class="google-photos-album-list" role="listbox" aria-label="Google Photos albums"></div>
+                    </section>
+                    <section class="google-photos-modal-section" aria-labelledby="googlePhotosMediaTitle">
+                        <div class="google-photos-modal-section-header">
+                            <h3 id="googlePhotosMediaTitle">Album photos</h3>
+                            <p class="google-photos-modal-helper">Select the highlight images to feature on this trip.</p>
+                        </div>
+                        <div id="googlePhotosMediaLoading" class="google-photos-modal-loading" hidden>Loading photos…</div>
+                        <div id="googlePhotosMediaEmpty" class="google-photos-modal-empty">Select an album to view its photos.</div>
+                        <div id="googlePhotosMediaGrid" class="google-photos-media-grid" role="list"></div>
+                    </section>
+                </div>
+            </div>
+            <div class="google-photos-modal-footer">
+                <button type="button" class="modal-button secondary" id="googlePhotosModalCancel">Cancel</button>
+                <button type="button" class="modal-button primary" id="googlePhotosModalApply" disabled>Save selections</button>
+            </div>
+        </div>
     </div>
     <div id="tripProfileOverlay" class="trip-profile-overlay" aria-hidden="true" hidden>
         <article id="tripProfilePanel" class="trip-profile-panel" role="dialog" aria-modal="false" aria-labelledby="tripDetailTitle">
