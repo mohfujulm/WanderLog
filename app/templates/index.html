@@ -40,15 +40,25 @@
                         <p class="auth-card-subtitle">{{ google_user.name or google_user.email }}</p>
                     </div>
                 </div>
-                <a class="overlay-button overlay-button-secondary" href="{{ url_for('main.logout') }}">Sign out</a>
+                {% endif %}
+                {% set auth_button_classes = ["overlay-button", "auth-card-action"] %}
+                {% if google_user %}
+                    {% set auth_button_classes = auth_button_classes + ["overlay-button-secondary"] %}
+                    {% set auth_button_href = url_for('main.logout') %}
+                    {% set auth_button_label = "Sign Out" %}
                 {% else %}
-                <a class="overlay-button overlay-button-google" href="{{ url_for('main.google_auth_start') }}">
+                    {% set auth_button_classes = auth_button_classes + ["overlay-button-google"] %}
+                    {% set auth_button_href = url_for('main.google_auth_start') %}
+                    {% set auth_button_label = "Sign in with Google" %}
+                {% endif %}
+                <a class="{{ ' '.join(auth_button_classes) }}" href="{{ auth_button_href }}">
+                    {% if not google_user %}
                     <span class="overlay-button-google-icon" aria-hidden="true">
                         <img src="{{ url_for('static', filename='assets/google-logo.svg') }}" alt="">
                     </span>
-                    <span>Sign in with Google</span>
+                    {% endif %}
+                    <span>{{ auth_button_label }}</span>
                 </a>
-                {% endif %}
             </section>
             {% endif %}
             <div class="overlay-tabs-wrapper">

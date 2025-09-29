@@ -1283,6 +1283,13 @@ button, input, select { font-family: inherit; }
     margin-bottom: 16px;
 }
 
+.auth-card-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
 .auth-card-status {
     display: flex;
     align-items: center;
