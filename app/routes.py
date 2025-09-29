@@ -73,6 +73,43 @@ def _create_google_flow() -> Flow:
     return flow
 
 
+def _normalise_google_user(data):
+    """Return a cleaned representation of a Google user payload."""
+
+    if not isinstance(data, dict):
+        return None
+
+    def _coerce(value):
+        if value is None:
+            return ''
+        if isinstance(value, str):
+            return value
+        try:
+            return str(value)
+        except Exception:
+            return ''
+
+    user_id = _coerce(data.get('id') or data.get('sub'))
+    email = _coerce(data.get('email'))
+    name = _coerce(data.get('name'))
+    picture = _coerce(data.get('picture'))
+
+    if not name:
+        name = email or user_id
+
+    normalised = {
+        'id': user_id,
+        'email': email,
+        'name': name,
+        'picture': picture,
+    }
+
+    if not any(normalised.values()):
+        return None
+
+    return normalised
+
+
 def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
     """Return a JSON-serialisable dictionary for ``trip``."""
 
@@ -340,7 +377,7 @@ def _serialise_trip_location(row, *, place_id: str = "", order: int = 0) -> dict
 def index():
     """Render the landing page."""
 
-    google_user = session.get('google_user')
+    google_user = _normalise_google_user(session.get('google_user'))
     auth_enabled = _is_google_auth_configured()
 
     return render_template(
@@ -405,12 +442,13 @@ def google_auth_callback():
         session.pop('google_oauth_state', None)
         return redirect(url_for('main.index'))
 
-    session['google_user'] = {
-        'id': id_info.get('sub'),
-        'email': id_info.get('email'),
-        'name': id_info.get('name') or id_info.get('email'),
-        'picture': id_info.get('picture'),
-    }
+    user = _normalise_google_user(id_info)
+    if not user:
+        session.pop('google_user', None)
+        session.pop('google_oauth_state', None)
+        return redirect(url_for('main.index'))
+
+    session['google_user'] = user
     session.pop('google_oauth_state', None)
 
     return redirect(url_for('main.index'))
@@ -423,6 +461,20 @@ def logout():
     session.pop('google_user', None)
     session.pop('google_oauth_state', None)
     return redirect(url_for('main.index'))
+
+
+@main.route('/api/auth/status')
+def api_auth_status():
+    """Return the current Google authentication state."""
+
+    if not _is_google_auth_configured():
+        return jsonify(authenticated=False, user=None)
+
+    user = _normalise_google_user(session.get('google_user'))
+    if not user:
+        return jsonify(authenticated=False, user=None)
+
+    return jsonify(authenticated=True, user=user)
 
 
 @main.route('/api/update_timeline', methods=['POST'])

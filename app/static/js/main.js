@@ -1,6 +1,8 @@
 const APP_CONFIG = window.wanderLogConfig || {};
 const ASSET_CONFIG = APP_CONFIG.assets || {};
 const MAPBOX_TOKEN = APP_CONFIG.mapboxToken || '';
+const AUTH_CONFIG = APP_CONFIG.auth || {};
+const GOOGLE_AUTH_CONFIG = AUTH_CONFIG.google || null;
 const MENU_ICON_PATH = ASSET_CONFIG.menuIcon || '';
 const CLOSE_ICON_PATH = ASSET_CONFIG.closeIcon || '';
 const MAP_DEFAULT_CENTER = [40.65997395108914, -73.71300111746832];
@@ -26,6 +28,8 @@ const mapMarkerLookup = new Map();
 const mapMarkerData = new Map();
 let loadMarkersAbortController = null;
 let loadMarkersRequestToken = 0;
+let googleAuthRefreshHandler = null;
+let googleAuthRequestToken = 0;
 let isTripMapModeActive = false;
 let previousMapView = null;
 let manualPointForm;
@@ -453,6 +457,154 @@ function saveMenuState(menu, partialMenuState) {
             [key]: payload,
         },
     });
+}
+
+function setElementHidden(element, hidden) {
+    if (!element) { return; }
+    if (hidden) { element.hidden = true; }
+    else { element.hidden = false; }
+}
+
+function normaliseGoogleAuthUser(user) {
+    if (!user || typeof user !== 'object') { return null; }
+
+    const id = typeof user.id === 'string' ? user.id : '';
+    const email = typeof user.email === 'string' ? user.email : '';
+    const name = typeof user.name === 'string' ? user.name : '';
+    const picture = typeof user.picture === 'string' ? user.picture : '';
+
+    if (!id && !email && !name && !picture) { return null; }
+
+    return { id, email, name, picture };
+}
+
+function deriveGoogleUserInitial(user) {
+    if (!user) { return ''; }
+    const source = (user.name || user.email || '').trim();
+    if (!source) { return ''; }
+    return source.charAt(0).toUpperCase();
+}
+
+function updateGoogleAuthConfig(user) {
+    if (!GOOGLE_AUTH_CONFIG) { return; }
+    if (user) {
+        GOOGLE_AUTH_CONFIG.user = { ...user };
+    } else {
+        GOOGLE_AUTH_CONFIG.user = null;
+    }
+}
+
+function applyGoogleAuthState(state) {
+    const card = document.querySelector('[data-google-auth-card]');
+    if (!card) { return; }
+
+    const button = card.querySelector('[data-auth-button]');
+    if (!button) { return; }
+
+    const labelElement = button.querySelector('[data-auth-button-label]');
+    const iconElement = button.querySelector('[data-auth-button-icon]');
+    const statusElement = card.querySelector('[data-auth-status]');
+    const statusTitleElement = card.querySelector('[data-auth-status-title]');
+    const statusSubtitleElement = card.querySelector('[data-auth-status-subtitle]');
+    const avatarElement = card.querySelector('[data-auth-avatar]');
+    const avatarImageElement = avatarElement ? avatarElement.querySelector('[data-auth-avatar-image]') : null;
+    const avatarInitialElement = avatarElement ? avatarElement.querySelector('[data-auth-avatar-initial]') : null;
+
+    const normalisedUser = state && state.authenticated ? normaliseGoogleAuthUser(state.user) : null;
+    const isAuthenticated = Boolean(normalisedUser);
+
+    const loginLabel = button.dataset.authLoginLabel || 'Sign in with Google';
+    const logoutLabel = button.dataset.authLogoutLabel || 'Sign Out';
+    const loginUrl = button.dataset.authLoginUrl || '#';
+    const logoutUrl = button.dataset.authLogoutUrl || '#';
+    const loginClasses = (button.dataset.authLoginClass || '').split(/\s+/).filter(Boolean);
+    const logoutClasses = (button.dataset.authLogoutClass || '').split(/\s+/).filter(Boolean);
+
+    button.classList.remove(...loginClasses, ...logoutClasses);
+    if (isAuthenticated) {
+        if (logoutClasses.length) { button.classList.add(...logoutClasses); }
+        button.setAttribute('href', logoutUrl || '#');
+        if (labelElement) { labelElement.textContent = logoutLabel; }
+        if (iconElement) { setElementHidden(iconElement, true); }
+        card.dataset.authState = 'authenticated';
+    } else {
+        if (loginClasses.length) { button.classList.add(...loginClasses); }
+        button.setAttribute('href', loginUrl || '#');
+        if (labelElement) { labelElement.textContent = loginLabel; }
+        if (iconElement) { setElementHidden(iconElement, false); }
+        card.dataset.authState = 'anonymous';
+    }
+
+    if (statusElement) {
+        setElementHidden(statusElement, !isAuthenticated);
+        if (isAuthenticated) {
+            if (statusTitleElement) { statusTitleElement.textContent = 'Signed in'; }
+            if (statusSubtitleElement) { statusSubtitleElement.textContent = normalisedUser.name || normalisedUser.email || ''; }
+        } else {
+            if (statusTitleElement) { statusTitleElement.textContent = ''; }
+            if (statusSubtitleElement) { statusSubtitleElement.textContent = ''; }
+        }
+    }
+
+    if (avatarElement) {
+        const userInitial = isAuthenticated ? deriveGoogleUserInitial(normalisedUser) : '';
+        if (avatarImageElement) {
+            if (isAuthenticated && normalisedUser.picture) {
+                avatarImageElement.src = normalisedUser.picture;
+                setElementHidden(avatarImageElement, false);
+            } else {
+                avatarImageElement.removeAttribute('src');
+                setElementHidden(avatarImageElement, true);
+            }
+        }
+        if (avatarInitialElement) {
+            if (isAuthenticated && !normalisedUser.picture && userInitial) {
+                avatarInitialElement.textContent = userInitial;
+                setElementHidden(avatarInitialElement, false);
+            } else {
+                avatarInitialElement.textContent = '';
+                setElementHidden(avatarInitialElement, true);
+            }
+        }
+    }
+
+    updateGoogleAuthConfig(normalisedUser);
+}
+
+async function requestGoogleAuthStatus() {
+    if (!GOOGLE_AUTH_CONFIG || !GOOGLE_AUTH_CONFIG.enabled) { return; }
+    if (!document.querySelector('[data-google-auth-card]')) { return; }
+
+    const requestId = ++googleAuthRequestToken;
+    try {
+        const response = await fetch('/api/auth/status', {
+            credentials: 'include',
+            cache: 'no-store',
+        });
+        if (!response.ok) { return; }
+
+        const payload = await response.json();
+        if (requestId !== googleAuthRequestToken) { return; }
+
+        const authenticated = Boolean(payload && payload.authenticated);
+        const user = authenticated && payload && payload.user ? payload.user : null;
+        applyGoogleAuthState({ authenticated, user });
+    } catch (error) {
+        // Ignore network errors so the UI remains responsive.
+    }
+}
+
+function setupGoogleAuthCard() {
+    if (!GOOGLE_AUTH_CONFIG || !GOOGLE_AUTH_CONFIG.enabled) { return; }
+    if (!document.querySelector('[data-google-auth-card]')) { return; }
+
+    applyGoogleAuthState({
+        authenticated: Boolean(GOOGLE_AUTH_CONFIG.user),
+        user: GOOGLE_AUTH_CONFIG.user || null,
+    });
+
+    googleAuthRefreshHandler = () => { requestGoogleAuthStatus(); };
+    requestGoogleAuthStatus();
 }
 
 const MAX_ALIAS_LENGTH = 120;
@@ -6011,6 +6163,7 @@ async function deleteMarker(markerId, markerInstance, triggerButton) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+    setupGoogleAuthCard();
     ensureManualPointModal();
     ensureAliasModal();
     ensureArchivedPointsModal();
@@ -6287,6 +6440,9 @@ function toggleMenu() {
     if (!menu) { return; }
     const isOpen = menu.classList.toggle('open');
     applyMenuState(menu, isOpen);
+    if (isOpen && typeof googleAuthRefreshHandler === 'function') {
+        googleAuthRefreshHandler();
+    }
 }
 
 function applyMenuState(menu, isOpen, options = {}) {

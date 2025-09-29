@@ -25,22 +25,27 @@
         </button>
         <div class="overlay-controls" id="menuControls" aria-hidden="true" inert>
             {% if google_auth_enabled %}
-            <section class="auth-card" aria-label="Account">
-                {% if google_user %}
-                <div class="auth-card-status">
-                    <span class="auth-card-avatar" aria-hidden="true">
-                        {% if google_user.picture %}
-                        <img src="{{ google_user.picture }}" alt="" referrerpolicy="no-referrer">
-                        {% else %}
-                        {{ google_user.name[:1] if google_user.name else google_user.email[:1] }}
-                        {% endif %}
+            <section class="auth-card" aria-label="Account" data-google-auth-card>
+                <div class="auth-card-status" data-auth-status {% if not google_user %}hidden{% endif %}>
+                    <span class="auth-card-avatar" data-auth-avatar aria-hidden="true">
+                        <img
+                            data-auth-avatar-image
+                            src="{{ google_user.picture if google_user and google_user.picture else '' }}"
+                            alt=""
+                            referrerpolicy="no-referrer"
+                            {% if not google_user or not google_user.picture %}hidden{% endif %}
+                        >
+                        <span data-auth-avatar-initial {% if google_user and google_user.picture %}hidden{% endif %}>
+                            {% if google_user %}
+                                {{ google_user.name[:1] if google_user.name else google_user.email[:1] }}
+                            {% endif %}
+                        </span>
                     </span>
                     <div class="auth-card-details">
-                        <p class="auth-card-title">Signed in</p>
-                        <p class="auth-card-subtitle">{{ google_user.name or google_user.email }}</p>
+                        <p class="auth-card-title" data-auth-status-title>{% if google_user %}Signed in{% endif %}</p>
+                        <p class="auth-card-subtitle" data-auth-status-subtitle>{% if google_user %}{{ google_user.name or google_user.email }}{% endif %}</p>
                     </div>
                 </div>
-                {% endif %}
                 {% set auth_button_classes = ["overlay-button", "auth-card-action"] %}
                 {% if google_user %}
                     {% set auth_button_classes = auth_button_classes + ["overlay-button-secondary"] %}
@@ -51,13 +56,21 @@
                     {% set auth_button_href = url_for('main.google_auth_start') %}
                     {% set auth_button_label = "Sign in with Google" %}
                 {% endif %}
-                <a class="{{ ' '.join(auth_button_classes) }}" href="{{ auth_button_href }}">
-                    {% if not google_user %}
-                    <span class="overlay-button-google-icon" aria-hidden="true">
+                <a
+                    class="{{ ' '.join(auth_button_classes) }}"
+                    href="{{ auth_button_href }}"
+                    data-auth-button
+                    data-auth-login-url="{{ url_for('main.google_auth_start') }}"
+                    data-auth-logout-url="{{ url_for('main.logout') }}"
+                    data-auth-login-label="Sign in with Google"
+                    data-auth-logout-label="Sign Out"
+                    data-auth-login-class="overlay-button-google"
+                    data-auth-logout-class="overlay-button-secondary"
+                >
+                    <span class="overlay-button-google-icon" data-auth-button-icon aria-hidden="true" {% if google_user %}hidden{% endif %}>
                         <img src="{{ url_for('static', filename='assets/google-logo.svg') }}" alt="">
                     </span>
-                    {% endif %}
-                    <span>{{ auth_button_label }}</span>
+                    <span data-auth-button-label>{{ auth_button_label }}</span>
                 </a>
             </section>
             {% endif %}
