@@ -4,7 +4,21 @@ import json
 import os
 
 import pandas as pd
-from flask import Blueprint, jsonify, render_template, request
+import requests
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token
+from google_auth_oauthlib.flow import Flow
 
 from app.map_utils import dataframe_to_markers, filter_dataframe_by_date_range
 from app.utils.google_photos import fetch_album_images
@@ -19,6 +33,44 @@ MAX_TRIP_NAME_LENGTH = 120
 MAX_TRIP_DESCRIPTION_LENGTH = 2000
 MAX_LOCATION_DESCRIPTION_LENGTH = 2000
 MAX_TRIP_PHOTOS_URL_LENGTH = 1000
+
+
+def _is_google_auth_configured() -> bool:
+    """Return ``True`` when Google OAuth credentials are available."""
+
+    client_id = current_app.config.get("GOOGLE_CLIENT_ID", "")
+    client_secret = current_app.config.get("GOOGLE_CLIENT_SECRET", "")
+    return bool(client_id and client_secret)
+
+
+def _create_google_flow() -> Flow:
+    """Return a configured Google OAuth flow instance."""
+
+    client_id = current_app.config.get("GOOGLE_CLIENT_ID")
+    client_secret = current_app.config.get("GOOGLE_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        raise RuntimeError("Google OAuth is not configured")
+
+    redirect_uri = url_for("main.google_auth_callback", _external=True)
+
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [redirect_uri],
+            }
+        },
+        scopes=[
+            "openid",
+            "https://www.googleapis.com/auth/userinfo.email",
+            "https://www.googleapis.com/auth/userinfo.profile",
+        ],
+    )
+    flow.redirect_uri = redirect_uri
+    return flow
 
 
 def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
@@ -288,7 +340,89 @@ def _serialise_trip_location(row, *, place_id: str = "", order: int = 0) -> dict
 def index():
     """Render the landing page."""
 
-    return render_template("index.html", mapbox_token=MAPBOX_ACCESS_TOKEN)
+    google_user = session.get('google_user')
+    auth_enabled = _is_google_auth_configured()
+
+    return render_template(
+        "index.html",
+        mapbox_token=MAPBOX_ACCESS_TOKEN,
+        google_auth_enabled=auth_enabled,
+        google_user=google_user,
+    )
+
+
+@main.route('/auth/google')
+def google_auth_start():
+    """Redirect the user to the Google OAuth consent screen."""
+
+    if not _is_google_auth_configured():
+        abort(404)
+
+    flow = _create_google_flow()
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='consent',
+    )
+    session['google_oauth_state'] = state
+    return redirect(authorization_url)
+
+
+@main.route('/auth/google/callback')
+def google_auth_callback():
+    """Handle the OAuth callback from Google and store the user session."""
+
+    if not _is_google_auth_configured():
+        abort(404)
+
+    state = session.get('google_oauth_state')
+    incoming_state = request.args.get('state')
+    if not state or not incoming_state or state != incoming_state:
+        abort(400)
+
+    flow = _create_google_flow()
+
+    try:
+        flow.fetch_token(authorization_response=request.url)
+    except Exception:
+        current_app.logger.exception('Failed to fetch Google OAuth token')
+        session.pop('google_user', None)
+        session.pop('google_oauth_state', None)
+        return redirect(url_for('main.index'))
+
+    credentials = flow.credentials
+    token_request = google_requests.Request(session=requests.Session())
+
+    try:
+        id_info = id_token.verify_oauth2_token(
+            credentials.id_token,
+            token_request,
+            current_app.config.get('GOOGLE_CLIENT_ID'),
+        )
+    except Exception:
+        current_app.logger.exception('Failed to verify Google ID token')
+        session.pop('google_user', None)
+        session.pop('google_oauth_state', None)
+        return redirect(url_for('main.index'))
+
+    session['google_user'] = {
+        'id': id_info.get('sub'),
+        'email': id_info.get('email'),
+        'name': id_info.get('name') or id_info.get('email'),
+        'picture': id_info.get('picture'),
+    }
+    session.pop('google_oauth_state', None)
+
+    return redirect(url_for('main.index'))
+
+
+@main.route('/auth/logout')
+def logout():
+    """Clear the authenticated user from the session."""
+
+    session.pop('google_user', None)
+    session.pop('google_oauth_state', None)
+    return redirect(url_for('main.index'))
 
 
 @main.route('/api/update_timeline', methods=['POST'])

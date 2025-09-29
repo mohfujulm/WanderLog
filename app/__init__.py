@@ -9,6 +9,14 @@ def create_app():
 
     app = Flask(__name__)
 
+    secret_key = os.getenv("FLASK_SECRET_KEY") or os.getenv("SECRET_KEY")
+    if not secret_key:
+        secret_key = os.urandom(32)
+    app.secret_key = secret_key
+
+    app.config["GOOGLE_CLIENT_ID"] = os.getenv("GOOGLE_CLIENT_ID", "")
+    app.config["GOOGLE_CLIENT_SECRET"] = os.getenv("GOOGLE_CLIENT_SECRET", "")
+
     # Load cached timeline data once during application startup
     data_cache.load_timeline_data()
     trip_store.load_trips()
