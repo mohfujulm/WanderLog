@@ -24,6 +24,33 @@
             <span class="menu-toggle-text">Menu</span>
         </button>
         <div class="overlay-controls" id="menuControls" aria-hidden="true" inert>
+            {% if google_auth_enabled %}
+            <section class="auth-card" aria-label="Account">
+                {% if google_user %}
+                <div class="auth-card-status">
+                    <span class="auth-card-avatar" aria-hidden="true">
+                        {% if google_user.picture %}
+                        <img src="{{ google_user.picture }}" alt="" referrerpolicy="no-referrer">
+                        {% else %}
+                        {{ google_user.name[:1] if google_user.name else google_user.email[:1] }}
+                        {% endif %}
+                    </span>
+                    <div class="auth-card-details">
+                        <p class="auth-card-title">Signed in</p>
+                        <p class="auth-card-subtitle">{{ google_user.name or google_user.email }}</p>
+                    </div>
+                </div>
+                <a class="overlay-button overlay-button-secondary" href="{{ url_for('main.logout') }}">Sign out</a>
+                {% else %}
+                <a class="overlay-button overlay-button-google" href="{{ url_for('main.google_auth_start') }}">
+                    <span class="overlay-button-google-icon" aria-hidden="true">
+                        <img src="{{ url_for('static', filename='assets/google-logo.svg') }}" alt="">
+                    </span>
+                    <span>Sign in with Google</span>
+                </a>
+                {% endif %}
+            </section>
+            {% endif %}
             <div class="overlay-tabs-wrapper">
                 <div class="overlay-tabs" role="tablist" aria-label="Menu sections">
                     <button type="button" class="overlay-tab" role="tab" id="menuTabTrips" aria-selected="true" aria-controls="menuPanelTrips">Trips</button>
@@ -32,33 +59,6 @@
                 <button type="button" class="overlay-manage-toggle" id="manageModeQuickToggle" data-manage-mode-toggle data-manage-mode-active-class="overlay-manage-toggle-active" data-manage-mode-label-default="Edit" data-manage-mode-label-active="Done" aria-pressed="false">Edit</button>
             </div>
             <div id="menuPanelControls" class="overlay-tab-panel" role="tabpanel" aria-labelledby="menuTabControls">
-                {% if google_auth_enabled %}
-                <section class="auth-card" aria-label="Account">
-                    {% if google_user %}
-                    <div class="auth-card-status">
-                        <span class="auth-card-avatar" aria-hidden="true">
-                            {% if google_user.picture %}
-                            <img src="{{ google_user.picture }}" alt="" referrerpolicy="no-referrer">
-                            {% else %}
-                            {{ google_user.name[:1] if google_user.name else google_user.email[:1] }}
-                            {% endif %}
-                        </span>
-                        <div class="auth-card-details">
-                            <p class="auth-card-title">Signed in</p>
-                            <p class="auth-card-subtitle">{{ google_user.name or google_user.email }}</p>
-                        </div>
-                    </div>
-                    <a class="overlay-button overlay-button-secondary" href="{{ url_for('main.logout') }}">Sign out</a>
-                    {% else %}
-                    <a class="overlay-button overlay-button-google" href="{{ url_for('main.google_auth_start') }}">
-                        <span class="overlay-button-google-icon" aria-hidden="true">
-                            <img src="{{ url_for('static', filename='assets/google-logo.svg') }}" alt="">
-                        </span>
-                        <span>Sign in with Google</span>
-                    </a>
-                    {% endif %}
-                </section>
-                {% endif %}
                 <button class="overlay-button" type="button" id="importTimelineButton">Import Timeline Data</button>
                 <button class="overlay-button" type="button" id="addManualPointButton">Add a Location Manually</button>
                 <button class="overlay-button" type="button" id="clearMapButton">Clear Map</button>
