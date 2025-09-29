@@ -398,7 +398,6 @@ def google_auth_start():
     flow = _create_google_flow()
     authorization_url, state = flow.authorization_url(
         access_type='offline',
-        include_granted_scopes='true',
         prompt='consent',
     )
     session['google_oauth_state'] = state
