@@ -2,7 +2,6 @@
 
 import json
 import os
-from typing import Any, Tuple
 
 import pandas as pd
 from flask import Blueprint, jsonify, render_template, request
@@ -20,22 +19,6 @@ MAX_TRIP_NAME_LENGTH = 120
 MAX_TRIP_DESCRIPTION_LENGTH = 2000
 MAX_LOCATION_DESCRIPTION_LENGTH = 2000
 MAX_TRIP_PHOTOS_URL_LENGTH = 1000
-
-
-def google_auth_start(flow: Any) -> Tuple[str, str]:
-    """Return the Google OAuth authorisation URL and state for ``flow``.
-
-    The call deliberately omits ``include_granted_scopes`` so the granted
-    scopes in the token response align exactly with what was requested in
-    ``_create_google_flow``.  This avoids oauthlib warning about mismatched
-    scopes when exchanging the authorisation code for tokens.
-    """
-
-    authorization_url, state = flow.authorization_url(
-        access_type='offline',
-        prompt='consent',
-    )
-    return authorization_url, state
 
 
 def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
