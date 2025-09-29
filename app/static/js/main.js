@@ -108,18 +108,9 @@ let googlePhotosSignInButton = null;
 let googlePhotosSignOutButton = null;
 let tripPhotosManageButton = null;
 let tripPhotosRemoveButton = null;
-let googlePhotosModalController = null;
-let googlePhotosModalAuthPrompt = null;
-let googlePhotosModalSignInButton = null;
-let googlePhotosModalLoadingElement = null;
-let googlePhotosModalErrorElement = null;
-let googlePhotosAlbumSection = null;
-let googlePhotosAlbumListElement = null;
-let googlePhotosPhotosSection = null;
-let googlePhotosPhotoGridElement = null;
-let googlePhotosModalSaveButton = null;
-let googlePhotosModalCancelButton = null;
-let googlePhotosSelectionHintElement = null;
+let googlePhotosPickerLoadingElement = null;
+let googlePhotosActivePicker = null;
+let googlePhotosScriptPromise = null;
 let tripLocationSearchInput = null;
 let tripLocationSortFieldSelect = null;
 let tripLocationSortDirectionButton = null;
@@ -184,22 +175,15 @@ const googlePhotosState = {
     authenticated: false,
     checkingStatus: false,
     sessionFetched: false,
-    albums: [],
-    albumLookup: new Map(),
     currentTripId: null,
     currentAlbumId: '',
     currentAlbumTitle: '',
     currentAlbumUrl: '',
     currentHighlights: [],
-    modal: {
-        isOpen: false,
-        isLoading: false,
-        selectedAlbumId: '',
-        selectedAlbumTitle: '',
-        selectedAlbumUrl: '',
-        albums: [],
-        photos: [],
-        selectedPhotoIds: new Set(),
+    picker: {
+        loading: false,
+        requestingToken: false,
+        scriptReady: false,
     },
 };
 
@@ -2383,8 +2367,11 @@ function updateTripPhotosSection(options = {}) {
         if (photoList.length > 0) {
             tripPhotosEmptyElement.hidden = true;
         } else {
+            const integrationEnabled = isGooglePhotosEnabled();
             let message = 'Connect a Google Photos album to showcase highlights from your trip.';
-            if (!googlePhotosState.authenticated) {
+            if (!integrationEnabled) {
+                message = 'Google Photos integration is not configured for this environment.';
+            } else if (!googlePhotosState.authenticated) {
                 message = 'Sign in with Google Photos to link an album and display highlights.';
             } else if (currentAlbumId) {
                 message = 'No highlight photos selected yet. Choose images from this album to feature them here.';
@@ -2404,31 +2391,33 @@ function updateTripPhotosSection(options = {}) {
 }
 
 function updateGooglePhotosControls() {
-    const isAuthenticated = Boolean(googlePhotosState.authenticated);
+    const integrationEnabled = isGooglePhotosEnabled();
+    const isAuthenticated = integrationEnabled && Boolean(googlePhotosState.authenticated);
     const isChecking = Boolean(googlePhotosState.checkingStatus);
     const isEditing = Boolean(tripProfileEditState.active);
     const isSaving = Boolean(tripDescriptionState.isSaving);
     const hasTrip = Boolean(tripDescriptionState.tripId || tripDetailState.selectedTripId);
     const hasAlbum = Boolean(tripDescriptionState.lastAppliedAlbumId);
+    const pickerBusy = Boolean(googlePhotosState.picker.loading || googlePhotosState.picker.requestingToken);
 
     if (googlePhotosSignInButton) {
-        googlePhotosSignInButton.hidden = isAuthenticated;
-        googlePhotosSignInButton.disabled = isAuthenticated || isChecking;
+        googlePhotosSignInButton.hidden = !integrationEnabled || isAuthenticated;
+        googlePhotosSignInButton.disabled = !integrationEnabled || isAuthenticated || isChecking || pickerBusy;
     }
 
     if (googlePhotosSignOutButton) {
-        googlePhotosSignOutButton.hidden = !isAuthenticated;
-        googlePhotosSignOutButton.disabled = !isAuthenticated || isChecking;
+        googlePhotosSignOutButton.hidden = !integrationEnabled || !isAuthenticated;
+        googlePhotosSignOutButton.disabled = !integrationEnabled || !isAuthenticated || isChecking || pickerBusy;
     }
 
     if (tripPhotosManageButton) {
-        const canManage = hasTrip && !isSaving && !isChecking;
+        const canManage = integrationEnabled && hasTrip && !isSaving && !isChecking && !pickerBusy;
         tripPhotosManageButton.disabled = !canManage;
     }
 
     if (tripPhotosRemoveButton) {
-        const canRemove = hasAlbum && isEditing && !isSaving;
-        tripPhotosRemoveButton.hidden = !hasAlbum;
+        const canRemove = integrationEnabled && hasAlbum && isEditing && !isSaving;
+        tripPhotosRemoveButton.hidden = !integrationEnabled || !hasAlbum;
         tripPhotosRemoveButton.disabled = !canRemove;
     }
 }
@@ -2453,521 +2442,259 @@ async function handleGooglePhotosSignOut(event) {
     } finally {
         googlePhotosState.authenticated = false;
         googlePhotosState.sessionFetched = false;
-        googlePhotosState.albums = [];
-        googlePhotosState.albumLookup = new Map();
-        googlePhotosState.modal.albums = [];
-        googlePhotosState.modal.photos = [];
-        googlePhotosState.modal.selectedPhotoIds = new Set();
+        googlePhotosState.currentAlbumId = '';
+        googlePhotosState.currentAlbumTitle = '';
+        googlePhotosState.currentAlbumUrl = '';
+        googlePhotosState.currentHighlights = [];
+        googlePhotosState.picker.loading = false;
+        googlePhotosState.picker.requestingToken = false;
+        googlePhotosActivePicker = null;
+        setGooglePhotosPickerLoading(false);
         updateGooglePhotosControls();
-        updateGooglePhotosModalAuthState();
     }
 }
 
-function ensureGooglePhotosModal() {
-    if (googlePhotosModalController) { return googlePhotosModalController; }
+function getGooglePhotosConfig() {
+    return APP_CONFIG.googlePhotos || {};
+}
 
-    googlePhotosModalController = createModalController('googlePhotosModal', {
-        getInitialFocus: () => {
-            if (googlePhotosModalSaveButton && !googlePhotosModalSaveButton.disabled) {
-                return googlePhotosModalSaveButton;
-            }
-            return googlePhotosModalCancelButton;
-        },
-        onClose: () => {
-            googlePhotosState.modal.isOpen = false;
-            googlePhotosState.modal.photos = [];
-            googlePhotosState.modal.selectedPhotoIds = new Set();
-            if (googlePhotosModalErrorElement) {
-                googlePhotosModalErrorElement.hidden = true;
-                googlePhotosModalErrorElement.textContent = '';
-            }
-        },
-    });
+function isGooglePhotosEnabled() {
+    const config = getGooglePhotosConfig();
+    return Boolean(config && config.enabled && config.clientId);
+}
 
-    googlePhotosModalAuthPrompt = document.getElementById('googlePhotosModalAuthPrompt');
-    googlePhotosModalSignInButton = document.getElementById('googlePhotosModalSignIn');
-    googlePhotosModalLoadingElement = document.getElementById('googlePhotosModalLoading');
-    googlePhotosModalErrorElement = document.getElementById('googlePhotosModalError');
-    googlePhotosAlbumSection = document.getElementById('googlePhotosAlbumSection');
-    googlePhotosAlbumListElement = document.getElementById('googlePhotosAlbumList');
-    googlePhotosPhotosSection = document.getElementById('googlePhotosPhotosSection');
-    googlePhotosPhotoGridElement = document.getElementById('googlePhotosPhotoGrid');
-    googlePhotosModalSaveButton = document.getElementById('googlePhotosModalSave');
-    googlePhotosModalCancelButton = document.getElementById('googlePhotosModalCancel');
-    googlePhotosSelectionHintElement = document.getElementById('googlePhotosSelectionHint');
+function setGooglePhotosPickerLoading(isLoading) {
+    googlePhotosState.picker.loading = Boolean(isLoading);
+    if (googlePhotosPickerLoadingElement) {
+        googlePhotosPickerLoadingElement.hidden = !googlePhotosState.picker.loading;
+    }
+}
 
-    if (googlePhotosModalSignInButton && !googlePhotosModalSignInButton.dataset.initialised) {
-        googlePhotosModalSignInButton.addEventListener('click', handleGooglePhotosSignIn);
-        googlePhotosModalSignInButton.dataset.initialised = 'true';
+function ensureGooglePhotosSdk() {
+    if (googlePhotosState.picker.scriptReady
+        && window.google
+        && window.google.accounts
+        && window.google.accounts.photospicker) {
+        return Promise.resolve();
     }
 
-    if (googlePhotosModalCancelButton && !googlePhotosModalCancelButton.dataset.initialised) {
-        googlePhotosModalCancelButton.addEventListener('click', (event) => {
-            event.preventDefault();
-            if (googlePhotosModalController) {
-                googlePhotosModalController.close();
+    if (googlePhotosScriptPromise) {
+        return googlePhotosScriptPromise;
+    }
+
+    googlePhotosScriptPromise = new Promise((resolve, reject) => {
+        if (window.google && window.google.accounts && window.google.accounts.photospicker) {
+            googlePhotosState.picker.scriptReady = true;
+            resolve();
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.async = true;
+        script.defer = true;
+        script.onload = () => {
+            googlePhotosState.picker.scriptReady = true;
+            resolve();
+        };
+        script.onerror = () => {
+            reject(new Error('Failed to load Google Identity Services.'));
+        };
+        document.head.appendChild(script);
+    }).catch((error) => {
+        googlePhotosScriptPromise = null;
+        throw error;
+    });
+
+    return googlePhotosScriptPromise;
+}
+
+async function requestGooglePhotosPickerToken() {
+    googlePhotosState.picker.requestingToken = true;
+    updateGooglePhotosControls();
+
+    try {
+        const response = await fetch('/api/google/photos/picker-token', { method: 'POST' });
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok || !data || !data.access_token) {
+            const message = data && data.message ? data.message : 'Failed to obtain Google Photos access token.';
+            throw new Error(message);
+        }
+
+        return data.access_token;
+    } finally {
+        googlePhotosState.picker.requestingToken = false;
+        updateGooglePhotosControls();
+    }
+}
+
+function normaliseGooglePhotosAlbum(rawAlbum) {
+    if (!rawAlbum || typeof rawAlbum !== 'object') { return null; }
+    const id = typeof rawAlbum.id === 'string' && rawAlbum.id.trim()
+        ? rawAlbum.id.trim()
+        : (typeof rawAlbum.albumId === 'string' ? rawAlbum.albumId.trim() : '');
+    if (!id) { return null; }
+
+    const title = typeof rawAlbum.title === 'string'
+        ? rawAlbum.title
+        : (typeof rawAlbum.name === 'string' ? rawAlbum.name : '');
+    const productUrl = typeof rawAlbum.productUrl === 'string'
+        ? rawAlbum.productUrl
+        : (typeof rawAlbum.url === 'string' ? rawAlbum.url : '');
+
+    return {
+        id,
+        title: title || '',
+        product_url: productUrl || '',
+    };
+}
+
+function normaliseGooglePhotosPhoto(rawPhoto) {
+    if (!rawPhoto || typeof rawPhoto !== 'object') { return null; }
+
+    const source = rawPhoto.mediaItem || rawPhoto.mediaItemData || rawPhoto;
+    const idCandidate = source && typeof source.id === 'string' && source.id.trim()
+        ? source.id.trim()
+        : (typeof source.mediaItemId === 'string' ? source.mediaItemId.trim() : '');
+    if (!idCandidate) { return null; }
+
+    const baseUrl = typeof source.baseUrl === 'string'
+        ? source.baseUrl
+        : (typeof source.mediaUrl === 'string' ? source.mediaUrl : '');
+    const productUrl = typeof source.productUrl === 'string'
+        ? source.productUrl
+        : (typeof source.url === 'string' ? source.url : '');
+    const filename = typeof source.filename === 'string'
+        ? source.filename
+        : (typeof source.name === 'string' ? source.name : '');
+    const mimeType = typeof source.mimeType === 'string'
+        ? source.mimeType
+        : (typeof source.mime_type === 'string' ? source.mime_type : '');
+
+    return {
+        id: idCandidate,
+        base_url: baseUrl || '',
+        product_url: productUrl || '',
+        filename: filename || '',
+        mime_type: mimeType || '',
+    };
+}
+
+function extractGooglePhotosSelection(response) {
+    if (!response || typeof response !== 'object') { return null; }
+
+    const actionRaw = typeof response.action === 'string' ? response.action.toLowerCase() : '';
+    if (actionRaw === 'cancel' || actionRaw === 'close' || actionRaw === 'dismiss') {
+        return null;
+    }
+
+    if (window.google
+        && window.google.accounts
+        && window.google.accounts.photospicker
+        && window.google.accounts.photospicker.Action) {
+        const pickerActions = window.google.accounts.photospicker.Action;
+        if (response.action === pickerActions.CANCEL || response.action === pickerActions.CLOSE) {
+            return null;
+        }
+    }
+
+    const rawCollections = [
+        response.mediaItems,
+        response.photos,
+        response.documents,
+        response.selection,
+        response.items,
+    ];
+
+    const photos = [];
+    rawCollections.forEach((collection) => {
+        if (!Array.isArray(collection)) { return; }
+        collection.forEach((item) => {
+            const normalised = normaliseGooglePhotosPhoto(item);
+            if (!normalised) { return; }
+            if (!photos.find((existing) => existing.id === normalised.id)) {
+                photos.push(normalised);
             }
         });
-        googlePhotosModalCancelButton.dataset.initialised = 'true';
-    }
-
-    if (googlePhotosModalSaveButton && !googlePhotosModalSaveButton.dataset.initialised) {
-        googlePhotosModalSaveButton.addEventListener('click', saveGooglePhotosSelection);
-        googlePhotosModalSaveButton.dataset.initialised = 'true';
-    }
-
-    if (googlePhotosAlbumListElement && !googlePhotosAlbumListElement.dataset.initialised) {
-        googlePhotosAlbumListElement.addEventListener('click', handleGooglePhotosAlbumListClick);
-        googlePhotosAlbumListElement.dataset.initialised = 'true';
-    }
-
-    if (googlePhotosPhotoGridElement && !googlePhotosPhotoGridElement.dataset.initialised) {
-        googlePhotosPhotoGridElement.addEventListener('click', handleGooglePhotosPhotoClick);
-        googlePhotosPhotoGridElement.dataset.initialised = 'true';
-    }
-
-    updateGooglePhotosModalAuthState();
-    return googlePhotosModalController;
-}
-
-function setGooglePhotosModalLoading(isLoading) {
-    const loading = Boolean(isLoading);
-    if (googlePhotosModalLoadingElement) {
-        googlePhotosModalLoadingElement.hidden = !loading;
-    }
-    if (googlePhotosModalSaveButton) {
-        googlePhotosModalSaveButton.disabled = loading
-            || !googlePhotosState.modal.selectedAlbumId
-            || Boolean(tripDescriptionState.isSaving);
-    }
-}
-
-function updateGooglePhotosModalAuthState() {
-    const isAuthenticated = Boolean(googlePhotosState.authenticated);
-    if (googlePhotosModalAuthPrompt) {
-        googlePhotosModalAuthPrompt.hidden = isAuthenticated;
-    }
-    if (googlePhotosModalSignInButton) {
-        googlePhotosModalSignInButton.disabled = isAuthenticated;
-    }
-    if (!isAuthenticated) {
-        if (googlePhotosAlbumSection) { googlePhotosAlbumSection.hidden = true; }
-        if (googlePhotosPhotosSection) { googlePhotosPhotosSection.hidden = true; }
-        if (googlePhotosSelectionHintElement) { googlePhotosSelectionHintElement.hidden = true; }
-    }
-    updateGooglePhotosModalSaveState();
-}
-
-function showGooglePhotosModalError(message) {
-    if (!googlePhotosModalErrorElement) { return; }
-    if (message) {
-        googlePhotosModalErrorElement.textContent = message;
-        googlePhotosModalErrorElement.hidden = false;
-    } else {
-        googlePhotosModalErrorElement.textContent = '';
-        googlePhotosModalErrorElement.hidden = true;
-    }
-}
-
-function renderGooglePhotosAlbumList() {
-    if (!googlePhotosAlbumListElement) { return; }
-    googlePhotosAlbumListElement.innerHTML = '';
-
-    updateGooglePhotosModalAuthState();
-    if (!googlePhotosState.authenticated) {
-        return;
-    }
-
-    const albums = Array.isArray(googlePhotosState.modal.albums)
-        ? googlePhotosState.modal.albums
-        : [];
-
-    if (!albums.length) {
-        const emptyMessage = document.createElement('p');
-        emptyMessage.className = 'google-photos-modal-message';
-        emptyMessage.textContent = googlePhotosState.authenticated
-            ? 'No albums were found in your Google Photos library.'
-            : 'Sign in to view your Google Photos albums.';
-        googlePhotosAlbumListElement.appendChild(emptyMessage);
-        if (googlePhotosAlbumSection) { googlePhotosAlbumSection.hidden = false; }
-        updateGooglePhotosModalSaveState();
-        return;
-    }
-
-    const fragment = document.createDocumentFragment();
-    const selectedId = googlePhotosState.modal.selectedAlbumId || '';
-
-    albums.forEach((album) => {
-        if (!album || !album.id) { return; }
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'google-photos-album-item';
-        button.dataset.albumId = album.id;
-        const isSelected = album.id === selectedId;
-        button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
-        if (isSelected) {
-            button.classList.add('is-selected');
-        }
-
-        const cover = document.createElement('div');
-        cover.className = 'google-photos-album-cover';
-        if (album.cover_photo_base_url) {
-            const img = document.createElement('img');
-            img.src = album.cover_photo_base_url;
-            img.alt = album.title ? `${album.title} cover photo` : 'Album cover photo';
-            img.loading = 'lazy';
-            img.decoding = 'async';
-            cover.appendChild(img);
-        }
-
-        const title = document.createElement('span');
-        title.className = 'google-photos-album-title';
-        title.textContent = album.title || 'Untitled album';
-
-        const count = document.createElement('span');
-        count.className = 'google-photos-album-count';
-        if (album.media_items_count !== undefined) {
-            count.textContent = `${album.media_items_count} item${Number(album.media_items_count) === 1 ? '' : 's'}`;
-        }
-
-        button.appendChild(cover);
-        button.appendChild(title);
-        if (album.media_items_count !== undefined) {
-            button.appendChild(count);
-        }
-        fragment.appendChild(button);
     });
-
-    googlePhotosAlbumListElement.appendChild(fragment);
-    if (googlePhotosAlbumSection) { googlePhotosAlbumSection.hidden = false; }
-    updateGooglePhotosModalSaveState();
-}
-
-function renderGooglePhotosPhotoGrid() {
-    if (!googlePhotosPhotoGridElement) { return; }
-    googlePhotosPhotoGridElement.innerHTML = '';
-
-    const hasAlbum = Boolean(googlePhotosState.modal.selectedAlbumId);
-    const photos = Array.isArray(googlePhotosState.modal.photos)
-        ? googlePhotosState.modal.photos
-        : [];
 
     if (!photos.length) {
-        const message = document.createElement('p');
-        message.className = 'google-photos-modal-message';
-        message.textContent = googlePhotosState.modal.selectedAlbumId
-            ? 'No photos were found in this album.'
-            : 'Select an album to choose highlight photos.';
-        googlePhotosPhotoGridElement.appendChild(message);
-        if (googlePhotosPhotosSection) { googlePhotosPhotosSection.hidden = false; }
-        if (googlePhotosSelectionHintElement) { googlePhotosSelectionHintElement.hidden = true; }
-        updateGooglePhotosModalSaveState();
-        return;
+        return null;
     }
 
-    const fragment = document.createDocumentFragment();
-    photos.forEach((photo) => {
-        if (!photo || !photo.id || !photo.base_url) { return; }
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'google-photos-photo-item';
-        button.dataset.photoId = photo.id;
+    let albumCandidate = response.album
+        || (Array.isArray(response.albums) ? response.albums[0] : null)
+        || (response.albumId ? {
+            id: response.albumId,
+            title: response.albumTitle || '',
+            productUrl: response.albumUrl || '',
+        } : null);
 
-        const isSelected = googlePhotosState.modal.selectedPhotoIds.has(photo.id);
-        button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
-        if (isSelected) { button.classList.add('is-selected'); }
-
-        const img = document.createElement('img');
-        img.src = photo.base_url;
-        img.alt = photo.filename || 'Album photo';
-        img.loading = 'lazy';
-        img.decoding = 'async';
-        button.appendChild(img);
-
-        fragment.appendChild(button);
-    });
-
-    googlePhotosPhotoGridElement.appendChild(fragment);
-    if (googlePhotosPhotosSection) { googlePhotosPhotosSection.hidden = false; }
-    if (googlePhotosSelectionHintElement) {
-        googlePhotosSelectionHintElement.hidden = !(hasAlbum && photos.length);
+    if (!albumCandidate && photos.length && photos[0] && typeof photos[0].album === 'object') {
+        albumCandidate = photos[0].album;
     }
-    updateGooglePhotosModalSaveState();
+
+    let album = normaliseGooglePhotosAlbum(albumCandidate);
+    if (!album && googlePhotosState.currentAlbumId) {
+        album = {
+            id: googlePhotosState.currentAlbumId,
+            title: googlePhotosState.currentAlbumTitle || '',
+            product_url: googlePhotosState.currentAlbumUrl || '',
+        };
+    }
+
+    return {
+        album,
+        photos,
+    };
 }
 
-function handleGooglePhotosAlbumListClick(event) {
-    const button = event.target && event.target.closest('[data-album-id]');
-    if (!button || !googlePhotosAlbumListElement || !googlePhotosAlbumListElement.contains(button)) { return; }
-    event.preventDefault();
-    const albumId = button.dataset.albumId ? button.dataset.albumId.trim() : '';
-    if (!albumId || albumId === googlePhotosState.modal.selectedAlbumId) { return; }
-    selectGooglePhotosAlbum(albumId);
-}
-
-function handleGooglePhotosPhotoClick(event) {
-    const button = event.target && event.target.closest('[data-photo-id]');
-    if (!button || !googlePhotosPhotoGridElement || !googlePhotosPhotoGridElement.contains(button)) { return; }
-    event.preventDefault();
-    const photoId = button.dataset.photoId ? button.dataset.photoId.trim() : '';
-    if (!photoId) { return; }
-    toggleGooglePhotosPhotoSelection(photoId);
-}
-
-function toggleGooglePhotosPhotoSelection(photoId) {
-    if (!photoId) { return; }
-
-    const current = googlePhotosState.modal.selectedPhotoIds;
-    if (current.has(photoId)) {
-        current.delete(photoId);
-    } else {
-        current.add(photoId);
-    }
-
-    renderGooglePhotosPhotoGrid();
-}
-
-function updateGooglePhotosModalSaveState() {
-    if (!googlePhotosModalSaveButton) { return; }
-    const hasAlbum = Boolean(googlePhotosState.modal.selectedAlbumId);
-    const isLoading = Boolean(googlePhotosState.modal.isLoading);
-    const saving = Boolean(tripDescriptionState.isSaving);
-    googlePhotosModalSaveButton.disabled = !hasAlbum || isLoading || saving;
-}
-
-async function openGooglePhotosModal() {
-    const controller = ensureGooglePhotosModal();
-    if (!controller) { return; }
-
-    googlePhotosState.modal.isOpen = true;
-    googlePhotosState.modal.isLoading = false;
-    googlePhotosState.modal.albums = Array.isArray(googlePhotosState.albums)
-        ? [...googlePhotosState.albums]
-        : [];
-    googlePhotosState.modal.photos = [];
-    googlePhotosState.modal.selectedAlbumId = tripDescriptionState.lastAppliedAlbumId || googlePhotosState.currentAlbumId || '';
-    googlePhotosState.modal.selectedAlbumTitle = tripDescriptionState.lastAppliedAlbumTitle || googlePhotosState.currentAlbumTitle || '';
-    googlePhotosState.modal.selectedAlbumUrl = tripDescriptionState.lastAppliedPhotosUrl || googlePhotosState.currentAlbumUrl || '';
-    const cleanedId = googlePhotosState.modal.selectedAlbumId
-        ? googlePhotosState.modal.selectedAlbumId.trim()
-        : '';
-    googlePhotosState.modal.selectedAlbumId = cleanedId;
-    const defaultHighlights = (cleanedId
-        && cleanedId === (tripDescriptionState.lastAppliedAlbumId || googlePhotosState.currentAlbumId || ''))
-        ? tripDescriptionState.lastAppliedHighlights
-        : [];
-    googlePhotosState.modal.selectedPhotoIds = new Set(
-        Array.isArray(defaultHighlights)
-            ? defaultHighlights
-                .map((entry) => (entry && entry.id ? entry.id : null))
-                .filter(Boolean)
-            : []
-    );
-
-    showGooglePhotosModalError('');
-    setGooglePhotosModalLoading(false);
-    updateGooglePhotosModalSaveState();
-
-    if (googlePhotosAlbumSection) { googlePhotosAlbumSection.hidden = true; }
-    if (googlePhotosPhotosSection) { googlePhotosPhotosSection.hidden = true; }
-
-    updateGooglePhotosModalAuthState();
-    controller.open();
-
-    if (!googlePhotosState.authenticated) {
-        setGooglePhotosModalLoading(false);
-        if (googlePhotosModalSignInButton) { googlePhotosModalSignInButton.focus(); }
-        return;
-    }
-
-    if (!googlePhotosState.sessionFetched) {
-        await fetchGooglePhotosSession();
-        updateGooglePhotosModalAuthState();
-        if (!googlePhotosState.authenticated) {
-            updateGooglePhotosControls();
-            return;
-        }
-    }
-
-    if (!googlePhotosState.albums.length) {
-        await loadGooglePhotosAlbums();
-    } else {
-        renderGooglePhotosAlbumList();
-    }
-
-    if (googlePhotosState.modal.selectedAlbumId) {
-        await selectGooglePhotosAlbum(googlePhotosState.modal.selectedAlbumId);
-    }
-}
-
-async function loadGooglePhotosAlbums() {
-    setGooglePhotosModalLoading(true);
-    try {
-        const response = await fetch('/api/google/photos/albums');
-        const data = await response.json().catch(() => ({}));
-
-        if (response.status === 401) {
-            googlePhotosState.authenticated = false;
-            googlePhotosState.sessionFetched = false;
-            googlePhotosState.albums = [];
-            googlePhotosState.albumLookup = new Map();
-            googlePhotosState.modal.albums = [];
-            googlePhotosState.modal.photos = [];
-            googlePhotosState.modal.selectedPhotoIds = new Set();
-            updateGooglePhotosControls();
-            updateGooglePhotosModalAuthState();
-            showGooglePhotosModalError('Google Photos access expired. Sign in again.');
-            return;
-        }
-
-        if (!response.ok || (data && data.status === 'error')) {
-            const message = data && data.message ? data.message : 'Failed to load albums.';
-            throw new Error(message);
-        }
-
-        const albums = Array.isArray(data.albums) ? data.albums : [];
-        googlePhotosState.albums = albums;
-        googlePhotosState.albumLookup = new Map(albums.map((album) => [album.id, album]));
-        googlePhotosState.modal.albums = [...albums];
-        renderGooglePhotosAlbumList();
-    } catch (error) {
-        console.error('Failed to load Google Photos albums', error);
-        showGooglePhotosModalError(error && error.message ? error.message : 'Failed to load albums.');
-    } finally {
-        setGooglePhotosModalLoading(false);
-        updateGooglePhotosModalSaveState();
-    }
-}
-
-async function selectGooglePhotosAlbum(albumId) {
-    const cleanedId = typeof albumId === 'string' ? albumId.trim() : '';
-    googlePhotosState.modal.selectedAlbumId = cleanedId;
-
-    const album = googlePhotosState.albumLookup.get(cleanedId)
-        || (Array.isArray(googlePhotosState.modal.albums)
-            ? googlePhotosState.modal.albums.find((entry) => entry && entry.id === cleanedId)
-            : null);
-
-    googlePhotosState.modal.selectedAlbumTitle = album && album.title ? album.title : '';
-    googlePhotosState.modal.selectedAlbumUrl = album && album.product_url ? album.product_url : '';
-
-    renderGooglePhotosAlbumList();
-    googlePhotosState.modal.photos = [];
-    googlePhotosState.modal.selectedPhotoIds = new Set(
-        Array.isArray(tripDescriptionState.lastAppliedHighlights)
-            ? tripDescriptionState.lastAppliedHighlights
-                .map((entry) => (entry && entry.id ? entry.id : null))
-                .filter(Boolean)
-            : []
-    );
-    renderGooglePhotosPhotoGrid();
-    if (cleanedId) {
-        await loadGooglePhotosAlbumPhotos(cleanedId);
-    }
-}
-
-async function loadGooglePhotosAlbumPhotos(albumId) {
-    const cleanedId = typeof albumId === 'string' ? albumId.trim() : '';
-    if (!cleanedId) {
-        googlePhotosState.modal.photos = [];
-        renderGooglePhotosPhotoGrid();
-        return;
-    }
-
-    googlePhotosState.modal.isLoading = true;
-    setGooglePhotosModalLoading(true);
-    try {
-        const response = await fetch(`/api/google/photos/albums/${encodeURIComponent(cleanedId)}/media`);
-        const data = await response.json().catch(() => ({}));
-
-        if (response.status === 401) {
-            googlePhotosState.authenticated = false;
-            googlePhotosState.sessionFetched = false;
-            googlePhotosState.albums = [];
-            googlePhotosState.albumLookup = new Map();
-            googlePhotosState.modal.albums = [];
-            googlePhotosState.modal.photos = [];
-            googlePhotosState.modal.selectedPhotoIds = new Set();
-            updateGooglePhotosControls();
-            updateGooglePhotosModalAuthState();
-            showGooglePhotosModalError('Google Photos access expired. Sign in again.');
-            return;
-        }
-
-        if (!response.ok || (data && data.status === 'error')) {
-            const message = data && data.message ? data.message : 'Failed to load album photos.';
-            throw new Error(message);
-        }
-
-        const items = Array.isArray(data.media_items) ? data.media_items : [];
-        googlePhotosState.modal.photos = items;
-        const validSelection = new Set();
-        items.forEach((item) => {
-            if (item && item.id && googlePhotosState.modal.selectedPhotoIds.has(item.id)) {
-                validSelection.add(item.id);
-            }
-        });
-        if (validSelection.size || googlePhotosState.modal.selectedPhotoIds.size) {
-            googlePhotosState.modal.selectedPhotoIds = validSelection.size ? validSelection : googlePhotosState.modal.selectedPhotoIds;
-        }
-        renderGooglePhotosPhotoGrid();
-    } catch (error) {
-        console.error('Failed to load Google Photos album', error);
-        showGooglePhotosModalError(error && error.message ? error.message : 'Failed to load album photos.');
-    } finally {
-        googlePhotosState.modal.isLoading = false;
-        setGooglePhotosModalLoading(false);
-    }
-}
-
-async function saveGooglePhotosSelection(event) {
-    if (event) { event.preventDefault(); }
-
+async function submitGooglePhotosSelection(selection) {
     const tripId = tripDescriptionState.tripId ? String(tripDescriptionState.tripId).trim() : '';
     if (!tripId) {
         showTripDescriptionStatus('Trip could not be determined.', true);
         return;
     }
 
-    const albumId = googlePhotosState.modal.selectedAlbumId || '';
-    const albumTitle = googlePhotosState.modal.selectedAlbumTitle || '';
-    const albumUrl = googlePhotosState.modal.selectedAlbumUrl || '';
+    const album = selection.album || null;
+    const albumId = album && album.id ? album.id : '';
+    const albumTitle = album && album.title ? album.title : '';
+    const albumUrl = album && album.product_url ? album.product_url : '';
 
-    const photoLookup = new Map(
-        Array.isArray(googlePhotosState.modal.photos)
-            ? googlePhotosState.modal.photos.map((photo) => [photo.id, photo])
-            : []
-    );
+    if (!albumId) {
+        showTripDescriptionStatus('Select a Google Photos album to continue.', true);
+        return;
+    }
 
-    const highlights = [];
-    googlePhotosState.modal.selectedPhotoIds.forEach((photoId) => {
-        const photo = photoLookup.get(photoId);
-        if (!photo) { return; }
-        highlights.push({
-            id: photo.id,
-            base_url: photo.base_url,
-            product_url: photo.product_url || albumUrl,
-            filename: photo.filename || '',
-            mime_type: photo.mime_type || '',
-        });
-    });
+    const highlights = (selection.photos || []).map((photo) => ({
+        id: photo.id,
+        base_url: photo.base_url || '',
+        product_url: photo.product_url || albumUrl,
+        filename: photo.filename || '',
+        mime_type: photo.mime_type || '',
+    }));
+
+    if (!highlights.length) {
+        showTripDescriptionStatus('Choose at least one highlight photo.', true);
+        return;
+    }
 
     tripDescriptionState.isSaving = true;
     updateGooglePhotosControls();
-    setGooglePhotosModalLoading(true);
+    setGooglePhotosPickerLoading(true);
     showTripDescriptionStatus('Saving photos…');
 
     try {
-        const payload = {
-            album_id: albumId,
-            album_title: albumTitle,
-            album_product_url: albumUrl,
-            highlights,
-        };
-
         const response = await fetch(`/api/trips/${encodeURIComponent(tripId)}/photos`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
+            body: JSON.stringify({
+                album_id: albumId,
+                album_title: albumTitle,
+                album_product_url: albumUrl,
+                highlights,
+            }),
         });
         const result = await response.json().catch(() => ({}));
 
@@ -2976,27 +2703,113 @@ async function saveGooglePhotosSelection(event) {
             throw new Error(message);
         }
 
-        applyTripPhotoUpdate(result);
-        showTripDescriptionStatus('Trip photos updated.');
-        if (googlePhotosModalController) {
-            googlePhotosModalController.close();
+        applyTripPhotoUpdate(result, { showMessage: true });
+        if (googlePhotosActivePicker && typeof googlePhotosActivePicker.hide === 'function') {
+            googlePhotosActivePicker.hide();
         }
+        googlePhotosActivePicker = null;
     } catch (error) {
         const message = error && error.message ? error.message : 'Failed to update trip photos.';
         console.error('Failed to update trip photos', error);
         showTripDescriptionStatus(message, true);
-        showGooglePhotosModalError(message);
     } finally {
         tripDescriptionState.isSaving = false;
         updateGooglePhotosControls();
-        setGooglePhotosModalLoading(false);
+        setGooglePhotosPickerLoading(false);
+    }
+}
+
+function handleGooglePhotosPickerSelection(response) {
+    const selection = extractGooglePhotosSelection(response);
+    if (!selection) {
+        return;
+    }
+
+    submitGooglePhotosSelection(selection);
+}
+
+async function openGooglePhotosPicker() {
+    const config = getGooglePhotosConfig();
+    if (!config || !config.clientId) {
+        showTripDescriptionStatus('Google Photos integration is not configured.', true);
+        return;
+    }
+
+    if (!googlePhotosState.sessionFetched) {
+        await fetchGooglePhotosSession();
+    }
+
+    if (!googlePhotosState.authenticated) {
+        handleGooglePhotosSignIn();
+        return;
+    }
+
+    if (googlePhotosState.picker.loading || googlePhotosState.picker.requestingToken) {
+        return;
+    }
+
+    try {
+        setGooglePhotosPickerLoading(true);
+        updateGooglePhotosControls();
+
+        await ensureGooglePhotosSdk();
+        const accessToken = await requestGooglePhotosPickerToken();
+
+        if (!window.google || !window.google.accounts || !window.google.accounts.photospicker) {
+            throw new Error('Google Photos picker is unavailable.');
+        }
+
+        const builder = new window.google.accounts.photospicker.PickerBuilder()
+            .setTitle('Select Google Photos for your trip')
+            .setLocale(document.documentElement.lang || 'en')
+            .setOAuthToken(accessToken)
+            .setCallback(handleGooglePhotosPickerSelection);
+
+        if (builder.setPhotoMode && window.google.accounts.photospicker.PhotoMode) {
+            builder.setPhotoMode(window.google.accounts.photospicker.PhotoMode.MEDIA_ITEMS);
+        }
+        if (builder.setSelectionMode && window.google.accounts.photospicker.SelectionMode) {
+            builder.setSelectionMode(window.google.accounts.photospicker.SelectionMode.MULTI);
+        } else if (builder.setMultiSelectEnabled) {
+            builder.setMultiSelectEnabled(true);
+        }
+        if (builder.setMaxItems) {
+            try {
+                builder.setMaxItems(20);
+            } catch (error) {
+                // Ignore if unsupported
+            }
+        }
+
+        const defaultAlbumId = tripDescriptionState.lastAppliedAlbumId || googlePhotosState.currentAlbumId || '';
+        if (defaultAlbumId && builder.setAlbumId) {
+            try {
+                builder.setAlbumId(defaultAlbumId);
+            } catch (error) {
+                // Some picker versions do not support pre-selecting an album.
+            }
+        }
+
+        googlePhotosActivePicker = builder.build();
+        if (googlePhotosActivePicker && typeof googlePhotosActivePicker.show === 'function') {
+            googlePhotosActivePicker.show();
+        } else {
+            throw new Error('Google Photos picker could not be started.');
+        }
+    } catch (error) {
+        const message = error && error.message ? error.message : 'Unable to open Google Photos picker.';
+        console.error('Failed to launch Google Photos picker', error);
+        showTripDescriptionStatus(message, true);
+    } finally {
+        setGooglePhotosPickerLoading(false);
+        updateGooglePhotosControls();
     }
 }
 
 function handleTripPhotosManageClick(event) {
     if (event) { event.preventDefault(); }
     if (tripDescriptionState.isSaving) { return; }
-    openGooglePhotosModal();
+    openGooglePhotosPicker();
 }
 
 async function handleTripPhotosRemove(event) {
@@ -3072,6 +2885,14 @@ function applyTripPhotoUpdate(result, options = {}) {
 }
 
 async function fetchGooglePhotosSession() {
+    if (!isGooglePhotosEnabled()) {
+        googlePhotosState.authenticated = false;
+        googlePhotosState.sessionFetched = true;
+        googlePhotosState.checkingStatus = false;
+        updateGooglePhotosControls();
+        return;
+    }
+
     googlePhotosState.checkingStatus = true;
     updateGooglePhotosControls();
     try {
@@ -3086,15 +2907,9 @@ async function fetchGooglePhotosSession() {
         console.error('Failed to fetch Google Photos session', error);
         googlePhotosState.authenticated = false;
         googlePhotosState.sessionFetched = false;
-        googlePhotosState.albums = [];
-        googlePhotosState.albumLookup = new Map();
-        googlePhotosState.modal.albums = [];
-        googlePhotosState.modal.photos = [];
-        googlePhotosState.modal.selectedPhotoIds = new Set();
     } finally {
         googlePhotosState.checkingStatus = false;
         updateGooglePhotosControls();
-        updateGooglePhotosModalAuthState();
     }
 }
 function applyTripProfileEditMode() {
@@ -3588,6 +3403,7 @@ function initTripProfilePanel() {
     googlePhotosSignOutButton = document.getElementById('googlePhotosSignOutButton');
     tripPhotosManageButton = document.getElementById('tripPhotosManageButton');
     tripPhotosRemoveButton = document.getElementById('tripPhotosRemoveButton');
+    googlePhotosPickerLoadingElement = document.getElementById('googlePhotosPickerLoading');
 
     if (!tripDescriptionTitleElement) {
         if (!tripDetailState.initialised) { initTripDetailPanel(); }

@@ -42,9 +42,21 @@ class MediaItem:
     filename: str = ""
 
 
+def get_client_id() -> str:
+    """Return the configured Google Photos OAuth client identifier."""
+
+    return os.getenv("GOOGLE_PHOTOS_CLIENT_ID", "").strip()
+
+
+def _get_client_secret() -> str:
+    """Return the configured Google Photos OAuth client secret."""
+
+    return os.getenv("GOOGLE_PHOTOS_CLIENT_SECRET", "").strip()
+
+
 def _get_client_config() -> Optional[Dict[str, Dict[str, str]]]:
-    client_id = os.getenv("GOOGLE_PHOTOS_CLIENT_ID", "").strip()
-    client_secret = os.getenv("GOOGLE_PHOTOS_CLIENT_SECRET", "").strip()
+    client_id = get_client_id()
+    client_secret = _get_client_secret()
 
     if not client_id or not client_secret:
         return None
@@ -63,6 +75,12 @@ def is_configured() -> bool:
     """Return ``True`` when the Google Photos client credentials are available."""
 
     return _get_client_config() is not None
+
+
+def get_scopes() -> List[str]:
+    """Return the Google Photos OAuth scopes used by the application."""
+
+    return list(_SCOPES)
 
 
 def build_flow(redirect_uri: str, *, state: Optional[str] = None) -> Flow:
@@ -86,8 +104,8 @@ def credentials_from_dict(payload: Optional[Dict[str, Any]]) -> Optional[Credent
     token = payload.get("token")
     refresh_token = payload.get("refresh_token")
     token_uri = payload.get("token_uri", _TOKEN_URI)
-    client_id = payload.get("client_id") or os.getenv("GOOGLE_PHOTOS_CLIENT_ID")
-    client_secret = payload.get("client_secret") or os.getenv("GOOGLE_PHOTOS_CLIENT_SECRET")
+    client_id = payload.get("client_id") or get_client_id()
+    client_secret = payload.get("client_secret") or _get_client_secret()
     scopes = payload.get("scopes") or list(_SCOPES)
 
     if not token and not refresh_token:
@@ -137,6 +155,24 @@ def ensure_valid_credentials(credentials: Credentials) -> Credentials:
 def _authorised_session(credentials: Credentials) -> AuthorizedSession:
     valid_credentials = ensure_valid_credentials(credentials)
     return AuthorizedSession(valid_credentials)
+
+
+def get_access_token(credentials: Credentials) -> str:
+    """Return a fresh access token for ``credentials``.
+
+    Raises :class:`GooglePhotosError` when a token cannot be produced.
+    """
+
+    try:
+        refreshed = ensure_valid_credentials(credentials)
+    except Exception as exc:  # pragma: no cover - defensive
+        raise GooglePhotosError("Failed to refresh Google Photos credentials") from exc
+
+    token = refreshed.token
+    if not token:
+        raise GooglePhotosError("Google Photos credentials do not include an access token.")
+
+    return token
 
 
 def list_albums(credentials: Credentials, *, page_size: int = 50) -> List[Album]:

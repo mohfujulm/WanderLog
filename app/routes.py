@@ -467,7 +467,17 @@ def _serialise_trip_location(row, *, place_id: str = "", order: int = 0) -> dict
 def index():
     """Render the landing page."""
 
-    return render_template("index.html", mapbox_token=MAPBOX_ACCESS_TOKEN)
+    google_photos_config = {
+        'clientId': google_photos.get_client_id(),
+        'scopes': google_photos.get_scopes(),
+        'enabled': google_photos.is_configured(),
+    }
+
+    return render_template(
+        "index.html",
+        mapbox_token=MAPBOX_ACCESS_TOKEN,
+        google_photos_config=google_photos_config,
+    )
 
 
 @main.route('/auth/google')
@@ -530,62 +540,34 @@ def google_photos_session():
     return jsonify({'authenticated': authenticated, 'scopes': scopes})
 
 
-@main.route('/api/google/photos/albums', methods=['GET'])
-def api_google_photos_albums():
-    """Return the authenticated user's Google Photos albums."""
+@main.route('/api/google/photos/picker-token', methods=['POST'])
+def api_google_photos_picker_token():
+    """Return a short-lived access token for the Google Photos Picker."""
+
+    if not google_photos.is_configured():
+        return jsonify(status='error', message='Google Photos integration is disabled.'), 503
 
     credentials = _get_google_credentials()
     if credentials is None:
         return jsonify(status='error', message='Google Photos account not connected.'), 401
 
     try:
-        albums = google_photos.list_albums(credentials)
+        access_token = google_photos.get_access_token(credentials)
     except google_photos.GooglePhotosError as exc:
-        return jsonify(status='error', message=str(exc)), 502
+        session.pop(_GOOGLE_CREDENTIALS_SESSION_KEY, None)
+        return jsonify(status='error', message=str(exc)), 401
 
-    payload = [
-        {
-            'id': album.id,
-            'title': album.title,
-            'product_url': album.product_url,
-            'cover_photo_base_url': _ensure_high_res_base_url(album.cover_photo_base_url),
-            'media_items_count': album.media_items_count,
-        }
-        for album in albums
-    ]
+    expiry = getattr(credentials, 'expiry', None)
+    expires_at = expiry.isoformat() if expiry is not None else None
 
-    return jsonify(status='success', albums=payload)
+    session[_GOOGLE_CREDENTIALS_SESSION_KEY] = google_photos.credentials_to_dict(credentials)
 
-
-@main.route('/api/google/photos/albums/<album_id>/media', methods=['GET'])
-def api_google_photos_album_media(album_id: str):
-    """Return media items for ``album_id``."""
-
-    credentials = _get_google_credentials()
-    if credentials is None:
-        return jsonify(status='error', message='Google Photos account not connected.'), 401
-
-    cleaned_album_id = (album_id or '').strip()
-    if not cleaned_album_id:
-        return jsonify(status='error', message='A valid album ID is required.'), 400
-
-    try:
-        media_items = google_photos.list_media_items(credentials, cleaned_album_id)
-    except google_photos.GooglePhotosError as exc:
-        return jsonify(status='error', message=str(exc)), 502
-
-    payload = [
-        {
-            'id': item.id,
-            'base_url': _ensure_high_res_base_url(item.base_url),
-            'product_url': item.product_url,
-            'mime_type': item.mime_type,
-            'filename': item.filename,
-        }
-        for item in media_items
-    ]
-
-    return jsonify(status='success', media_items=payload)
+    return jsonify(
+        status='success',
+        access_token=access_token,
+        token_type='Bearer',
+        expires_at=expires_at,
+    )
 
 
 @main.route('/api/update_timeline', methods=['POST'])

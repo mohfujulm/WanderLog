@@ -6,7 +6,10 @@ v0.4 - updated UI, added data type filtering, cleaned up code
 v0.5 - added archiving/deleting of data points, backups for timeline data on clear map, warnings for clear map & deleting of data points, and date range filtering
 v0.6 - added "Trips" prototype, added edit mode with multi-selection/editing of data points, updates to UI, fixed sorting, added descriptions to Trips
 v0.7 - documented Google Photos OAuth local development requirements, including automatic enabling of OAuthlib insecure transport when FLASK_ENV is not set to production
+v0.8 - switched the Google Photos integration to the Google Identity Services Photos Picker API and refreshed the album management UX
 
 Google Photos OAuth Notes:
 - When running the Flask server locally over HTTP, leave `FLASK_ENV` unset or set it to `development` so the app will automatically enable the OAuthlib insecure transport and relaxed token scope flags required by Google OAuth on non-HTTPS origins.
 - Production deployments should explicitly export `FLASK_ENV=production` (or `prod`) so OAuthlib requires HTTPS as expected.
+- The front-end now loads the Google Identity Services Photos Picker. Ensure both `GOOGLE_PHOTOS_CLIENT_ID` and `GOOGLE_PHOTOS_CLIENT_SECRET` are set so the `/api/google/photos/picker-token` endpoint can mint access tokens and the picker can launch successfully.
+- The Manage album button opens the GIS Photos Picker directly; make sure the OAuth consent screen lists the `https://www.googleapis.com/auth/photoslibrary.readonly` scope to match the picker request.

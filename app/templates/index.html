@@ -237,31 +237,9 @@
             </div>
         </div>
     </div>
-    <div id="googlePhotosModal" class="modal-overlay" aria-hidden="true" hidden>
-        <div class="modal-content google-photos-modal" role="dialog" aria-modal="true" aria-labelledby="googlePhotosModalTitle" tabindex="-1">
-            <h2 id="googlePhotosModalTitle">Manage Google Photos album</h2>
-            <div class="google-photos-modal-body">
-                <div id="googlePhotosModalAuthPrompt" class="google-photos-modal-message" hidden>
-                    <p>Sign in with your Google account to browse albums and pick highlight photos.</p>
-                    <button type="button" class="modal-button primary" id="googlePhotosModalSignIn">Sign in with Google</button>
-                </div>
-                <div id="googlePhotosModalLoading" class="google-photos-modal-message" hidden>Loading…</div>
-                <div id="googlePhotosModalError" class="google-photos-modal-message google-photos-modal-error" role="alert" hidden></div>
-                <div id="googlePhotosAlbumSection" class="google-photos-section" hidden>
-                    <h3 class="google-photos-heading">Select an album</h3>
-                    <div id="googlePhotosAlbumList" class="google-photos-album-list" role="list"></div>
-                </div>
-                <div id="googlePhotosPhotosSection" class="google-photos-section" hidden>
-                    <h3 class="google-photos-heading">Choose highlight photos</h3>
-                    <p id="googlePhotosSelectionHint" class="google-photos-hint">Select the photos you want to feature on this trip.</p>
-                    <div id="googlePhotosPhotoGrid" class="google-photos-photo-grid" role="list"></div>
-                </div>
-            </div>
-            <div class="modal-actions">
-                <button type="button" class="modal-button secondary" id="googlePhotosModalCancel">Cancel</button>
-                <button type="button" class="modal-button primary" id="googlePhotosModalSave" disabled>Save</button>
-            </div>
-        </div>
+    <div id="googlePhotosPickerLoading" class="google-photos-picker-loading" hidden aria-live="polite">
+        <span class="spinner" aria-hidden="true"></span>
+        <span class="google-photos-picker-loading-text">Preparing Google Photos…</span>
     </div>
     <div id="tripProfileOverlay" class="trip-profile-overlay" aria-hidden="true" hidden>
         <article id="tripProfilePanel" class="trip-profile-panel" role="dialog" aria-modal="false" aria-labelledby="tripDetailTitle">
@@ -370,6 +348,7 @@
             manual: "{{ url_for('static', filename='assets/marker-pin-orange.svg') }}",
             default: "{{ url_for('static', filename='assets/marker-pin-gray.svg') }}",
         },
+        googlePhotos: {{ google_photos_config | tojson | safe }},
     };
 </script>
 <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
