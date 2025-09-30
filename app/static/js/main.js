@@ -735,6 +735,10 @@ function setupGooglePhotosAlbumsTester() {
         clearAlbumsView();
         setElementHidden(section, false);
 
+        const requestId = `albums-${Date.now()}`;
+        console.groupCollapsed('[Google Photos Tester] Fetching albums');
+        console.info('[Google Photos Tester] Starting request', { requestId });
+
         try {
             const response = await fetch('/api/google/photos/albums', {
                 credentials: 'include',
@@ -742,18 +746,31 @@ function setupGooglePhotosAlbumsTester() {
             });
             const payload = await response.json().catch(() => ({}));
 
+            console.info('[Google Photos Tester] Response received', {
+                requestId,
+                ok: response.ok,
+                status: response.status,
+            });
+            if (payload && typeof payload === 'object') {
+                console.debug('[Google Photos Tester] Response payload', payload);
+            }
+
             if (!response.ok) {
                 const message = payload && payload.error ? payload.error : 'Failed to load albums.';
                 throw new Error(message);
             }
 
             showAlbums(payload.albums);
+            const albumCount = Array.isArray(payload.albums) ? payload.albums.length : 0;
+            console.info('[Google Photos Tester] Albums rendered', { requestId, albumCount });
         } catch (error) {
             const message = (error && error.message) ? error.message : 'Failed to load albums.';
             showError(message);
+            console.error('[Google Photos Tester] Album fetch failed', { requestId, error });
         } finally {
             setButtonLabel(defaultLabel);
             button.disabled = false;
+            console.groupEnd();
         }
     });
 
