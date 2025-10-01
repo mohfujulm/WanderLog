@@ -2,7 +2,7 @@
 
 import json
 import os
-from typing import Optional
+from typing import Any, Optional
 
 import pandas as pd
 import requests
@@ -655,17 +655,58 @@ def api_google_photos_albums():
         return jsonify(error='Unable to contact Google Photos. Please try again later.'), 502
 
     if response.status_code != 200:
+        error_payload: dict[str, Any] | None = None
+        debug_details: dict[str, Any] = {
+            'status_code': response.status_code,
+            'headers': dict(response.headers or {}),
+        }
+
+        try:
+            error_payload = response.json()
+        except ValueError:
+            error_payload = None
+
+        google_error_message: str | None = None
+        google_error_status: str | None = None
+
+        if isinstance(error_payload, dict):
+            debug_details['response_json'] = error_payload
+            google_error = error_payload.get('error')
+            if isinstance(google_error, dict):
+                google_error_message = google_error.get('message')
+                google_error_status = google_error.get('status')
+            elif isinstance(google_error, str):
+                google_error_message = google_error
+        else:
+            response_text = response.text or ''
+            if response_text:
+                debug_details['response_text'] = response_text[:500]
+
+        if google_error_message:
+            debug_details['google_error_message'] = google_error_message
+        if google_error_status:
+            debug_details['google_error_status'] = google_error_status
+
         current_app.logger.error(
             'Google Photos API returned an error',
             extra={
                 'google_oauth': {
                     'phase': 'albums_request',
                     'status_code': response.status_code,
-                    'response_text': response.text,
-                }
+                    'response_payload': error_payload,
+                },
+                'google_photos_debug': debug_details,
             },
         )
-        return jsonify(error='Google Photos request failed. Please try again later.'), 502
+
+        return (
+            jsonify(
+                error='Google Photos request failed. Please try again later.',
+                status_code=response.status_code,
+                debug=debug_details,
+            ),
+            502,
+        )
 
     payload = response.json() if response.content else {}
     albums = []

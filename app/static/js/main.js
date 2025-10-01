@@ -19,6 +19,7 @@ const TRIP_CLUSTER_OPTIONS = {
     spiderfyOnMaxZoom: true,
     spiderfyDistanceMultiplier: 1.2,
 };
+const DEBUG_CHANNEL = window.WanderLogDebug = window.WanderLogDebug || {};
 let map;
 let markerCluster;
 let tripMarkerLayer = null;
@@ -641,6 +642,9 @@ function setupGooglePhotosAlbumsTester() {
     const card = document.querySelector('[data-google-auth-card]');
     if (!card) { return; }
 
+    const debugChannel = DEBUG_CHANNEL.googlePhotos = DEBUG_CHANNEL.googlePhotos || {};
+    debugChannel.card = card;
+
     const button = card.querySelector('[data-auth-albums-button]');
     const section = card.querySelector('[data-auth-albums-section]');
     const listElement = section ? section.querySelector('[data-auth-albums-list]') : null;
@@ -649,6 +653,12 @@ function setupGooglePhotosAlbumsTester() {
     const labelElement = button ? button.querySelector('[data-auth-albums-button-label]') : null;
 
     if (!button || !section || !listElement || !emptyElement || !errorElement) { return; }
+
+    debugChannel.button = button;
+    debugChannel.section = section;
+    debugChannel.listElement = listElement;
+    debugChannel.emptyElement = emptyElement;
+    debugChannel.errorElement = errorElement;
 
     const defaultLabel = button.dataset.authAlbumsDefaultLabel || (labelElement ? labelElement.textContent.trim() : 'View Google Photos Albums');
     const loadingLabel = button.dataset.authAlbumsLoadingLabel || 'Loading albums...';
@@ -726,6 +736,53 @@ function setupGooglePhotosAlbumsTester() {
         setElementHidden(errorElement, false);
     }
 
+    function createAlbumsEndpoint(options = {}) {
+        const params = new URLSearchParams();
+        const pageSize = options.pageSize;
+        const pageToken = options.pageToken;
+
+        if (pageSize !== undefined && pageSize !== null && pageSize !== '') {
+            const parsedSize = Number(pageSize);
+            if (!Number.isNaN(parsedSize) && Number.isFinite(parsedSize)) {
+                params.set('pageSize', String(parsedSize));
+            }
+        }
+
+        if (pageToken !== undefined && pageToken !== null && pageToken !== '') {
+            params.set('pageToken', String(pageToken));
+        }
+
+        const query = params.toString();
+        return query ? `/api/google/photos/albums?${query}` : '/api/google/photos/albums';
+    }
+
+    async function fetchAlbums(options = {}) {
+        const endpoint = createAlbumsEndpoint(options || {});
+        const response = await fetch(endpoint, {
+            credentials: 'include',
+            cache: 'no-store',
+        });
+        const payload = await response.json().catch(() => ({}));
+        return { endpoint, response, payload };
+    }
+
+    function summariseResult(result) {
+        const headers = {};
+        if (result && result.response && result.response.headers && typeof result.response.headers.forEach === 'function') {
+            result.response.headers.forEach((value, key) => {
+                headers[key] = value;
+            });
+        }
+        return {
+            endpoint: result ? result.endpoint : '/api/google/photos/albums',
+            ok: result && result.response ? result.response.ok : false,
+            status: result && result.response ? result.response.status : null,
+            statusText: result && result.response ? result.response.statusText : '',
+            headers,
+            payload: result ? result.payload : null,
+        };
+    }
+
     button.addEventListener('click', async (event) => {
         event.preventDefault();
         if (button.disabled) { return; }
@@ -736,43 +793,120 @@ function setupGooglePhotosAlbumsTester() {
         setElementHidden(section, false);
 
         const requestId = `albums-${Date.now()}`;
-        console.groupCollapsed('[Google Photos Tester] Fetching albums');
+        const startedAt = new Date().toISOString();
+        console.groupCollapsed(`[Google Photos Tester] Fetching albums (${startedAt})`);
         console.info('[Google Photos Tester] Starting request', { requestId });
 
+        let payload = null;
+        let resultSummary = null;
+
         try {
-            const response = await fetch('/api/google/photos/albums', {
-                credentials: 'include',
-                cache: 'no-store',
-            });
-            const payload = await response.json().catch(() => ({}));
+            const result = await fetchAlbums();
+            payload = result.payload;
+            resultSummary = summariseResult(result);
 
             console.info('[Google Photos Tester] Response received', {
                 requestId,
-                ok: response.ok,
-                status: response.status,
+                ok: resultSummary.ok,
+                status: resultSummary.status,
+                statusText: resultSummary.statusText,
+                endpoint: resultSummary.endpoint,
             });
-            if (payload && typeof payload === 'object') {
+
+            if (payload && typeof payload === 'object' && !Array.isArray(payload)) {
                 console.debug('[Google Photos Tester] Response payload', payload);
+                if (payload.debug) {
+                    console.warn('[Google Photos Tester] Debug info from server', payload.debug);
+                }
             }
 
-            if (!response.ok) {
+            if (!resultSummary.ok) {
                 const message = payload && payload.error ? payload.error : 'Failed to load albums.';
-                throw new Error(message);
+                const error = new Error(message);
+                error.response = resultSummary;
+                error.payload = payload;
+                throw error;
             }
 
             showAlbums(payload.albums);
             const albumCount = Array.isArray(payload.albums) ? payload.albums.length : 0;
             console.info('[Google Photos Tester] Albums rendered', { requestId, albumCount });
+            debugChannel.lastResult = {
+                requestId,
+                albumCount,
+                timestamp: new Date().toISOString(),
+                ...resultSummary,
+            };
+            debugChannel.lastError = null;
         } catch (error) {
             const message = (error && error.message) ? error.message : 'Failed to load albums.';
             showError(message);
-            console.error('[Google Photos Tester] Album fetch failed', { requestId, error });
+            const payloadSummary = (payload && typeof payload === 'object' && !Array.isArray(payload)) ? payload : null;
+            const errorSummary = {
+                requestId,
+                timestamp: new Date().toISOString(),
+                response: resultSummary,
+                payload: payloadSummary,
+            };
+            if (error && typeof error === 'object') {
+                errorSummary.error = {
+                    message: error.message,
+                    stack: error.stack || null,
+                };
+                if (!errorSummary.response && error.response) {
+                    errorSummary.response = error.response;
+                }
+                if (!errorSummary.payload && error.payload) {
+                    errorSummary.payload = error.payload;
+                }
+            }
+
+            debugChannel.lastError = errorSummary;
+            console.error('[Google Photos Tester] Album fetch failed', {
+                requestId,
+                error,
+                response: resultSummary,
+                payload,
+            });
         } finally {
+            const finalSummary = resultSummary || {
+                endpoint: '/api/google/photos/albums',
+                ok: false,
+                status: null,
+                statusText: '',
+                headers: {},
+                payload: (payload && typeof payload === 'object' && !Array.isArray(payload)) ? payload : null,
+            };
+            debugChannel.lastRequest = {
+                requestId,
+                timestamp: new Date().toISOString(),
+                ...finalSummary,
+            };
             setButtonLabel(defaultLabel);
             button.disabled = false;
             console.groupEnd();
         }
     });
+
+    debugChannel.fetchAlbums = async (options = {}) => {
+        const result = await fetchAlbums(options || {});
+        const summary = summariseResult(result);
+        const timestamp = new Date().toISOString();
+        debugChannel.lastManualResult = { timestamp, ...summary };
+        console.groupCollapsed(`[Google Photos Debug] Manual album request (${timestamp})`);
+        console.info('Endpoint', summary.endpoint);
+        console.info('Response', {
+            ok: summary.ok,
+            status: summary.status,
+            statusText: summary.statusText,
+            headers: summary.headers,
+        });
+        if (summary.payload !== null && summary.payload !== undefined) {
+            console.info('Payload', summary.payload);
+        }
+        console.groupEnd();
+        return summary;
+    };
 
     clearAlbumsView();
 }
