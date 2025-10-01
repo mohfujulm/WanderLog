@@ -1,6 +1,8 @@
 const APP_CONFIG = window.wanderLogConfig || {};
 const ASSET_CONFIG = APP_CONFIG.assets || {};
 const MAPBOX_TOKEN = APP_CONFIG.mapboxToken || '';
+const AUTH_CONFIG = APP_CONFIG.auth || {};
+const GOOGLE_AUTH_CONFIG = AUTH_CONFIG.google || null;
 const MENU_ICON_PATH = ASSET_CONFIG.menuIcon || '';
 const CLOSE_ICON_PATH = ASSET_CONFIG.closeIcon || '';
 const MAP_DEFAULT_CENTER = [40.65997395108914, -73.71300111746832];
@@ -26,6 +28,8 @@ const mapMarkerLookup = new Map();
 const mapMarkerData = new Map();
 let loadMarkersAbortController = null;
 let loadMarkersRequestToken = 0;
+let googleAuthRefreshHandler = null;
+let googleAuthRequestToken = 0;
 let isTripMapModeActive = false;
 let previousMapView = null;
 let manualPointForm;
@@ -453,6 +457,324 @@ function saveMenuState(menu, partialMenuState) {
             [key]: payload,
         },
     });
+}
+
+function setElementHidden(element, hidden) {
+    if (!element) { return; }
+    if (hidden) { element.hidden = true; }
+    else { element.hidden = false; }
+}
+
+function normaliseGoogleAuthUser(user) {
+    if (!user || typeof user !== 'object') { return null; }
+
+    const id = typeof user.id === 'string' ? user.id : '';
+    const email = typeof user.email === 'string' ? user.email : '';
+    const name = typeof user.name === 'string' ? user.name : '';
+    const picture = typeof user.picture === 'string' ? user.picture : '';
+
+    if (!id && !email && !name && !picture) { return null; }
+
+    return { id, email, name, picture };
+}
+
+function deriveGoogleUserInitial(user) {
+    if (!user) { return ''; }
+    const source = (user.name || user.email || '').trim();
+    if (!source) { return ''; }
+    return source.charAt(0).toUpperCase();
+}
+
+function updateGoogleAuthConfig(user) {
+    if (!GOOGLE_AUTH_CONFIG) { return; }
+    if (user) {
+        GOOGLE_AUTH_CONFIG.user = { ...user };
+    } else {
+        GOOGLE_AUTH_CONFIG.user = null;
+    }
+}
+
+function applyGoogleAuthState(state) {
+    const card = document.querySelector('[data-google-auth-card]');
+    if (!card) { return; }
+
+    const button = card.querySelector('[data-auth-button]');
+    if (!button) { return; }
+
+    const labelElement = button.querySelector('[data-auth-button-label]');
+    const iconElement = button.querySelector('[data-auth-button-icon]');
+    const statusElement = card.querySelector('[data-auth-status]');
+    const statusTitleElement = card.querySelector('[data-auth-status-title]');
+    const statusSubtitleElement = card.querySelector('[data-auth-status-subtitle]');
+    const avatarElement = card.querySelector('[data-auth-avatar]');
+    const avatarImageElement = avatarElement ? avatarElement.querySelector('[data-auth-avatar-image]') : null;
+    const avatarInitialElement = avatarElement ? avatarElement.querySelector('[data-auth-avatar-initial]') : null;
+    const albumsButton = card.querySelector('[data-auth-albums-button]');
+    const albumsLabelElement = albumsButton ? albumsButton.querySelector('[data-auth-albums-button-label]') : null;
+    const albumsSection = card.querySelector('[data-auth-albums-section]');
+    const albumsListElement = albumsSection ? albumsSection.querySelector('[data-auth-albums-list]') : null;
+    const albumsEmptyElement = albumsSection ? albumsSection.querySelector('[data-auth-albums-empty]') : null;
+    const albumsErrorElement = albumsSection ? albumsSection.querySelector('[data-auth-albums-error]') : null;
+
+    const normalisedUser = state && state.authenticated ? normaliseGoogleAuthUser(state.user) : null;
+    const isAuthenticated = Boolean(normalisedUser);
+
+    const loginLabel = button.dataset.authLoginLabel || 'Sign in with Google';
+    const logoutLabel = button.dataset.authLogoutLabel || 'Sign Out';
+    const loginUrl = button.dataset.authLoginUrl || '#';
+    const logoutUrl = button.dataset.authLogoutUrl || '#';
+    const loginClasses = (button.dataset.authLoginClass || '').split(/\s+/).filter(Boolean);
+    const logoutClasses = (button.dataset.authLogoutClass || '').split(/\s+/).filter(Boolean);
+
+    button.classList.remove(...loginClasses, ...logoutClasses);
+    if (isAuthenticated) {
+        if (logoutClasses.length) { button.classList.add(...logoutClasses); }
+        button.setAttribute('href', logoutUrl || '#');
+        if (labelElement) { labelElement.textContent = logoutLabel; }
+        if (iconElement) { setElementHidden(iconElement, true); }
+        card.dataset.authState = 'authenticated';
+    } else {
+        if (loginClasses.length) { button.classList.add(...loginClasses); }
+        button.setAttribute('href', loginUrl || '#');
+        if (labelElement) { labelElement.textContent = loginLabel; }
+        if (iconElement) { setElementHidden(iconElement, false); }
+        card.dataset.authState = 'anonymous';
+    }
+
+    if (statusElement) {
+        setElementHidden(statusElement, !isAuthenticated);
+        if (isAuthenticated) {
+            if (statusTitleElement) { statusTitleElement.textContent = 'Signed in'; }
+            if (statusSubtitleElement) { statusSubtitleElement.textContent = normalisedUser.name || normalisedUser.email || ''; }
+        } else {
+            if (statusTitleElement) { statusTitleElement.textContent = ''; }
+            if (statusSubtitleElement) { statusSubtitleElement.textContent = ''; }
+        }
+    }
+
+    if (avatarElement) {
+        const userInitial = isAuthenticated ? deriveGoogleUserInitial(normalisedUser) : '';
+        if (avatarImageElement) {
+            if (isAuthenticated && normalisedUser.picture) {
+                avatarImageElement.src = normalisedUser.picture;
+                setElementHidden(avatarImageElement, false);
+            } else {
+                avatarImageElement.removeAttribute('src');
+                setElementHidden(avatarImageElement, true);
+            }
+        }
+        if (avatarInitialElement) {
+            if (isAuthenticated && !normalisedUser.picture && userInitial) {
+                avatarInitialElement.textContent = userInitial;
+                setElementHidden(avatarInitialElement, false);
+            } else {
+                avatarInitialElement.textContent = '';
+                setElementHidden(avatarInitialElement, true);
+            }
+        }
+    }
+
+    if (albumsButton) {
+        albumsButton.hidden = !isAuthenticated;
+        albumsButton.disabled = !isAuthenticated;
+        if (!isAuthenticated && albumsLabelElement) {
+            const defaultLabel = albumsButton.dataset.authAlbumsDefaultLabel || 'View Google Photos Albums';
+            albumsLabelElement.textContent = defaultLabel;
+        }
+    }
+
+    if (!isAuthenticated && albumsSection) {
+        setElementHidden(albumsSection, true);
+        if (albumsListElement) {
+            albumsListElement.innerHTML = '';
+            setElementHidden(albumsListElement, true);
+        }
+        if (albumsEmptyElement) {
+            setElementHidden(albumsEmptyElement, true);
+        }
+        if (albumsErrorElement) {
+            albumsErrorElement.textContent = '';
+            setElementHidden(albumsErrorElement, true);
+        }
+    }
+
+    updateGoogleAuthConfig(normalisedUser);
+}
+
+async function requestGoogleAuthStatus() {
+    if (!GOOGLE_AUTH_CONFIG || !GOOGLE_AUTH_CONFIG.enabled) { return; }
+    if (!document.querySelector('[data-google-auth-card]')) { return; }
+
+    const requestId = ++googleAuthRequestToken;
+    try {
+        const response = await fetch('/api/auth/status', {
+            credentials: 'include',
+            cache: 'no-store',
+        });
+        if (!response.ok) { return; }
+
+        const payload = await response.json();
+        if (requestId !== googleAuthRequestToken) { return; }
+
+        const authenticated = Boolean(payload && payload.authenticated);
+        const user = authenticated && payload && payload.user ? payload.user : null;
+        applyGoogleAuthState({ authenticated, user });
+    } catch (error) {
+        // Ignore network errors so the UI remains responsive.
+    }
+}
+
+function setupGoogleAuthCard() {
+    if (!GOOGLE_AUTH_CONFIG || !GOOGLE_AUTH_CONFIG.enabled) { return; }
+    if (!document.querySelector('[data-google-auth-card]')) { return; }
+
+    applyGoogleAuthState({
+        authenticated: Boolean(GOOGLE_AUTH_CONFIG.user),
+        user: GOOGLE_AUTH_CONFIG.user || null,
+    });
+
+    googleAuthRefreshHandler = () => { requestGoogleAuthStatus(); };
+    requestGoogleAuthStatus();
+}
+
+function setupGooglePhotosAlbumsTester() {
+    const card = document.querySelector('[data-google-auth-card]');
+    if (!card) { return; }
+
+    const button = card.querySelector('[data-auth-albums-button]');
+    const section = card.querySelector('[data-auth-albums-section]');
+    const listElement = section ? section.querySelector('[data-auth-albums-list]') : null;
+    const emptyElement = section ? section.querySelector('[data-auth-albums-empty]') : null;
+    const errorElement = section ? section.querySelector('[data-auth-albums-error]') : null;
+    const labelElement = button ? button.querySelector('[data-auth-albums-button-label]') : null;
+
+    if (!button || !section || !listElement || !emptyElement || !errorElement) { return; }
+
+    const defaultLabel = button.dataset.authAlbumsDefaultLabel || (labelElement ? labelElement.textContent.trim() : 'View Google Photos Albums');
+    const loadingLabel = button.dataset.authAlbumsLoadingLabel || 'Loading albums...';
+
+    function setButtonLabel(value) {
+        if (labelElement) { labelElement.textContent = value; }
+        else { button.textContent = value; }
+    }
+
+    function clearAlbumsView() {
+        listElement.innerHTML = '';
+        setElementHidden(listElement, true);
+        setElementHidden(emptyElement, true);
+        errorElement.textContent = '';
+        setElementHidden(errorElement, true);
+    }
+
+    function showAlbums(albums) {
+        clearAlbumsView();
+
+        if (!Array.isArray(albums) || albums.length === 0) {
+            emptyElement.textContent = 'No albums found for this account.';
+            setElementHidden(emptyElement, false);
+            return;
+        }
+
+        const fragment = document.createDocumentFragment();
+        albums.forEach((album) => {
+            if (!album || typeof album !== 'object') { return; }
+            const item = document.createElement('li');
+            item.className = 'auth-card-albums-item';
+
+            const link = document.createElement('a');
+            const rawTitle = typeof album.title === 'string' ? album.title.trim() : '';
+            const title = rawTitle || 'Untitled album';
+            if (album.productUrl) {
+                link.href = album.productUrl;
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+            } else {
+                link.href = '#';
+                link.setAttribute('aria-disabled', 'true');
+                link.classList.add('auth-card-album-link-disabled');
+            }
+            link.textContent = title;
+            item.appendChild(link);
+
+            const metaParts = [];
+            const countValue = album.mediaItemsCount;
+            if (countValue !== undefined && countValue !== null && countValue !== '') {
+                const countNumber = Number(countValue);
+                if (!Number.isNaN(countNumber)) {
+                    metaParts.push(`${countNumber} item${countNumber === 1 ? '' : 's'}`);
+                }
+            }
+
+            if (metaParts.length) {
+                const meta = document.createElement('span');
+                meta.className = 'auth-card-albums-meta';
+                meta.textContent = metaParts.join(' • ');
+                item.appendChild(meta);
+            }
+
+            fragment.appendChild(item);
+        });
+
+        listElement.innerHTML = '';
+        listElement.appendChild(fragment);
+        setElementHidden(listElement, false);
+    }
+
+    function showError(message) {
+        clearAlbumsView();
+        errorElement.textContent = message || 'Failed to load albums.';
+        setElementHidden(errorElement, false);
+    }
+
+    button.addEventListener('click', async (event) => {
+        event.preventDefault();
+        if (button.disabled) { return; }
+
+        button.disabled = true;
+        setButtonLabel(loadingLabel);
+        clearAlbumsView();
+        setElementHidden(section, false);
+
+        const requestId = `albums-${Date.now()}`;
+        console.groupCollapsed('[Google Photos Tester] Fetching albums');
+        console.info('[Google Photos Tester] Starting request', { requestId });
+
+        try {
+            const response = await fetch('/api/google/photos/albums', {
+                credentials: 'include',
+                cache: 'no-store',
+            });
+            const payload = await response.json().catch(() => ({}));
+
+            console.info('[Google Photos Tester] Response received', {
+                requestId,
+                ok: response.ok,
+                status: response.status,
+            });
+            if (payload && typeof payload === 'object') {
+                console.debug('[Google Photos Tester] Response payload', payload);
+            }
+
+            if (!response.ok) {
+                const message = payload && payload.error ? payload.error : 'Failed to load albums.';
+                throw new Error(message);
+            }
+
+            showAlbums(payload.albums);
+            const albumCount = Array.isArray(payload.albums) ? payload.albums.length : 0;
+            console.info('[Google Photos Tester] Albums rendered', { requestId, albumCount });
+        } catch (error) {
+            const message = (error && error.message) ? error.message : 'Failed to load albums.';
+            showError(message);
+            console.error('[Google Photos Tester] Album fetch failed', { requestId, error });
+        } finally {
+            setButtonLabel(defaultLabel);
+            button.disabled = false;
+            console.groupEnd();
+        }
+    });
+
+    clearAlbumsView();
 }
 
 const MAX_ALIAS_LENGTH = 120;
@@ -6011,6 +6333,8 @@ async function deleteMarker(markerId, markerInstance, triggerButton) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+    setupGoogleAuthCard();
+    setupGooglePhotosAlbumsTester();
     ensureManualPointModal();
     ensureAliasModal();
     ensureArchivedPointsModal();
@@ -6287,6 +6611,9 @@ function toggleMenu() {
     if (!menu) { return; }
     const isOpen = menu.classList.toggle('open');
     applyMenuState(menu, isOpen);
+    if (isOpen && typeof googleAuthRefreshHandler === 'function') {
+        googleAuthRefreshHandler();
+    }
 }
 
 function applyMenuState(menu, isOpen, options = {}) {

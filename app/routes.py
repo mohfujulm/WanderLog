@@ -1,10 +1,27 @@
 """Flask routes for the WanderLog application."""
 
 import json
+import logging
 import os
+from typing import Optional
 
 import pandas as pd
-from flask import Blueprint, jsonify, render_template, request
+import requests
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token
+from google.oauth2.credentials import Credentials as GoogleCredentials
+from google_auth_oauthlib.flow import Flow
 
 from app.map_utils import dataframe_to_markers, filter_dataframe_by_date_range
 from app.utils.google_photos import fetch_album_images
@@ -19,6 +36,182 @@ MAX_TRIP_NAME_LENGTH = 120
 MAX_TRIP_DESCRIPTION_LENGTH = 2000
 MAX_LOCATION_DESCRIPTION_LENGTH = 2000
 MAX_TRIP_PHOTOS_URL_LENGTH = 1000
+
+_GOOGLE_OAUTH_SCOPES = [
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+    "https://www.googleapis.com/auth/userinfo.profile",
+    "https://www.googleapis.com/auth/photoslibrary.readonly",
+]
+
+
+def _is_google_auth_configured() -> bool:
+    """Return ``True`` when Google OAuth credentials are available."""
+
+    client_id = current_app.config.get("GOOGLE_CLIENT_ID", "")
+    client_secret = current_app.config.get("GOOGLE_CLIENT_SECRET", "")
+    return bool(client_id and client_secret)
+
+
+def _serialise_for_logging(value):
+    """Return ``value`` converted into something JSON serialisable."""
+
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, dict):
+        return {str(key): _serialise_for_logging(val) for key, val in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_serialise_for_logging(item) for item in value]
+    if hasattr(value, "isoformat"):
+        try:
+            return value.isoformat()
+        except Exception:
+            return repr(value)
+    return repr(value)
+
+
+def _log_google_oauth(level: int, phase: str, **details) -> None:
+    """Log Google OAuth details and ensure they appear in standard console output."""
+
+    payload = {"phase": phase}
+    payload.update({key: _serialise_for_logging(value) for key, value in details.items()})
+
+    try:
+        serialised = json.dumps(payload, ensure_ascii=False)
+    except (TypeError, ValueError):
+        safe_payload = {key: repr(value) for key, value in payload.items()}
+        serialised = json.dumps(safe_payload, ensure_ascii=False)
+
+    message = f"Google OAuth | {serialised}"
+    current_app.logger.log(level, message)
+
+
+def _create_google_flow() -> Flow:
+    """Return a configured Google OAuth flow instance."""
+
+    client_id = current_app.config.get("GOOGLE_CLIENT_ID")
+    client_secret = current_app.config.get("GOOGLE_CLIENT_SECRET")
+    if not client_id or not client_secret:
+        raise RuntimeError("Google OAuth is not configured")
+
+    redirect_uri = url_for("main.google_auth_callback", _external=True)
+
+    flow = Flow.from_client_config(
+        {
+            "web": {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": [redirect_uri],
+            }
+        },
+        scopes=list(_GOOGLE_OAUTH_SCOPES),
+    )
+    flow.redirect_uri = redirect_uri
+    return flow
+
+
+def _clear_google_credentials() -> None:
+    session.pop('google_credentials', None)
+
+
+def _store_google_credentials(credentials) -> None:
+    if not credentials:
+        _clear_google_credentials()
+        return
+
+    try:
+        session['google_credentials'] = credentials.to_json()
+    except Exception:
+        payload = {
+            'token': getattr(credentials, 'token', None),
+            'refresh_token': getattr(credentials, 'refresh_token', None),
+            'token_uri': getattr(credentials, 'token_uri', None),
+            'client_id': getattr(credentials, 'client_id', None),
+            'client_secret': getattr(credentials, 'client_secret', None),
+            'scopes': list(getattr(credentials, 'scopes', []) or _GOOGLE_OAUTH_SCOPES),
+        }
+        expiry = getattr(credentials, 'expiry', None)
+        if expiry is not None:
+            try:
+                payload['expiry'] = expiry.isoformat()
+            except Exception:
+                payload['expiry'] = None
+        session['google_credentials'] = json.dumps(payload)
+
+
+def _load_google_credentials() -> Optional[GoogleCredentials]:
+    raw_credentials = session.get('google_credentials')
+    if not raw_credentials:
+        return None
+
+    if isinstance(raw_credentials, str):
+        try:
+            data = json.loads(raw_credentials)
+        except (TypeError, ValueError):
+            _clear_google_credentials()
+            return None
+    elif isinstance(raw_credentials, dict):
+        data = raw_credentials
+    else:
+        _clear_google_credentials()
+        return None
+
+    client_id = current_app.config.get('GOOGLE_CLIENT_ID')
+    client_secret = current_app.config.get('GOOGLE_CLIENT_SECRET')
+    if client_id:
+        data.setdefault('client_id', client_id)
+    if client_secret:
+        data.setdefault('client_secret', client_secret)
+
+    try:
+        credentials = GoogleCredentials.from_authorized_user_info(
+            data,
+            scopes=_GOOGLE_OAUTH_SCOPES,
+        )
+    except Exception:
+        _clear_google_credentials()
+        return None
+
+    return credentials
+
+
+def _normalise_google_user(data):
+    """Return a cleaned representation of a Google user payload."""
+
+    if not isinstance(data, dict):
+        return None
+
+    def _coerce(value):
+        if value is None:
+            return ''
+        if isinstance(value, str):
+            return value
+        try:
+            return str(value)
+        except Exception:
+            return ''
+
+    user_id = _coerce(data.get('id') or data.get('sub'))
+    email = _coerce(data.get('email'))
+    name = _coerce(data.get('name'))
+    picture = _coerce(data.get('picture'))
+
+    if not name:
+        name = email or user_id
+
+    normalised = {
+        'id': user_id,
+        'email': email,
+        'name': name,
+        'picture': picture,
+    }
+
+    if not any(normalised.values()):
+        return None
+
+    return normalised
 
 
 def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
@@ -288,7 +481,241 @@ def _serialise_trip_location(row, *, place_id: str = "", order: int = 0) -> dict
 def index():
     """Render the landing page."""
 
-    return render_template("index.html", mapbox_token=MAPBOX_ACCESS_TOKEN)
+    google_user = _normalise_google_user(session.get('google_user'))
+    auth_enabled = _is_google_auth_configured()
+
+    return render_template(
+        "index.html",
+        mapbox_token=MAPBOX_ACCESS_TOKEN,
+        google_auth_enabled=auth_enabled,
+        google_user=google_user,
+    )
+
+
+@main.route('/auth/google')
+def google_auth_start():
+    """Redirect the user to the Google OAuth consent screen."""
+
+    if not _is_google_auth_configured():
+        abort(404)
+
+    flow = _create_google_flow()
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        prompt='consent',
+    )
+    session['google_oauth_state'] = state
+    _log_google_oauth(
+        logging.INFO,
+        'start',
+        state=state,
+        authorization_url=authorization_url,
+        session_keys=list(session.keys()),
+    )
+    return redirect(authorization_url)
+
+
+@main.route('/auth/google/callback')
+def google_auth_callback():
+    """Handle the OAuth callback from Google and store the user session."""
+
+    if not _is_google_auth_configured():
+        abort(404)
+
+    state = session.get('google_oauth_state')
+    incoming_state = request.args.get('state')
+    if not state or not incoming_state or state != incoming_state:
+        abort(400)
+
+    flow = _create_google_flow()
+
+    try:
+        _log_google_oauth(
+            logging.INFO,
+            'callback_fetch_token',
+            request_url=request.url,
+            request_args=request.args.to_dict(flat=False),
+            stored_state=state,
+            incoming_state=incoming_state,
+        )
+        flow.fetch_token(authorization_response=request.url)
+    except Exception as exc:
+        _log_google_oauth(
+            logging.ERROR,
+            'callback_fetch_token_error',
+            request_url=request.url,
+            request_args=request.args.to_dict(flat=False),
+            stored_state=state,
+            incoming_state=incoming_state,
+            error=str(exc),
+        )
+        current_app.logger.exception('Failed to fetch Google OAuth token')
+        session.pop('google_user', None)
+        session.pop('google_oauth_state', None)
+        _clear_google_credentials()
+        return redirect(url_for('main.index'))
+
+    credentials = flow.credentials
+    try:
+        credentials_payload = json.loads(credentials.to_json())
+    except Exception:
+        credentials_payload = {
+            'token': getattr(credentials, 'token', None),
+            'refresh_token': getattr(credentials, 'refresh_token', None),
+            'scopes': getattr(credentials, 'scopes', None),
+            'expiry': getattr(credentials, 'expiry', None),
+        }
+
+    _log_google_oauth(
+        logging.INFO,
+        'callback_credentials',
+        credentials=credentials_payload,
+    )
+    token_request = google_requests.Request(session=requests.Session())
+
+    try:
+        id_info = id_token.verify_oauth2_token(
+            credentials.id_token,
+            token_request,
+            current_app.config.get('GOOGLE_CLIENT_ID'),
+        )
+    except Exception as exc:
+        _log_google_oauth(
+            logging.ERROR,
+            'callback_verify_error',
+            id_token=str(getattr(credentials, 'id_token', None)),
+            error=str(exc),
+        )
+        current_app.logger.exception('Failed to verify Google ID token')
+        session.pop('google_user', None)
+        session.pop('google_oauth_state', None)
+        _clear_google_credentials()
+        return redirect(url_for('main.index'))
+
+    user = _normalise_google_user(id_info)
+    if not user:
+        session.pop('google_user', None)
+        session.pop('google_oauth_state', None)
+        _clear_google_credentials()
+        return redirect(url_for('main.index'))
+
+    _log_google_oauth(
+        logging.INFO,
+        'callback_verify',
+        id_info=id_info,
+        user=user,
+    )
+    session['google_user'] = user
+    session.pop('google_oauth_state', None)
+    _store_google_credentials(credentials)
+
+    return redirect(url_for('main.index'))
+
+
+@main.route('/auth/logout')
+def logout():
+    """Clear the authenticated user from the session."""
+
+    session.pop('google_user', None)
+    session.pop('google_oauth_state', None)
+    _clear_google_credentials()
+    return redirect(url_for('main.index'))
+
+
+@main.route('/api/auth/status')
+def api_auth_status():
+    """Return the current Google authentication state."""
+
+    if not _is_google_auth_configured():
+        return jsonify(authenticated=False, user=None)
+
+    user = _normalise_google_user(session.get('google_user'))
+    if not user:
+        return jsonify(authenticated=False, user=None)
+
+    return jsonify(authenticated=True, user=user)
+
+
+@main.route('/api/google/photos/albums')
+def api_google_photos_albums():
+    """Return Google Photos albums for the authenticated user."""
+
+    if not _is_google_auth_configured():
+        return jsonify(error='Google OAuth is not configured.'), 400
+
+    user = _normalise_google_user(session.get('google_user'))
+    if not user:
+        return jsonify(error='You must be signed in with Google to view albums.'), 401
+
+    credentials = _load_google_credentials()
+    if not credentials:
+        return jsonify(error='Google authentication credentials are missing. Please sign in again.'), 401
+
+    try:
+        if credentials.expired and credentials.refresh_token:
+            credentials.refresh(google_requests.Request(session=requests.Session()))
+    except Exception:
+        current_app.logger.exception('Failed to refresh Google credentials')
+        _clear_google_credentials()
+        return jsonify(error='Failed to refresh Google credentials. Please sign in again.'), 401
+
+    if not credentials.valid:
+        _clear_google_credentials()
+        return jsonify(error='Google credentials are invalid. Please sign in again.'), 401
+
+    _store_google_credentials(credentials)
+
+    try:
+        page_size = int(request.args.get('pageSize', 20))
+    except (TypeError, ValueError):
+        page_size = 20
+    page_size = max(1, min(page_size, 50))
+
+    params = {'pageSize': page_size}
+    page_token = request.args.get('pageToken')
+    if page_token:
+        params['pageToken'] = page_token
+
+    try:
+        response = requests.get(
+            'https://photoslibrary.googleapis.com/v1/albums',
+            headers={'Authorization': f'Bearer {credentials.token}'},
+            params=params,
+            timeout=15,
+        )
+    except Exception as exc:
+        _log_google_oauth(
+            logging.ERROR,
+            'albums_request_error',
+            params=params,
+            error=str(exc),
+        )
+        current_app.logger.exception('Failed to contact Google Photos API')
+        return jsonify(error='Unable to contact Google Photos. Please try again later.'), 502
+
+    if response.status_code != 200:
+        _log_google_oauth(
+            logging.ERROR,
+            'albums_request_response_error',
+            status_code=response.status_code,
+            response_text=response.text,
+        )
+        return jsonify(error='Google Photos request failed. Please try again later.'), 502
+
+    payload = response.json() if response.content else {}
+    albums = []
+    for album in payload.get('albums', []) or []:
+        if not isinstance(album, dict):
+            continue
+        albums.append({
+            'id': album.get('id'),
+            'title': album.get('title'),
+            'productUrl': album.get('productUrl'),
+            'mediaItemsCount': album.get('mediaItemsCount'),
+            'coverPhotoBaseUrl': album.get('coverPhotoBaseUrl'),
+        })
+
+    return jsonify(albums=albums, nextPageToken=payload.get('nextPageToken'))
 
 
 @main.route('/api/update_timeline', methods=['POST'])
