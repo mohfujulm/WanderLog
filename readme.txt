@@ -50,3 +50,21 @@ environment:
 With these values in place the "Sign in with Google" button in the menu overlay will redirect
 through the Google consent screen and store the authenticated user in the session. To disable the
 feature, remove the Google credentials from the environment (the button is hidden automatically).
+
+## Configuring the Google Photos Picker
+
+The Google Photos Picker requires an API key that is separate from your OAuth client
+credentials. To create one:
+
+1. In the same Google Cloud project that holds your OAuth client, open the
+   [APIs & Services → Credentials](https://console.cloud.google.com/apis/credentials)
+   page.
+2. Enable the **Google Picker API** if it is not already active for the project.
+3. Choose **Create credentials → API key** and copy the generated value.
+4. (Optional but recommended) Use the key restrictions dialog to limit the key to the
+   Photos Picker by setting an HTTP referrer restriction that matches the origins where
+   your app will run.
+5. Add the key to your environment by editing `.env` and setting
+   `GOOGLE_PHOTOS_PICKER_API_KEY=<your-api-key>`. The application automatically exposes
+   the configured key to the frontend so the "Test Google Photos Picker" button can
+   initialise the picker after sign-in.
