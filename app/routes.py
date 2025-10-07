@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import re
 from typing import Optional
 
 import pandas as pd
@@ -44,12 +45,17 @@ MAX_TRIP_PHOTOS_URL_LENGTH = 1000
 # Scopes control which Google APIs the user grants access to.  ``openid`` and
 # the ``userinfo`` scopes allow WanderLog to read the signed-in profile details
 # required for the Google sign-in experience.
+_GOOGLE_PHOTOS_PICKER_SCOPE = "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
+
 _GOOGLE_OAUTH_SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
     "https://www.googleapis.com/auth/photoslibrary.readonly",
+    _GOOGLE_PHOTOS_PICKER_SCOPE,
 ]
+
+_GOOGLE_PHOTOS_PICKER_BASE_URL = "https://photospicker.googleapis.com/v1"
 
 
 def _is_google_auth_configured() -> bool:
@@ -196,6 +202,126 @@ def _load_google_credentials() -> Optional[GoogleCredentials]:
 
     return credentials
 
+
+def _ensure_google_credentials(required_scope: Optional[str] = None) -> Optional[GoogleCredentials]:
+    """Return refreshed Google credentials when available."""
+
+    credentials = _load_google_credentials()
+    if not credentials:
+        return None
+
+    scopes = set(credentials.scopes or [])
+    if required_scope and required_scope not in scopes:
+        # The stored credentials do not include the required picker scope.
+        return None
+
+    if not credentials.valid or credentials.expired:
+        try:
+            credentials.refresh(google_requests.Request(session=requests.Session()))
+        except Exception:
+            current_app.logger.exception('Failed to refresh Google OAuth credentials')
+            _clear_google_credentials()
+            return None
+        _store_google_credentials(credentials)
+
+    return credentials
+
+
+def _parse_picker_duration(value: Optional[str]) -> Optional[int]:
+    """Return the duration in milliseconds extracted from ``value``."""
+
+    if not value:
+        return None
+    match = re.fullmatch(r"\s*(\d+(?:\.\d+)?)s\s*", value)
+    if not match:
+        return None
+    try:
+        seconds = float(match.group(1))
+    except (TypeError, ValueError):
+        return None
+    return max(0, int(seconds * 1000))
+
+
+def _call_google_photos_picker_api(
+    credentials: GoogleCredentials,
+    method: str,
+    path: str,
+    *,
+    params: Optional[dict] = None,
+    json_payload: Optional[dict] = None,
+):
+    """Call the Google Photos Picker REST API and return the response."""
+
+    token = getattr(credentials, 'token', None)
+    if not token:
+        raise RuntimeError('Google credentials are missing an access token.')
+
+    url = f"{_GOOGLE_PHOTOS_PICKER_BASE_URL}{path}"
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Accept': 'application/json',
+    }
+    if json_payload is not None:
+        headers['Content-Type'] = 'application/json'
+
+    try:
+        response = requests.request(
+            method=method,
+            url=url,
+            params=params,
+            json=json_payload,
+            headers=headers,
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        current_app.logger.exception('Network error when calling Google Photos Picker API')
+        raise RuntimeError('Network error while contacting the Google Photos Picker API.') from exc
+
+    if response.status_code == 401:
+        # Expired or revoked credentials: clear from the session so the frontend prompts again.
+        _clear_google_credentials()
+
+    return response
+
+
+def _format_picker_session_payload(payload: dict) -> dict:
+    """Normalise a Google Photos Picker session payload for the frontend."""
+
+    polling_config = payload.get('pollingConfig') if isinstance(payload, dict) else None
+    poll_interval = polling_config.get('pollInterval') if isinstance(polling_config, dict) else None
+    timeout_in = polling_config.get('timeoutIn') if isinstance(polling_config, dict) else None
+
+    return {
+        'session_id': payload.get('id') if isinstance(payload, dict) else None,
+        'picker_uri': payload.get('pickerUri') if isinstance(payload, dict) else None,
+        'expire_time': payload.get('expireTime') if isinstance(payload, dict) else None,
+        'media_items_set': bool(payload.get('mediaItemsSet')) if isinstance(payload, dict) else False,
+        'polling': {
+            'poll_interval': poll_interval,
+            'poll_interval_ms': _parse_picker_duration(poll_interval),
+            'timeout_in': timeout_in,
+            'timeout_ms': _parse_picker_duration(timeout_in),
+        },
+    }
+
+
+def _extract_picker_error(response, default_message: str):
+    """Return a tuple of ``(message, payload)`` describing the API error."""
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+
+    message = default_message
+    if isinstance(payload, dict):
+        error = payload.get('error')
+        if isinstance(error, dict):
+            message = error.get('message', message)
+        elif isinstance(error, str):
+            message = error or message
+
+    return message, payload
 
 
 
@@ -688,18 +814,9 @@ def api_google_photos_picker_token():
     if not user:
         return jsonify(error='Authentication with Google is required.'), 401
 
-    credentials = _load_google_credentials()
+    credentials = _ensure_google_credentials(_GOOGLE_PHOTOS_PICKER_SCOPE)
     if not credentials:
-        return jsonify(error='Google credentials are unavailable.'), 401
-
-    if not credentials.valid or credentials.expired:
-        try:
-            credentials.refresh(google_requests.Request(session=requests.Session()))
-        except Exception:
-            current_app.logger.exception('Failed to refresh Google OAuth credentials for Photos Picker')
-            _clear_google_credentials()
-            return jsonify(error='Failed to refresh Google credentials.'), 401
-        _store_google_credentials(credentials)
+        return jsonify(error='Google credentials are unavailable for the Google Photos Picker.'), 401
 
     access_token = getattr(credentials, 'token', None)
     if not access_token:
@@ -718,6 +835,198 @@ def api_google_photos_picker_token():
         access_token=access_token,
         expires_at=expires_at_value,
     )
+
+
+@main.route('/api/google/photos/picker/sessions', methods=['POST'])
+def api_google_photos_picker_sessions_create():
+    """Create a new Google Photos Picker session."""
+
+    if not _is_google_auth_configured():
+        return jsonify(error='Google sign-in is not configured.'), 404
+
+    api_key = current_app.config.get('GOOGLE_PHOTOS_PICKER_API_KEY', '') or ''
+    if not api_key:
+        return jsonify(error='Google Photos Picker is not configured.'), 503
+
+    user = _normalise_google_user(session.get('google_user'))
+    if not user:
+        return jsonify(error='Authentication with Google is required.'), 401
+
+    credentials = _ensure_google_credentials(_GOOGLE_PHOTOS_PICKER_SCOPE)
+    if not credentials:
+        return jsonify(error='Google credentials are unavailable for the Google Photos Picker.'), 401
+
+    payload = request.get_json(silent=True) or {}
+    picking_config = {}
+    max_item_count = payload.get('maxItemCount') if isinstance(payload, dict) else None
+    if isinstance(max_item_count, str):
+        cleaned = max_item_count.strip()
+        if cleaned:
+            picking_config['maxItemCount'] = cleaned
+    elif isinstance(max_item_count, (int, float)):
+        try:
+            integer_value = int(max_item_count)
+        except (TypeError, ValueError):
+            integer_value = None
+        if integer_value and integer_value > 0:
+            picking_config['maxItemCount'] = str(integer_value)
+
+    session_request = {'pickingConfig': picking_config} if picking_config else {}
+
+    try:
+        response = _call_google_photos_picker_api(
+            credentials,
+            'POST',
+            '/sessions',
+            json_payload=session_request if session_request else {},
+        )
+    except RuntimeError as exc:
+        return jsonify(error=str(exc)), 503
+
+    if response.status_code >= 400:
+        message, details = _extract_picker_error(response, 'Failed to create Google Photos Picker session.')
+        return jsonify(error=message, details=details), response.status_code
+
+    try:
+        session_payload = response.json()
+    except ValueError:
+        session_payload = {}
+
+    return jsonify(
+        session=_format_picker_session_payload(session_payload if isinstance(session_payload, dict) else {}),
+        raw=session_payload,
+    )
+
+
+@main.route('/api/google/photos/picker/sessions/<session_id>')
+def api_google_photos_picker_sessions_get(session_id: str):
+    """Return the status of an existing Google Photos Picker session."""
+
+    if not _is_google_auth_configured():
+        return jsonify(error='Google sign-in is not configured.'), 404
+
+    api_key = current_app.config.get('GOOGLE_PHOTOS_PICKER_API_KEY', '') or ''
+    if not api_key:
+        return jsonify(error='Google Photos Picker is not configured.'), 503
+
+    user = _normalise_google_user(session.get('google_user'))
+    if not user:
+        return jsonify(error='Authentication with Google is required.'), 401
+
+    credentials = _ensure_google_credentials(_GOOGLE_PHOTOS_PICKER_SCOPE)
+    if not credentials:
+        return jsonify(error='Google credentials are unavailable for the Google Photos Picker.'), 401
+
+    try:
+        response = _call_google_photos_picker_api(
+            credentials,
+            'GET',
+            f'/sessions/{session_id}',
+        )
+    except RuntimeError as exc:
+        return jsonify(error=str(exc)), 503
+
+    if response.status_code >= 400:
+        message, details = _extract_picker_error(response, 'Failed to fetch Google Photos Picker session status.')
+        return jsonify(error=message, details=details), response.status_code
+
+    try:
+        session_payload = response.json()
+    except ValueError:
+        session_payload = {}
+
+    return jsonify(
+        session=_format_picker_session_payload(session_payload if isinstance(session_payload, dict) else {}),
+        raw=session_payload,
+    )
+
+
+@main.route('/api/google/photos/picker/sessions/<session_id>', methods=['DELETE'])
+def api_google_photos_picker_sessions_delete(session_id: str):
+    """Delete a Google Photos Picker session once it is no longer required."""
+
+    if not _is_google_auth_configured():
+        return jsonify(error='Google sign-in is not configured.'), 404
+
+    api_key = current_app.config.get('GOOGLE_PHOTOS_PICKER_API_KEY', '') or ''
+    if not api_key:
+        return jsonify(error='Google Photos Picker is not configured.'), 503
+
+    user = _normalise_google_user(session.get('google_user'))
+    if not user:
+        return jsonify(error='Authentication with Google is required.'), 401
+
+    credentials = _ensure_google_credentials(_GOOGLE_PHOTOS_PICKER_SCOPE)
+    if not credentials:
+        return jsonify(error='Google credentials are unavailable for the Google Photos Picker.'), 401
+
+    try:
+        response = _call_google_photos_picker_api(
+            credentials,
+            'DELETE',
+            f'/sessions/{session_id}',
+        )
+    except RuntimeError as exc:
+        return jsonify(error=str(exc)), 503
+
+    if response.status_code >= 400 and response.status_code != 404:
+        message, details = _extract_picker_error(response, 'Failed to delete Google Photos Picker session.')
+        return jsonify(error=message, details=details), response.status_code
+
+    return jsonify(status='ok'), 200
+
+
+@main.route('/api/google/photos/picker/media-items')
+def api_google_photos_picker_media_items_list():
+    """Return media items selected during a Google Photos Picker session."""
+
+    if not _is_google_auth_configured():
+        return jsonify(error='Google sign-in is not configured.'), 404
+
+    api_key = current_app.config.get('GOOGLE_PHOTOS_PICKER_API_KEY', '') or ''
+    if not api_key:
+        return jsonify(error='Google Photos Picker is not configured.'), 503
+
+    user = _normalise_google_user(session.get('google_user'))
+    if not user:
+        return jsonify(error='Authentication with Google is required.'), 401
+
+    session_id = request.args.get('session_id', '').strip()
+    if not session_id:
+        return jsonify(error='A valid session_id query parameter is required.'), 400
+
+    credentials = _ensure_google_credentials(_GOOGLE_PHOTOS_PICKER_SCOPE)
+    if not credentials:
+        return jsonify(error='Google credentials are unavailable for the Google Photos Picker.'), 401
+
+    params = {'sessionId': session_id}
+    page_size = request.args.get('page_size')
+    page_token = request.args.get('page_token')
+    if page_size:
+        params['pageSize'] = page_size
+    if page_token:
+        params['pageToken'] = page_token
+
+    try:
+        response = _call_google_photos_picker_api(
+            credentials,
+            'GET',
+            '/mediaItems',
+            params=params,
+        )
+    except RuntimeError as exc:
+        return jsonify(error=str(exc)), 503
+
+    if response.status_code >= 400:
+        message, details = _extract_picker_error(response, 'Failed to list Google Photos Picker media items.')
+        return jsonify(error=message, details=details), response.status_code
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+
+    return jsonify(payload if isinstance(payload, dict) else {})
 
 
 @main.route('/api/update_timeline', methods=['POST'])
