@@ -533,70 +533,6 @@ button, input, select { font-family: inherit; }
     font-style: italic;
 }
 
-.trip-profile-photos {
-    margin-top: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-}
-
-.trip-profile-photos[hidden] {
-    display: none;
-}
-
-.trip-profile-photos-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-}
-
-.trip-profile-photos-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: #111827;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-}
-
-.trip-profile-photos-link {
-    font-size: 13px;
-    font-weight: 600;
-    color: #2563eb;
-    text-decoration: none;
-}
-
-.trip-profile-photos-link:hover,
-.trip-profile-photos-link:focus-visible {
-    text-decoration: underline;
-}
-
-.trip-profile-photos-empty {
-    font-size: 14px;
-    color: #6b7280;
-}
-
-.trip-profile-photos-gallery {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 12px;
-}
-
-.trip-profile-photo-item {
-    position: relative;
-    overflow: hidden;
-    border-radius: 16px;
-    background: #e5e7eb;
-    min-height: 120px;
-}
-
-.trip-profile-photo-item img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-}
-
 .trip-profile-updated-readonly {
     margin-top: 8px;
 }
@@ -676,13 +612,7 @@ button, input, select { font-family: inherit; }
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.trip-profile-input-group {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
 
-.trip-profile-input-group input[type="url"] {
     border: 1px solid rgba(209,213,219,0.9);
     border-radius: 14px;
     padding: 10px 14px;
@@ -692,21 +622,15 @@ button, input, select { font-family: inherit; }
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.trip-profile-input-group input[type="url"]:focus {
     outline: none;
     border-color: #111827;
     box-shadow: 0 0 0 3px rgba(17,24,39,0.15);
 }
 
-.trip-profile-input-group input[type="url"]:disabled {
     opacity: 0.7;
     cursor: not-allowed;
 }
 
-.trip-profile-helper-text {
-    font-size: 12px;
-    color: #6b7280;
-}
 
 .trip-profile-description textarea:focus {
     outline: none;
@@ -1192,69 +1116,11 @@ button, input, select { font-family: inherit; }
                     text-align: right;
                     width: 100%; }
 
-.overlay-button-google {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-    background: #fff;
-    color: #3c4043;
-    border: 1px solid #dadce0;
-    box-shadow: none;
-    font-weight: 600;
-}
 
-.overlay-button-google:hover {
-    background: #f8f9fa;
-    box-shadow: none;
-    transform: none;
-}
 
-.overlay-button-google:focus-visible {
-    outline: 2px solid rgba(66, 133, 244, 0.6);
-    outline-offset: 2px;
-}
 
-.overlay-button-google:active {
-    transform: none;
-    box-shadow: none;
-}
 
-.overlay-button-google-icon {
-    display: inline-flex;
-    width: 18px;
-    height: 18px;
-}
 
-.overlay-button-google-icon img {
-    width: 100%;
-    height: 100%;
-    display: block;
-}
-
-.overlay-button-secondary {
-    background: rgba(243, 244, 246, 0.65);
-    border: 1px solid rgba(209, 213, 219, 0.9);
-    color: #111827;
-    box-shadow: none;
-    font-weight: 600;
-}
-
-.overlay-button-secondary:hover {
-    background: rgba(229, 231, 235, 0.9);
-    box-shadow: none;
-    transform: none;
-}
-
-.overlay-button-secondary:focus-visible {
-    outline: 2px solid rgba(79, 70, 229, 0.45);
-    outline-offset: 2px;
-}
-
-.overlay-button-secondary:active {
-    transform: none;
-    box-shadow: none;
-}
 
 .overlay-section-title { align-self: stretch;
                          padding-top: 3px;
@@ -1272,128 +1138,23 @@ button, input, select { font-family: inherit; }
 .overlay-button:active {    transform: translateY(0);
                             box-shadow: 4px 5px 0px 0px rgba(0, 0, 0, 0.15); }
 
-.auth-card {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 16px 18px;
-    background: rgba(249, 250, 251, 0.95);
-    border-radius: 18px;
-    border: 1px solid rgba(229, 231, 235, 0.8);
-    margin-bottom: 16px;
-}
 
-.auth-card-action {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 10px;
-}
 
-.auth-card-albums-button {
-    width: 100%;
-    justify-content: center;
-}
 
-.auth-card-albums {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding-top: 10px;
-    border-top: 1px solid rgba(209, 213, 219, 0.8);
-}
 
-.auth-card-albums-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
 
-.auth-card-albums-item {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
 
-.auth-card-albums-item a {
-    color: #1d4ed8;
-    font-weight: 600;
-    text-decoration: none;
-}
 
-.auth-card-albums-item a:hover,
-.auth-card-albums-item a:focus-visible {
-    text-decoration: underline;
-}
 
-.auth-card-albums-meta {
-    font-size: 13px;
-    color: #4b5563;
-}
 
-.auth-card-albums-empty,
-.auth-card-albums-error {
-    font-size: 14px;
-    margin: 0;
-}
 
-.auth-card-albums-error {
-    color: #b91c1c;
-}
 
-.auth-card-album-link-disabled {
-    color: #6b7280;
-    pointer-events: none;
-}
 
-.auth-card-status {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
 
-.auth-card-details {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
 
-.auth-card-avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: #111827;
-    color: #fff;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 600;
-    font-size: 16px;
-    overflow: hidden;
-}
 
-.auth-card-avatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-}
 
-.auth-card-title {
-    font-size: 13px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: #6b7280;
-}
 
-.auth-card-subtitle {
-    font-size: 15px;
-    font-weight: 600;
-    color: #111827;
-}
 
 .overlay-button-active {
     background: #111827;
