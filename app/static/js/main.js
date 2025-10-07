@@ -33,6 +33,7 @@ let googleAuthRefreshHandler = null;
 let googleAuthRequestToken = 0;
 let googlePhotosPickerButton = null;
 let googlePhotosPickerScriptPromise = null;
+let googlePhotosPickerLoaderPromise = null;
 let isTripMapModeActive = false;
 let previousMapView = null;
 let manualPointForm;
@@ -538,9 +539,72 @@ function updateGooglePhotosPickerButtonState(isAuthenticated) {
 
     setElementHidden(googlePhotosPickerButton, !shouldEnable);
     googlePhotosPickerButton.disabled = !shouldEnable;
+    googlePhotosPickerButton.setAttribute('aria-hidden', shouldEnable ? 'false' : 'true');
     if (!shouldEnable) {
         googlePhotosPickerButton.removeAttribute('aria-busy');
     }
+}
+
+function getGooglePhotosPickerNamespace() {
+    if (!window.google) { return null; }
+
+    const photosNamespace = window.google.photos && window.google.photos.picker
+        ? window.google.photos.picker
+        : null;
+    if (photosNamespace && typeof photosNamespace.PickerBuilder === 'function') {
+        return photosNamespace;
+    }
+
+    const pickerNamespace = window.google.picker || null;
+    if (pickerNamespace && typeof pickerNamespace.PickerBuilder === 'function') {
+        return pickerNamespace;
+    }
+
+    return photosNamespace || pickerNamespace;
+}
+
+function whenGooglePhotosPickerReady() {
+    const readyNamespace = getGooglePhotosPickerNamespace();
+    if (readyNamespace) { return Promise.resolve(readyNamespace); }
+
+    if (googlePhotosPickerLoaderPromise) { return googlePhotosPickerLoaderPromise; }
+
+    const loader = window.google
+        && window.google.photos
+        && window.google.photos.picker
+        && window.google.photos.picker.api
+        && typeof window.google.photos.picker.api.load === 'function'
+        ? window.google.photos.picker.api
+        : null;
+
+    if (!loader) {
+        return Promise.reject(new Error('Google Photos Picker API is unavailable.'));
+    }
+
+    googlePhotosPickerLoaderPromise = new Promise((resolve, reject) => {
+        try {
+            loader.load('picker', {
+                callback: () => {
+                    const namespace = getGooglePhotosPickerNamespace();
+                    if (namespace) {
+                        resolve(namespace);
+                    } else {
+                        reject(new Error('Google Photos Picker failed to initialise.'));
+                    }
+                },
+                onerror: () => {
+                    reject(new Error('Failed to initialise the Google Photos Picker API.'));
+                },
+            });
+        } catch (error) {
+            reject(new Error('Failed to load the Google Photos Picker API.'));
+        }
+    }).catch((error) => {
+        googlePhotosPickerLoaderPromise = null;
+        throw error;
+    });
+
+    return googlePhotosPickerLoaderPromise;
 }
 
 function loadGooglePhotosPickerScript() {
@@ -549,12 +613,13 @@ function loadGooglePhotosPickerScript() {
         return Promise.reject(new Error('Google Photos Picker is not configured.'));
     }
 
-    if (window.google && window.google.photos && window.google.photos.picker) {
-        return Promise.resolve(window.google.photos.picker);
+    const existingNamespace = getGooglePhotosPickerNamespace();
+    if (existingNamespace) {
+        return Promise.resolve(existingNamespace);
     }
 
     if (googlePhotosPickerScriptPromise) {
-        return googlePhotosPickerScriptPromise;
+        return googlePhotosPickerScriptPromise.then(() => whenGooglePhotosPickerReady());
     }
 
     googlePhotosPickerScriptPromise = new Promise((resolve, reject) => {
@@ -562,11 +627,7 @@ function loadGooglePhotosPickerScript() {
         script.src = settings.scriptUrl || GOOGLE_PHOTOS_PICKER_DEFAULT_SCRIPT_URL;
         script.async = true;
         script.onload = () => {
-            if (window.google && window.google.photos && window.google.photos.picker) {
-                resolve(window.google.photos.picker);
-            } else {
-                reject(new Error('Google Photos Picker library did not initialise.'));
-            }
+            whenGooglePhotosPickerReady().then(resolve).catch(reject);
         };
         script.onerror = () => reject(new Error('Failed to load Google Photos Picker library.'));
         document.head.appendChild(script);
@@ -575,7 +636,7 @@ function loadGooglePhotosPickerScript() {
         throw error;
     });
 
-    return googlePhotosPickerScriptPromise;
+    return googlePhotosPickerScriptPromise.then(() => whenGooglePhotosPickerReady());
 }
 
 async function requestGooglePhotosAccessToken() {
@@ -675,6 +736,16 @@ async function openGooglePhotosPicker(button) {
     if (typeof builder.addView === 'function') {
         if (pickerNamespace.ViewType && pickerNamespace.ViewType.PHOTOS) {
             builder.addView(pickerNamespace.ViewType.PHOTOS);
+        } else if (pickerNamespace.ViewId && pickerNamespace.ViewId.PHOTOS) {
+            if (typeof pickerNamespace.View === 'function') {
+                try {
+                    builder.addView(new pickerNamespace.View(pickerNamespace.ViewId.PHOTOS));
+                } catch (error) {
+                    builder.addView(pickerNamespace.ViewId.PHOTOS);
+                }
+            } else {
+                builder.addView(pickerNamespace.ViewId.PHOTOS);
+            }
         } else if (typeof pickerNamespace.PhotosView === 'function') {
             try {
                 builder.addView(new pickerNamespace.PhotosView());

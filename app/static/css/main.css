@@ -1289,6 +1289,10 @@ button, input, select { font-family: inherit; }
     gap: 10px;
 }
 
+.auth-card-actions [data-google-photos-picker-button][hidden] {
+    display: none !important;
+}
+
 .auth-card-action {
     display: inline-flex;
     align-items: center;
