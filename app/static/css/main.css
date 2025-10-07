@@ -1290,64 +1290,6 @@ button, input, select { font-family: inherit; }
     gap: 10px;
 }
 
-.auth-card-albums-button {
-    width: 100%;
-    justify-content: center;
-}
-
-.auth-card-albums {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding-top: 10px;
-    border-top: 1px solid rgba(209, 213, 219, 0.8);
-}
-
-.auth-card-albums-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.auth-card-albums-item {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.auth-card-albums-item a {
-    color: #1d4ed8;
-    font-weight: 600;
-    text-decoration: none;
-}
-
-.auth-card-albums-item a:hover,
-.auth-card-albums-item a:focus-visible {
-    text-decoration: underline;
-}
-
-.auth-card-albums-meta {
-    font-size: 13px;
-    color: #4b5563;
-}
-
-.auth-card-albums-empty,
-.auth-card-albums-error {
-    font-size: 14px;
-    margin: 0;
-}
-
-.auth-card-albums-error {
-    color: #b91c1c;
-}
-
-.auth-card-album-link-disabled {
-    color: #6b7280;
-    pointer-events: none;
-}
 
 .auth-card-status {
     display: flex;
