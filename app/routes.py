@@ -48,7 +48,7 @@ _GOOGLE_OAUTH_SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
-    "https://www.googleapis.com/auth/photoslibrary.readonly",
+    "https://www.googleapis.com/auth/photospicker.mediaitems.readonly",
 ]
 
 
@@ -715,7 +715,7 @@ def api_google_photos_albums():
         # the API's pagination parameters so the front-end can step through
         # albums.
         response = requests.get(
-            'https://photoslibrary.googleapis.com/v1/albums',
+            'https://www.googleapis.com/auth/photospicker.mediaitems.readonly',
             headers={'Authorization': f'Bearer {credentials.token}'},
             params=params,
             timeout=15,
