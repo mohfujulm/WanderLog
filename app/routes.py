@@ -6,29 +6,15 @@ import os
 from typing import Optional
 
 import pandas as pd
-import requests
 from flask import (
     Blueprint,
-    abort,
     current_app,
     jsonify,
-    redirect,
     render_template,
     request,
-    session,
-    url_for,
 )
-from google.auth.transport import requests as google_requests
-from google.oauth2 import id_token
-from google.oauth2.credentials import Credentials as GoogleCredentials
-from google_auth_oauthlib.flow import Flow
-
-# The Google client libraries above provide helpers for exchanging OAuth tokens
-# and verifying ID tokens.  We keep the imports grouped so it is obvious which
-# pieces of the file interact with Google's APIs.
 
 from app.map_utils import dataframe_to_markers, filter_dataframe_by_date_range
-from app.utils.google_photos import fetch_album_images
 from app.utils.json_processing_functions import unique_visits_to_df
 from . import data_cache, trip_store
 
@@ -39,253 +25,6 @@ MAX_ALIAS_LENGTH = 120
 MAX_TRIP_NAME_LENGTH = 120
 MAX_TRIP_DESCRIPTION_LENGTH = 2000
 MAX_LOCATION_DESCRIPTION_LENGTH = 2000
-MAX_TRIP_PHOTOS_URL_LENGTH = 1000
-
-# Scopes control which Google APIs the user grants access to.  ``openid`` and
-# the ``userinfo`` scopes allow us to obtain the signed-in profile, while the
-# Photos Library scope lets us list albums for import into WanderLog.
-_GOOGLE_PHOTOS_PICKER_SCOPE = "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
-
-_GOOGLE_OAUTH_SCOPES = [
-    "openid",
-    "https://www.googleapis.com/auth/userinfo.email",
-    "https://www.googleapis.com/auth/userinfo.profile",
-    _GOOGLE_PHOTOS_PICKER_SCOPE,
-]
-
-# The Photos Picker scope still uses the legacy Photos Library REST endpoint for
-# listing albums.  The scope governs access while the hostname/path stay the
-# same, so we continue to call ``photoslibrary.googleapis.com``.
-_PHOTOS_PICKER_ALBUMS_ENDPOINT = "https://photoslibrary.googleapis.com/v1/albums"
-
-
-def _is_google_auth_configured() -> bool:
-    """Return ``True`` when Google OAuth credentials are available."""
-
-    client_id = current_app.config.get("GOOGLE_CLIENT_ID", "")
-    client_secret = current_app.config.get("GOOGLE_CLIENT_SECRET", "")
-    return bool(client_id and client_secret)
-
-
-def _serialise_for_logging(value):
-    """Return ``value`` converted into something JSON serialisable."""
-
-    if isinstance(value, (str, int, float, bool)) or value is None:
-        return value
-    if isinstance(value, dict):
-        return {str(key): _serialise_for_logging(val) for key, val in value.items()}
-    if isinstance(value, (list, tuple, set)):
-        return [_serialise_for_logging(item) for item in value]
-    if hasattr(value, "isoformat"):
-        try:
-            return value.isoformat()
-        except Exception:
-            return repr(value)
-    return repr(value)
-
-
-def _log_google_oauth(level: int, phase: str, **details) -> None:
-    """Log Google OAuth details and ensure they appear in standard console output."""
-
-    payload = {"phase": phase}
-    payload.update({key: _serialise_for_logging(value) for key, value in details.items()})
-
-    try:
-        serialised = json.dumps(payload, ensure_ascii=False)
-    except (TypeError, ValueError):
-        safe_payload = {key: repr(value) for key, value in payload.items()}
-        serialised = json.dumps(safe_payload, ensure_ascii=False)
-
-    message = f"Google OAuth | {serialised}"
-    current_app.logger.log(level, message)
-
-
-def _create_google_flow() -> Flow:
-    """Return a configured Google OAuth flow instance."""
-
-    client_id = current_app.config.get("GOOGLE_CLIENT_ID")
-    client_secret = current_app.config.get("GOOGLE_CLIENT_SECRET")
-    if not client_id or not client_secret:
-        raise RuntimeError("Google OAuth is not configured")
-
-    # The redirect URI must match what we configured in the Google Console so
-    # that Google is willing to send the user back to our application once they
-    # approve access.
-    redirect_uri = url_for("main.google_auth_callback", _external=True)
-
-    # ``Flow.from_client_config`` builds a helper that knows how to generate the
-    # Google authorization URL and later exchange the returned code for tokens.
-    flow = Flow.from_client_config(
-        {
-            "web": {
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "redirect_uris": [redirect_uri],
-            }
-        },
-        scopes=list(_GOOGLE_OAUTH_SCOPES),
-    )
-    flow.redirect_uri = redirect_uri
-    return flow
-
-
-def _clear_google_credentials() -> None:
-    session.pop('google_credentials', None)
-
-
-def _store_google_credentials(credentials) -> None:
-    if not credentials:
-        _clear_google_credentials()
-        return
-
-    # ``google.oauth2.credentials.Credentials`` provides a ``to_json`` helper
-    # that serialises refresh tokens, expiry, and the granted scopes.  When that
-    # fails (for example if we get a mock object in tests) we manually capture
-    # the important attributes so the session still has enough information to
-    # refresh API calls later.
-    try:
-        session['google_credentials'] = credentials.to_json()
-    except Exception:
-        payload = {
-            'token': getattr(credentials, 'token', None),
-            'refresh_token': getattr(credentials, 'refresh_token', None),
-            'token_uri': getattr(credentials, 'token_uri', None),
-            'client_id': getattr(credentials, 'client_id', None),
-            'client_secret': getattr(credentials, 'client_secret', None),
-            'scopes': list(getattr(credentials, 'scopes', []) or _GOOGLE_OAUTH_SCOPES),
-        }
-        expiry = getattr(credentials, 'expiry', None)
-        if expiry is not None:
-            try:
-                payload['expiry'] = expiry.isoformat()
-            except Exception:
-                payload['expiry'] = None
-        session['google_credentials'] = json.dumps(payload)
-
-
-def _load_google_credentials() -> Optional[GoogleCredentials]:
-    raw_credentials = session.get('google_credentials')
-    if not raw_credentials:
-        return None
-
-    # Stored credentials can be either a JSON string (produced by
-    # ``Credentials.to_json``) or a dictionary (our manual fallback above).  We
-    # normalise both into a dictionary that ``GoogleCredentials`` understands.
-    if isinstance(raw_credentials, str):
-        try:
-            data = json.loads(raw_credentials)
-        except (TypeError, ValueError):
-            _clear_google_credentials()
-            return None
-    elif isinstance(raw_credentials, dict):
-        data = raw_credentials
-    else:
-        _clear_google_credentials()
-        return None
-
-    client_id = current_app.config.get('GOOGLE_CLIENT_ID')
-    client_secret = current_app.config.get('GOOGLE_CLIENT_SECRET')
-    if client_id:
-        data.setdefault('client_id', client_id)
-    if client_secret:
-        data.setdefault('client_secret', client_secret)
-
-    try:
-        credentials = GoogleCredentials.from_authorized_user_info(
-            data,
-            scopes=_GOOGLE_OAUTH_SCOPES,
-        )
-    except Exception:
-        _clear_google_credentials()
-        return None
-
-    return credentials
-
-
-def _ensure_photos_picker_credentials() -> tuple[Optional[GoogleCredentials], Optional[tuple]]:
-    """Return refreshed Google credentials and an optional error response.
-
-    The Photos Picker API uses the ``/auth/photospicker.mediaitems.readonly``
-    scope.  Google recently deprecated the old Photos Library scopes, so this
-    helper keeps the refresh/check logic in one place and guarantees that the
-    stored credentials still grant the modern scope we rely on.
-    """
-
-    credentials = _load_google_credentials()
-    if not credentials:
-        return None, (
-            jsonify(error='Google authentication credentials are missing. Please sign in again.'),
-            401,
-        )
-
-    try:
-        if credentials.expired and credentials.refresh_token:
-            credentials.refresh(google_requests.Request(session=requests.Session()))
-    except Exception:
-        current_app.logger.exception('Failed to refresh Google credentials')
-        _clear_google_credentials()
-        return None, (
-            jsonify(error='Failed to refresh Google credentials. Please sign in again.'),
-            401,
-        )
-
-    if not credentials.valid:
-        _clear_google_credentials()
-        return None, (
-            jsonify(error='Google credentials are invalid. Please sign in again.'),
-            401,
-        )
-
-    scopes = set(credentials.scopes or [])
-    if _GOOGLE_PHOTOS_PICKER_SCOPE not in scopes:
-        current_app.logger.error('Google credentials missing Photos Picker scope')
-        _clear_google_credentials()
-        return None, (
-            jsonify(error='Google Photos access has changed. Please sign in again.'),
-            403,
-        )
-
-    _store_google_credentials(credentials)
-    return credentials, None
-
-
-def _normalise_google_user(data):
-    """Return a cleaned representation of a Google user payload."""
-
-    if not isinstance(data, dict):
-        return None
-
-    def _coerce(value):
-        if value is None:
-            return ''
-        if isinstance(value, str):
-            return value
-        try:
-            return str(value)
-        except Exception:
-            return ''
-
-    user_id = _coerce(data.get('id') or data.get('sub'))
-    email = _coerce(data.get('email'))
-    name = _coerce(data.get('name'))
-    picture = _coerce(data.get('picture'))
-
-    if not name:
-        name = email or user_id
-
-    normalised = {
-        'id': user_id,
-        'email': email,
-        'name': name,
-        'picture': picture,
-    }
-
-    if not any(normalised.values()):
-        return None
-
-    return normalised
 
 
 def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
@@ -313,8 +52,6 @@ def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
             'updated_at': trip.get('updated_at'),
             'latest_location_date': latest_location_date,
             'description': trip.get('description', ''),
-            'google_photos_url': trip.get('google_photos_url', ''),
-            'photo_count': len(trip.get('photos', []) or []),
         }
 
     place_ids = getattr(trip, 'place_ids', []) or []
@@ -328,8 +65,6 @@ def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
         'updated_at': getattr(trip, 'updated_at', None),
         'latest_location_date': latest_location_date,
         'description': getattr(trip, 'description', ''),
-        'google_photos_url': getattr(trip, 'google_photos_url', ''),
-        'photo_count': len(getattr(trip, 'photos', []) or []),
     }
 
 
@@ -555,255 +290,10 @@ def _serialise_trip_location(row, *, place_id: str = "", order: int = 0) -> dict
 def index():
     """Render the landing page."""
 
-    google_user = _normalise_google_user(session.get('google_user'))
-    auth_enabled = _is_google_auth_configured()
-
     return render_template(
         "index.html",
         mapbox_token=MAPBOX_ACCESS_TOKEN,
-        google_auth_enabled=auth_enabled,
-        google_user=google_user,
     )
-
-
-@main.route('/auth/google')
-def google_auth_start():
-    """Redirect the user to the Google OAuth consent screen."""
-
-    if not _is_google_auth_configured():
-        abort(404)
-
-    # Each request builds a new OAuth ``Flow`` so the generated authorization
-    # URL includes the correct redirect URI and anti-CSRF ``state`` token.
-    flow = _create_google_flow()
-    authorization_url, state = flow.authorization_url(
-        access_type='offline',
-        prompt='consent',
-    )
-    session['google_oauth_state'] = state
-    # We log the outbound request details—minus sensitive tokens—to make
-    # debugging mismatched configuration much easier.
-    _log_google_oauth(
-        logging.INFO,
-        'start',
-        state=state,
-        authorization_url=authorization_url,
-        session_keys=list(session.keys()),
-    )
-    return redirect(authorization_url)
-
-
-@main.route('/auth/google/callback')
-def google_auth_callback():
-    """Handle the OAuth callback from Google and store the user session."""
-
-    if not _is_google_auth_configured():
-        abort(404)
-
-    state = session.get('google_oauth_state')
-    incoming_state = request.args.get('state')
-    if not state or not incoming_state or state != incoming_state:
-        abort(400)
-
-    # Recreate the ``Flow`` with the same redirect URI so the library can
-    # exchange the returned ``code`` parameter for access and refresh tokens.
-    flow = _create_google_flow()
-
-    try:
-        _log_google_oauth(
-            logging.INFO,
-            'callback_fetch_token',
-            request_url=request.url,
-            request_args=request.args.to_dict(flat=False),
-            stored_state=state,
-            incoming_state=incoming_state,
-        )
-        flow.fetch_token(authorization_response=request.url)
-    except Exception as exc:
-        _log_google_oauth(
-            logging.ERROR,
-            'callback_fetch_token_error',
-            request_url=request.url,
-            request_args=request.args.to_dict(flat=False),
-            stored_state=state,
-            incoming_state=incoming_state,
-            error=str(exc),
-        )
-        current_app.logger.exception('Failed to fetch Google OAuth token')
-        session.pop('google_user', None)
-        session.pop('google_oauth_state', None)
-        _clear_google_credentials()
-        return redirect(url_for('main.index'))
-
-    credentials = flow.credentials
-    try:
-        credentials_payload = json.loads(credentials.to_json())
-    except Exception:
-        credentials_payload = {
-            'token': getattr(credentials, 'token', None),
-            'refresh_token': getattr(credentials, 'refresh_token', None),
-            'scopes': getattr(credentials, 'scopes', None),
-            'expiry': getattr(credentials, 'expiry', None),
-        }
-
-    _log_google_oauth(
-        logging.INFO,
-        'callback_credentials',
-        credentials=credentials_payload,
-    )
-    token_request = google_requests.Request(session=requests.Session())
-
-    try:
-        id_info = id_token.verify_oauth2_token(
-            credentials.id_token,
-            token_request,
-            current_app.config.get('GOOGLE_CLIENT_ID'),
-        )
-    except Exception as exc:
-        _log_google_oauth(
-            logging.ERROR,
-            'callback_verify_error',
-            id_token=str(getattr(credentials, 'id_token', None)),
-            error=str(exc),
-        )
-        current_app.logger.exception('Failed to verify Google ID token')
-        session.pop('google_user', None)
-        session.pop('google_oauth_state', None)
-        _clear_google_credentials()
-        return redirect(url_for('main.index'))
-
-    # ``id_info`` contains the signed-in user's profile (subject identifier,
-    # email, display name, etc.) verified by Google's public keys.
-    user = _normalise_google_user(id_info)
-    if not user:
-        session.pop('google_user', None)
-        session.pop('google_oauth_state', None)
-        _clear_google_credentials()
-        return redirect(url_for('main.index'))
-
-    _log_google_oauth(
-        logging.INFO,
-        'callback_verify',
-        id_info=id_info,
-        user=user,
-    )
-    session['google_user'] = user
-    session.pop('google_oauth_state', None)
-    # Saving the credentials (which include a refresh token) lets us call the
-    # Google Photos API on subsequent requests without prompting the user again.
-    _store_google_credentials(credentials)
-
-    return redirect(url_for('main.index'))
-
-
-@main.route('/auth/logout')
-def logout():
-    """Clear the authenticated user from the session."""
-
-    session.pop('google_user', None)
-    session.pop('google_oauth_state', None)
-    _clear_google_credentials()
-    return redirect(url_for('main.index'))
-
-
-@main.route('/api/auth/status')
-def api_auth_status():
-    """Return the current Google authentication state."""
-
-    if not _is_google_auth_configured():
-        return jsonify(authenticated=False, user=None)
-
-    user = _normalise_google_user(session.get('google_user'))
-    if not user:
-        return jsonify(authenticated=False, user=None)
-
-    return jsonify(authenticated=True, user=user)
-
-
-@main.route('/api/google/photos/albums')
-def api_google_photos_albums():
-    """Return Google Photos albums for the authenticated user."""
-
-    if not _is_google_auth_configured():
-        return jsonify(error='Google OAuth is not configured.'), 400
-
-    user = _normalise_google_user(session.get('google_user'))
-    if not user:
-        return jsonify(error='You must be signed in with Google to view albums.'), 401
-
-    credentials, error_response = _ensure_photos_picker_credentials()
-    if error_response is not None:
-        return error_response
-    if credentials is None:
-        return jsonify(error='Google credentials are unavailable. Please sign in again.'), 401
-
-    try:
-        page_size = int(request.args.get('pageSize', 20))
-    except (TypeError, ValueError):
-        page_size = 20
-    page_size = max(1, min(page_size, 50))
-
-    params = {'pageSize': page_size}
-    page_token = request.args.get('pageToken')
-    if page_token:
-        params['pageToken'] = page_token
-
-    try:
-        # Call the Google Photos Picker ``albums`` endpoint using the OAuth
-        # access token as a Bearer token. ``pageSize`` and ``pageToken`` mirror
-        # the API's pagination parameters so the front-end can step through
-        # albums.
-        response = requests.get(
-            _PHOTOS_PICKER_ALBUMS_ENDPOINT,
-            headers={
-                'Authorization': f'Bearer {credentials.token}',
-                'Accept': 'application/json',
-            },
-            params=params,
-            timeout=15,
-        )
-    except requests.RequestException as exc:
-        _log_google_oauth(
-            logging.ERROR,
-            'albums_request_error',
-            params=params,
-            error=str(exc),
-        )
-        current_app.logger.exception('Failed to contact Google Photos API')
-        return jsonify(error='Unable to contact Google Photos. Please try again later.'), 502
-    except Exception as exc:
-        _log_google_oauth(
-            logging.ERROR,
-            'albums_request_unexpected_error',
-            params=params,
-            error=str(exc),
-        )
-        current_app.logger.exception('Unexpected error contacting Google Photos API')
-        return jsonify(error='Unexpected Google Photos error. Please try again later.'), 502
-
-    if response.status_code != 200:
-        _log_google_oauth(
-            logging.ERROR,
-            'albums_request_response_error',
-            status_code=response.status_code,
-            response_text=response.text,
-        )
-        return jsonify(error='Google Photos request failed. Please try again later.'), 502
-
-    payload = response.json() if response.content else {}
-    albums = []
-    for album in payload.get('albums', []) or []:
-        if not isinstance(album, dict):
-            continue
-        albums.append({
-            'id': album.get('id'),
-            'title': album.get('title'),
-            'productUrl': album.get('productUrl'),
-            'mediaItemsCount': album.get('mediaItemsCount'),
-            'coverPhotoBaseUrl': album.get('coverPhotoBaseUrl'),
-        })
-
-    return jsonify(albums=albums, nextPageToken=payload.get('nextPageToken'))
 
 
 @main.route('/api/update_timeline', methods=['POST'])
@@ -1152,20 +642,9 @@ def api_get_trip(trip_id: str):
         for index, place_id in enumerate(cleaned_ids)
     ]
 
-    photos_url = serialised_trip.get('google_photos_url') or getattr(trip, 'google_photos_url', '')
-    photos: list[str] = []
-    if photos_url:
-        try:
-            photos = fetch_album_images(photos_url)
-        except Exception:
-            photos = []
-
-    serialised_trip['photo_count'] = len(photos)
-
     return jsonify({
         'trip': serialised_trip,
         'locations': locations,
-        'photos': photos,
     })
 
 
@@ -1203,8 +682,6 @@ def api_update_trip(trip_id: str):
 
     name_value = payload.get('name', None)
     description_value = payload.get('description', None)
-    photos_url_value = payload.get('google_photos_url', None)
-
     cleaned_name = None
     if name_value is not None:
         cleaned_name = str(name_value).strip()
@@ -1232,24 +709,7 @@ def api_update_trip(trip_id: str):
             ), 400
         cleaned_description = description_value
 
-    cleaned_photos_url = None
-    if photos_url_value is not None:
-        if not isinstance(photos_url_value, str):
-            photos_url_value = str(photos_url_value)
-        trimmed_photos = photos_url_value.strip()
-        if trimmed_photos and not trimmed_photos.lower().startswith(('http://', 'https://')):
-            return jsonify(status='error', message='Provide a valid Google Photos link.'), 400
-        if len(trimmed_photos) > MAX_TRIP_PHOTOS_URL_LENGTH:
-            return jsonify(
-                status='error',
-                message=(
-                    'Google Photos link must be '
-                    f'{MAX_TRIP_PHOTOS_URL_LENGTH} characters or fewer.'
-                ),
-            ), 400
-        cleaned_photos_url = trimmed_photos
-
-    if cleaned_name is None and cleaned_description is None and cleaned_photos_url is None:
+    if cleaned_name is None and cleaned_description is None:
         return jsonify(status='error', message='No updates were supplied.'), 400
 
     try:
@@ -1257,29 +717,18 @@ def api_update_trip(trip_id: str):
             identifier,
             name=cleaned_name,
             description=cleaned_description,
-            google_photos_url=cleaned_photos_url,
         )
     except ValueError as exc:
         return jsonify(status='error', message=str(exc)), 400
     except KeyError:
         return jsonify(status='error', message='Trip not found.'), 404
 
-    photos: list[str] = []
-    photos_url = getattr(trip, 'google_photos_url', '')
-    if photos_url:
-        try:
-            photos = fetch_album_images(photos_url)
-        except Exception:
-            photos = []
-
     serialised = _serialise_trip(trip)
-    serialised['photo_count'] = len(photos)
 
     return jsonify(
         status='success',
         message='Trip updated successfully.',
         trip=serialised,
-        photos=photos,
     )
 
 
@@ -1300,43 +749,20 @@ def api_create_trip():
             message=f'Trip name must be {MAX_TRIP_NAME_LENGTH} characters or fewer.'
         ), 400
 
-    photos_url_value = payload.get('google_photos_url')
-    cleaned_photos_url = ''
-    if photos_url_value is not None:
-        if not isinstance(photos_url_value, str):
-            photos_url_value = str(photos_url_value)
-        cleaned_photos_url = photos_url_value.strip()
-        if cleaned_photos_url and not cleaned_photos_url.lower().startswith(('http://', 'https://')):
-            return jsonify(status='error', message='Provide a valid Google Photos link.'), 400
-        if len(cleaned_photos_url) > MAX_TRIP_PHOTOS_URL_LENGTH:
-            return jsonify(
-                status='error',
-                message=(
-                    'Google Photos link must be '
-                    f'{MAX_TRIP_PHOTOS_URL_LENGTH} characters or fewer.'
-                ),
-            ), 400
-
     try:
-        trip = trip_store.create_trip(name, google_photos_url=cleaned_photos_url)
+        description_value = payload.get('description')
+        if description_value is not None and not isinstance(description_value, str):
+            description_value = str(description_value)
+        trip = trip_store.create_trip(name, description=description_value or "")
     except ValueError as exc:
         return jsonify(status='error', message=str(exc)), 400
 
-    photos: list[str] = []
-    if cleaned_photos_url:
-        try:
-            photos = fetch_album_images(cleaned_photos_url)
-        except Exception:
-            photos = []
-
     serialised = _serialise_trip(trip)
-    serialised['photo_count'] = len(photos)
 
     return jsonify(
         status='success',
         message='Trip created successfully.',
         trip=serialised,
-        photos=photos,
     ), 201
 
 
