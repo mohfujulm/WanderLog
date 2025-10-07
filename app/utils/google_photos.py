@@ -15,6 +15,8 @@ _USER_AGENT = (
     "Mozilla/5.0 (compatible; WanderLog/1.0; +https://github.com/)"
 )
 
+# We memoise album lookups for a short period because the scraping logic is a
+# little expensive and albums rarely change between requests.
 _CacheEntry = tuple[float, List[str]]
 _CACHE: Dict[str, _CacheEntry] = {}
 
@@ -26,6 +28,7 @@ def _clean_url(url: str) -> str:
 
 
 def _fetch_html(url: str) -> str:
+    """Return the raw HTML for ``url`` or an empty string on failure."""
     if not url:
         return ""
 
@@ -45,6 +48,7 @@ def _fetch_html(url: str) -> str:
 
 
 def _normalise_resolution(url: str) -> str:
+    """Ask Google Photos for a higher resolution version of ``url``."""
     if not url:
         return ""
 
@@ -58,6 +62,7 @@ def _normalise_resolution(url: str) -> str:
 
 
 def _extract_image_urls(html: str, *, max_images: int) -> List[str]:
+    """Pull unique media URLs out of the shared album HTML snippet."""
     if not html:
         return []
 
@@ -102,6 +107,9 @@ def fetch_album_images(url: str, *, max_images: int = _DEFAULT_MAX_IMAGES) -> Li
     if cache_entry and now - cache_entry[0] < _CACHE_TTL_SECONDS:
         return list(cache_entry[1])
 
+    # Shared album pages expose their media in inline JSON blobs.  We scrape the
+    # page because Google does not provide an official API for unauthenticated
+    # shared links.
     html = _fetch_html(cleaned_url)
     images = _extract_image_urls(html, max_images=max_images)
 

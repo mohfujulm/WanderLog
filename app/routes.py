@@ -23,6 +23,10 @@ from google.oauth2 import id_token
 from google.oauth2.credentials import Credentials as GoogleCredentials
 from google_auth_oauthlib.flow import Flow
 
+# The Google client libraries above provide helpers for exchanging OAuth tokens
+# and verifying ID tokens.  We keep the imports grouped so it is obvious which
+# pieces of the file interact with Google's APIs.
+
 from app.map_utils import dataframe_to_markers, filter_dataframe_by_date_range
 from app.utils.google_photos import fetch_album_images
 from app.utils.json_processing_functions import unique_visits_to_df
@@ -37,6 +41,9 @@ MAX_TRIP_DESCRIPTION_LENGTH = 2000
 MAX_LOCATION_DESCRIPTION_LENGTH = 2000
 MAX_TRIP_PHOTOS_URL_LENGTH = 1000
 
+# Scopes control which Google APIs the user grants access to.  ``openid`` and
+# the ``userinfo`` scopes allow us to obtain the signed-in profile, while the
+# Photos Library scope lets us list albums for import into WanderLog.
 _GOOGLE_OAUTH_SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
@@ -94,8 +101,13 @@ def _create_google_flow() -> Flow:
     if not client_id or not client_secret:
         raise RuntimeError("Google OAuth is not configured")
 
+    # The redirect URI must match what we configured in the Google Console so
+    # that Google is willing to send the user back to our application once they
+    # approve access.
     redirect_uri = url_for("main.google_auth_callback", _external=True)
 
+    # ``Flow.from_client_config`` builds a helper that knows how to generate the
+    # Google authorization URL and later exchange the returned code for tokens.
     flow = Flow.from_client_config(
         {
             "web": {
@@ -121,6 +133,11 @@ def _store_google_credentials(credentials) -> None:
         _clear_google_credentials()
         return
 
+    # ``google.oauth2.credentials.Credentials`` provides a ``to_json`` helper
+    # that serialises refresh tokens, expiry, and the granted scopes.  When that
+    # fails (for example if we get a mock object in tests) we manually capture
+    # the important attributes so the session still has enough information to
+    # refresh API calls later.
     try:
         session['google_credentials'] = credentials.to_json()
     except Exception:
@@ -146,6 +163,9 @@ def _load_google_credentials() -> Optional[GoogleCredentials]:
     if not raw_credentials:
         return None
 
+    # Stored credentials can be either a JSON string (produced by
+    # ``Credentials.to_json``) or a dictionary (our manual fallback above).  We
+    # normalise both into a dictionary that ``GoogleCredentials`` understands.
     if isinstance(raw_credentials, str):
         try:
             data = json.loads(raw_credentials)
@@ -499,12 +519,16 @@ def google_auth_start():
     if not _is_google_auth_configured():
         abort(404)
 
+    # Each request builds a new OAuth ``Flow`` so the generated authorization
+    # URL includes the correct redirect URI and anti-CSRF ``state`` token.
     flow = _create_google_flow()
     authorization_url, state = flow.authorization_url(
         access_type='offline',
         prompt='consent',
     )
     session['google_oauth_state'] = state
+    # We log the outbound request details—minus sensitive tokens—to make
+    # debugging mismatched configuration much easier.
     _log_google_oauth(
         logging.INFO,
         'start',
@@ -527,6 +551,8 @@ def google_auth_callback():
     if not state or not incoming_state or state != incoming_state:
         abort(400)
 
+    # Recreate the ``Flow`` with the same redirect URI so the library can
+    # exchange the returned ``code`` parameter for access and refresh tokens.
     flow = _create_google_flow()
 
     try:
@@ -592,6 +618,8 @@ def google_auth_callback():
         _clear_google_credentials()
         return redirect(url_for('main.index'))
 
+    # ``id_info`` contains the signed-in user's profile (subject identifier,
+    # email, display name, etc.) verified by Google's public keys.
     user = _normalise_google_user(id_info)
     if not user:
         session.pop('google_user', None)
@@ -607,6 +635,8 @@ def google_auth_callback():
     )
     session['google_user'] = user
     session.pop('google_oauth_state', None)
+    # Saving the credentials (which include a refresh token) lets us call the
+    # Google Photos API on subsequent requests without prompting the user again.
     _store_google_credentials(credentials)
 
     return redirect(url_for('main.index'))
@@ -652,6 +682,9 @@ def api_google_photos_albums():
         return jsonify(error='Google authentication credentials are missing. Please sign in again.'), 401
 
     try:
+        # ``credentials.refresh`` makes a network call only when the access token
+        # has expired and we still hold a refresh token, keeping the session
+        # alive without user interaction.
         if credentials.expired and credentials.refresh_token:
             credentials.refresh(google_requests.Request(session=requests.Session()))
     except Exception:
@@ -677,6 +710,10 @@ def api_google_photos_albums():
         params['pageToken'] = page_token
 
     try:
+        # Call the Google Photos Library ``albums`` endpoint using the OAuth
+        # access token as a Bearer token.  ``pageSize`` and ``pageToken`` mirror
+        # the API's pagination parameters so the front-end can step through
+        # albums.
         response = requests.get(
             'https://photoslibrary.googleapis.com/v1/albums',
             headers={'Authorization': f'Bearer {credentials.token}'},

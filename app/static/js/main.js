@@ -465,6 +465,9 @@ function setElementHidden(element, hidden) {
     else { element.hidden = false; }
 }
 
+// Convert the payload returned by ``/api/auth/status`` into a predictable
+// structure that the UI can work with.  This mirrors the server-side
+// ``_normalise_google_user`` helper.
 function normaliseGoogleAuthUser(user) {
     if (!user || typeof user !== 'object') { return null; }
 
@@ -478,6 +481,8 @@ function normaliseGoogleAuthUser(user) {
     return { id, email, name, picture };
 }
 
+// Build an initial (for the avatar badge) based on the user's display name or
+// email address returned from Google.
 function deriveGoogleUserInitial(user) {
     if (!user) { return ''; }
     const source = (user.name || user.email || '').trim();
@@ -485,6 +490,8 @@ function deriveGoogleUserInitial(user) {
     return source.charAt(0).toUpperCase();
 }
 
+// Persist the current Google user in the global config object so other modules
+// can query authentication state without touching the DOM directly.
 function updateGoogleAuthConfig(user) {
     if (!GOOGLE_AUTH_CONFIG) { return; }
     if (user) {
@@ -494,6 +501,9 @@ function updateGoogleAuthConfig(user) {
     }
 }
 
+// Update the Google authentication card UI to reflect the latest state.  This
+// controls the sign-in button label, the avatar, and the album tester
+// visibility based on whether the user is authenticated.
 function applyGoogleAuthState(state) {
     const card = document.querySelector('[data-google-auth-card]');
     if (!card) { return; }
@@ -601,6 +611,9 @@ function applyGoogleAuthState(state) {
     updateGoogleAuthConfig(normalisedUser);
 }
 
+// Ask the backend whether the current session is authenticated with Google.
+// The endpoint both validates stored credentials and returns a minimal user
+// profile so the UI can react accordingly.
 async function requestGoogleAuthStatus() {
     if (!GOOGLE_AUTH_CONFIG || !GOOGLE_AUTH_CONFIG.enabled) { return; }
     if (!document.querySelector('[data-google-auth-card]')) { return; }
@@ -624,6 +637,8 @@ async function requestGoogleAuthStatus() {
     }
 }
 
+// Bind the Google authentication card to live data by applying the initial
+// state from ``GOOGLE_AUTH_CONFIG`` and triggering a status refresh.
 function setupGoogleAuthCard() {
     if (!GOOGLE_AUTH_CONFIG || !GOOGLE_AUTH_CONFIG.enabled) { return; }
     if (!document.querySelector('[data-google-auth-card]')) { return; }
@@ -637,6 +652,9 @@ function setupGoogleAuthCard() {
     requestGoogleAuthStatus();
 }
 
+// Wire up the optional "Google Photos albums" tester.  When triggered it calls
+// our backend, which in turn queries the Google Photos Library API with the
+// stored OAuth credentials.
 function setupGooglePhotosAlbumsTester() {
     const card = document.querySelector('[data-google-auth-card]');
     if (!card) { return; }
