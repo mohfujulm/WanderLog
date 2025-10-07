@@ -1,8 +1,6 @@
 const APP_CONFIG = window.wanderLogConfig || {};
 const ASSET_CONFIG = APP_CONFIG.assets || {};
 const MAPBOX_TOKEN = APP_CONFIG.mapboxToken || '';
-const AUTH_CONFIG = APP_CONFIG.auth || {};
-const GOOGLE_AUTH_CONFIG = AUTH_CONFIG.google || null;
 const MENU_ICON_PATH = ASSET_CONFIG.menuIcon || '';
 const CLOSE_ICON_PATH = ASSET_CONFIG.closeIcon || '';
 const MAP_DEFAULT_CENTER = [40.65997395108914, -73.71300111746832];
@@ -28,8 +26,6 @@ const mapMarkerLookup = new Map();
 const mapMarkerData = new Map();
 let loadMarkersAbortController = null;
 let loadMarkersRequestToken = 0;
-let googleAuthRefreshHandler = null;
-let googleAuthRequestToken = 0;
 let isTripMapModeActive = false;
 let previousMapView = null;
 let manualPointForm;
@@ -103,11 +99,6 @@ let tripDetailDeleteButton = null;
 let tripNameInputContainer = null;
 let tripNameInputElement = null;
 let tripDescriptionDisplayElement = null;
-let tripPhotosSectionElement = null;
-let tripPhotosGalleryElement = null;
-let tripPhotosEmptyElement = null;
-let tripPhotosLinkElement = null;
-let tripPhotosInputElement = null;
 let tripLocationSearchInput = null;
 let tripLocationSortFieldSelect = null;
 let tripLocationSortDirectionButton = null;
@@ -138,7 +129,6 @@ const tripDetailState = {
     selectedTripId: null,
     trip: null,
     locations: [],
-    photos: [],
     searchTerm: '',
     sortField: TRIP_LOCATION_SORT_FIELD_DATE,
     sortDirection: TRIP_SORT_DIRECTION_ASC,
@@ -155,10 +145,8 @@ const tripDescriptionState = {
     isSaving: false,
     isDirty: false,
     isNameDirty: false,
-    isPhotosUrlDirty: false,
     lastAppliedDescription: '',
     lastAppliedName: '',
-    lastAppliedPhotosUrl: '',
     triggerElement: null,
 };
 
@@ -465,341 +453,9 @@ function setElementHidden(element, hidden) {
     else { element.hidden = false; }
 }
 
-// Convert the payload returned by ``/api/auth/status`` into a predictable
-// structure that the UI can work with.  This mirrors the server-side
-// ``_normalise_google_user`` helper.
-function normaliseGoogleAuthUser(user) {
-    if (!user || typeof user !== 'object') { return null; }
-
-    const id = typeof user.id === 'string' ? user.id : '';
-    const email = typeof user.email === 'string' ? user.email : '';
-    const name = typeof user.name === 'string' ? user.name : '';
-    const picture = typeof user.picture === 'string' ? user.picture : '';
-
-    if (!id && !email && !name && !picture) { return null; }
-
-    return { id, email, name, picture };
-}
-
-// Build an initial (for the avatar badge) based on the user's display name or
-// email address returned from Google.
-function deriveGoogleUserInitial(user) {
-    if (!user) { return ''; }
-    const source = (user.name || user.email || '').trim();
-    if (!source) { return ''; }
-    return source.charAt(0).toUpperCase();
-}
-
-// Persist the current Google user in the global config object so other modules
-// can query authentication state without touching the DOM directly.
-function updateGoogleAuthConfig(user) {
-    if (!GOOGLE_AUTH_CONFIG) { return; }
-    if (user) {
-        GOOGLE_AUTH_CONFIG.user = { ...user };
-    } else {
-        GOOGLE_AUTH_CONFIG.user = null;
-    }
-}
-
-// Update the Google authentication card UI to reflect the latest state.  This
-// controls the sign-in button label, the avatar, and the album tester
-// visibility based on whether the user is authenticated.
-function applyGoogleAuthState(state) {
-    const card = document.querySelector('[data-google-auth-card]');
-    if (!card) { return; }
-
-    const button = card.querySelector('[data-auth-button]');
-    if (!button) { return; }
-
-    const labelElement = button.querySelector('[data-auth-button-label]');
-    const iconElement = button.querySelector('[data-auth-button-icon]');
-    const statusElement = card.querySelector('[data-auth-status]');
-    const statusTitleElement = card.querySelector('[data-auth-status-title]');
-    const statusSubtitleElement = card.querySelector('[data-auth-status-subtitle]');
-    const avatarElement = card.querySelector('[data-auth-avatar]');
-    const avatarImageElement = avatarElement ? avatarElement.querySelector('[data-auth-avatar-image]') : null;
-    const avatarInitialElement = avatarElement ? avatarElement.querySelector('[data-auth-avatar-initial]') : null;
-    const albumsButton = card.querySelector('[data-auth-albums-button]');
-    const albumsLabelElement = albumsButton ? albumsButton.querySelector('[data-auth-albums-button-label]') : null;
-    const albumsSection = card.querySelector('[data-auth-albums-section]');
-    const albumsListElement = albumsSection ? albumsSection.querySelector('[data-auth-albums-list]') : null;
-    const albumsEmptyElement = albumsSection ? albumsSection.querySelector('[data-auth-albums-empty]') : null;
-    const albumsErrorElement = albumsSection ? albumsSection.querySelector('[data-auth-albums-error]') : null;
-
-    const normalisedUser = state && state.authenticated ? normaliseGoogleAuthUser(state.user) : null;
-    const isAuthenticated = Boolean(normalisedUser);
-
-    const loginLabel = button.dataset.authLoginLabel || 'Sign in with Google';
-    const logoutLabel = button.dataset.authLogoutLabel || 'Sign Out';
-    const loginUrl = button.dataset.authLoginUrl || '#';
-    const logoutUrl = button.dataset.authLogoutUrl || '#';
-    const loginClasses = (button.dataset.authLoginClass || '').split(/\s+/).filter(Boolean);
-    const logoutClasses = (button.dataset.authLogoutClass || '').split(/\s+/).filter(Boolean);
-
-    button.classList.remove(...loginClasses, ...logoutClasses);
-    if (isAuthenticated) {
-        if (logoutClasses.length) { button.classList.add(...logoutClasses); }
-        button.setAttribute('href', logoutUrl || '#');
-        if (labelElement) { labelElement.textContent = logoutLabel; }
-        if (iconElement) { setElementHidden(iconElement, true); }
-        card.dataset.authState = 'authenticated';
-    } else {
-        if (loginClasses.length) { button.classList.add(...loginClasses); }
-        button.setAttribute('href', loginUrl || '#');
-        if (labelElement) { labelElement.textContent = loginLabel; }
-        if (iconElement) { setElementHidden(iconElement, false); }
-        card.dataset.authState = 'anonymous';
-    }
-
-    if (statusElement) {
-        setElementHidden(statusElement, !isAuthenticated);
-        if (isAuthenticated) {
-            if (statusTitleElement) { statusTitleElement.textContent = 'Signed in'; }
-            if (statusSubtitleElement) { statusSubtitleElement.textContent = normalisedUser.name || normalisedUser.email || ''; }
-        } else {
-            if (statusTitleElement) { statusTitleElement.textContent = ''; }
-            if (statusSubtitleElement) { statusSubtitleElement.textContent = ''; }
-        }
-    }
-
-    if (avatarElement) {
-        const userInitial = isAuthenticated ? deriveGoogleUserInitial(normalisedUser) : '';
-        if (avatarImageElement) {
-            if (isAuthenticated && normalisedUser.picture) {
-                avatarImageElement.src = normalisedUser.picture;
-                setElementHidden(avatarImageElement, false);
-            } else {
-                avatarImageElement.removeAttribute('src');
-                setElementHidden(avatarImageElement, true);
-            }
-        }
-        if (avatarInitialElement) {
-            if (isAuthenticated && !normalisedUser.picture && userInitial) {
-                avatarInitialElement.textContent = userInitial;
-                setElementHidden(avatarInitialElement, false);
-            } else {
-                avatarInitialElement.textContent = '';
-                setElementHidden(avatarInitialElement, true);
-            }
-        }
-    }
-
-    if (albumsButton) {
-        albumsButton.hidden = !isAuthenticated;
-        albumsButton.disabled = !isAuthenticated;
-        if (!isAuthenticated && albumsLabelElement) {
-            const defaultLabel = albumsButton.dataset.authAlbumsDefaultLabel || 'View Google Photos Albums';
-            albumsLabelElement.textContent = defaultLabel;
-        }
-    }
-
-    if (!isAuthenticated && albumsSection) {
-        setElementHidden(albumsSection, true);
-        if (albumsListElement) {
-            albumsListElement.innerHTML = '';
-            setElementHidden(albumsListElement, true);
-        }
-        if (albumsEmptyElement) {
-            setElementHidden(albumsEmptyElement, true);
-        }
-        if (albumsErrorElement) {
-            albumsErrorElement.textContent = '';
-            setElementHidden(albumsErrorElement, true);
-        }
-    }
-
-    updateGoogleAuthConfig(normalisedUser);
-}
-
-// Ask the backend whether the current session is authenticated with Google.
-// The endpoint both validates stored credentials and returns a minimal user
-// profile so the UI can react accordingly.
-async function requestGoogleAuthStatus() {
-    if (!GOOGLE_AUTH_CONFIG || !GOOGLE_AUTH_CONFIG.enabled) { return; }
-    if (!document.querySelector('[data-google-auth-card]')) { return; }
-
-    const requestId = ++googleAuthRequestToken;
-    try {
-        const response = await fetch('/api/auth/status', {
-            credentials: 'include',
-            cache: 'no-store',
-        });
-        if (!response.ok) { return; }
-
-        const payload = await response.json();
-        if (requestId !== googleAuthRequestToken) { return; }
-
-        const authenticated = Boolean(payload && payload.authenticated);
-        const user = authenticated && payload && payload.user ? payload.user : null;
-        applyGoogleAuthState({ authenticated, user });
-    } catch (error) {
-        // Ignore network errors so the UI remains responsive.
-    }
-}
-
-// Bind the Google authentication card to live data by applying the initial
-// state from ``GOOGLE_AUTH_CONFIG`` and triggering a status refresh.
-function setupGoogleAuthCard() {
-    if (!GOOGLE_AUTH_CONFIG || !GOOGLE_AUTH_CONFIG.enabled) { return; }
-    if (!document.querySelector('[data-google-auth-card]')) { return; }
-
-    applyGoogleAuthState({
-        authenticated: Boolean(GOOGLE_AUTH_CONFIG.user),
-        user: GOOGLE_AUTH_CONFIG.user || null,
-    });
-
-    googleAuthRefreshHandler = () => { requestGoogleAuthStatus(); };
-    requestGoogleAuthStatus();
-}
-
-// Wire up the optional "Google Photos albums" tester.  When triggered it calls
-// our backend, which in turn queries the Google Photos Library API with the
-// stored OAuth credentials.
-function setupGooglePhotosAlbumsTester() {
-    const card = document.querySelector('[data-google-auth-card]');
-    if (!card) { return; }
-
-    const button = card.querySelector('[data-auth-albums-button]');
-    const section = card.querySelector('[data-auth-albums-section]');
-    const listElement = section ? section.querySelector('[data-auth-albums-list]') : null;
-    const emptyElement = section ? section.querySelector('[data-auth-albums-empty]') : null;
-    const errorElement = section ? section.querySelector('[data-auth-albums-error]') : null;
-    const labelElement = button ? button.querySelector('[data-auth-albums-button-label]') : null;
-
-    if (!button || !section || !listElement || !emptyElement || !errorElement) { return; }
-
-    const defaultLabel = button.dataset.authAlbumsDefaultLabel || (labelElement ? labelElement.textContent.trim() : 'View Google Photos Albums');
-    const loadingLabel = button.dataset.authAlbumsLoadingLabel || 'Loading albums...';
-
-    function setButtonLabel(value) {
-        if (labelElement) { labelElement.textContent = value; }
-        else { button.textContent = value; }
-    }
-
-    function clearAlbumsView() {
-        listElement.innerHTML = '';
-        setElementHidden(listElement, true);
-        setElementHidden(emptyElement, true);
-        errorElement.textContent = '';
-        setElementHidden(errorElement, true);
-    }
-
-    function showAlbums(albums) {
-        clearAlbumsView();
-
-        if (!Array.isArray(albums) || albums.length === 0) {
-            emptyElement.textContent = 'No albums found for this account.';
-            setElementHidden(emptyElement, false);
-            return;
-        }
-
-        const fragment = document.createDocumentFragment();
-        albums.forEach((album) => {
-            if (!album || typeof album !== 'object') { return; }
-            const item = document.createElement('li');
-            item.className = 'auth-card-albums-item';
-
-            const link = document.createElement('a');
-            const rawTitle = typeof album.title === 'string' ? album.title.trim() : '';
-            const title = rawTitle || 'Untitled album';
-            if (album.productUrl) {
-                link.href = album.productUrl;
-                link.target = '_blank';
-                link.rel = 'noopener noreferrer';
-            } else {
-                link.href = '#';
-                link.setAttribute('aria-disabled', 'true');
-                link.classList.add('auth-card-album-link-disabled');
-            }
-            link.textContent = title;
-            item.appendChild(link);
-
-            const metaParts = [];
-            const countValue = album.mediaItemsCount;
-            if (countValue !== undefined && countValue !== null && countValue !== '') {
-                const countNumber = Number(countValue);
-                if (!Number.isNaN(countNumber)) {
-                    metaParts.push(`${countNumber} item${countNumber === 1 ? '' : 's'}`);
-                }
-            }
-
-            if (metaParts.length) {
-                const meta = document.createElement('span');
-                meta.className = 'auth-card-albums-meta';
-                meta.textContent = metaParts.join(' • ');
-                item.appendChild(meta);
-            }
-
-            fragment.appendChild(item);
-        });
-
-        listElement.innerHTML = '';
-        listElement.appendChild(fragment);
-        setElementHidden(listElement, false);
-    }
-
-    function showError(message) {
-        clearAlbumsView();
-        errorElement.textContent = message || 'Failed to load albums.';
-        setElementHidden(errorElement, false);
-    }
-
-    button.addEventListener('click', async (event) => {
-        event.preventDefault();
-        if (button.disabled) { return; }
-
-        button.disabled = true;
-        setButtonLabel(loadingLabel);
-        clearAlbumsView();
-        setElementHidden(section, false);
-
-        const requestId = `albums-${Date.now()}`;
-        console.groupCollapsed('[Google Photos Tester] Fetching albums');
-        console.info('[Google Photos Tester] Starting request', { requestId });
-
-        try {
-            const response = await fetch('/api/google/photos/albums', {
-                credentials: 'include',
-                cache: 'no-store',
-            });
-            const payload = await response.json().catch(() => ({}));
-
-            console.info('[Google Photos Tester] Response received', {
-                requestId,
-                ok: response.ok,
-                status: response.status,
-            });
-            if (payload && typeof payload === 'object') {
-                console.debug('[Google Photos Tester] Response payload', payload);
-            }
-
-            if (!response.ok) {
-                const message = payload && payload.error ? payload.error : 'Failed to load albums.';
-                throw new Error(message);
-            }
-
-            showAlbums(payload.albums);
-            const albumCount = Array.isArray(payload.albums) ? payload.albums.length : 0;
-            console.info('[Google Photos Tester] Albums rendered', { requestId, albumCount });
-        } catch (error) {
-            const message = (error && error.message) ? error.message : 'Failed to load albums.';
-            showError(message);
-            console.error('[Google Photos Tester] Album fetch failed', { requestId, error });
-        } finally {
-            setButtonLabel(defaultLabel);
-            button.disabled = false;
-            console.groupEnd();
-        }
-    });
-
-    clearAlbumsView();
-}
-
 const MAX_ALIAS_LENGTH = 120;
 const MAX_TRIP_NAME_LENGTH = 120;
 const MAX_LOCATION_DESCRIPTION_LENGTH = 2000;
-const MAX_TRIP_PHOTOS_URL_LENGTH = 1000;
-
 const markerIconCache = new Map();
 
 const HTML_ESCAPE_LOOKUP = {
@@ -2019,19 +1675,6 @@ function normaliseTrip(trip) {
         }
     }
 
-    const photosUrlRaw = trip.google_photos_url ?? '';
-    const googlePhotosUrl = typeof photosUrlRaw === 'string'
-        ? photosUrlRaw.trim()
-        : (photosUrlRaw ? String(photosUrlRaw).trim() : '');
-
-    const photoCountRaw = trip.photo_count ?? (
-        Array.isArray(trip.photos) ? trip.photos.length : 0
-    );
-    const parsedPhotoCount = Number(photoCountRaw);
-    const photoCount = Number.isFinite(parsedPhotoCount) && parsedPhotoCount >= 0
-        ? parsedPhotoCount
-        : 0;
-
     return {
         id: identifier,
         name,
@@ -2040,8 +1683,6 @@ function normaliseTrip(trip) {
         updated_at: updatedAt,
         latest_location_date: latestDate,
         description,
-        google_photos_url: googlePhotosUrl,
-        photo_count: photoCount,
     };
 }
 
@@ -2489,7 +2130,6 @@ function updateTripDescriptionSaveButtonState() {
     const hasChanges = Boolean(
         tripDescriptionState.isDirty
         || tripDescriptionState.isNameDirty
-        || tripDescriptionState.isPhotosUrlDirty
     );
     const disableSave = !tripProfileEditState.active
         || !tripDescriptionState.tripId
@@ -2532,89 +2172,6 @@ function updateTripDescriptionDisplay(description) {
     } else {
         tripDescriptionDisplayElement.textContent = 'No description has been added yet.';
         tripDescriptionDisplayElement.classList.add('trip-profile-description-empty');
-    }
-}
-
-function updateTripPhotosLink(url) {
-    if (!tripPhotosLinkElement) { return; }
-    const cleaned = typeof url === 'string' ? url.trim() : '';
-    if (cleaned) {
-        tripPhotosLinkElement.href = cleaned;
-        tripPhotosLinkElement.hidden = false;
-    } else {
-        tripPhotosLinkElement.removeAttribute('href');
-        tripPhotosLinkElement.hidden = true;
-    }
-}
-
-function renderTripPhotosGallery(photos) {
-    if (!tripPhotosGalleryElement) { return; }
-    tripPhotosGalleryElement.innerHTML = '';
-
-    if (!Array.isArray(photos) || photos.length === 0) {
-        tripPhotosGalleryElement.hidden = true;
-        return;
-    }
-
-    photos.forEach((photoUrl, index) => {
-        if (typeof photoUrl !== 'string') { return; }
-        const cleaned = photoUrl.trim();
-        if (!cleaned) { return; }
-        const item = document.createElement('figure');
-        item.className = 'trip-profile-photo-item';
-        const image = document.createElement('img');
-        image.src = cleaned;
-        image.alt = `Trip photo ${index + 1}`;
-        image.loading = 'lazy';
-        image.decoding = 'async';
-        item.appendChild(image);
-        tripPhotosGalleryElement.appendChild(item);
-    });
-
-    tripPhotosGalleryElement.hidden = tripPhotosGalleryElement.childElementCount === 0;
-}
-
-function updateTripPhotosSection(options = {}) {
-    if (!tripProfilePanelInitialised) { return; }
-
-    const { photos = null, url = undefined } = options || {};
-
-    if (Array.isArray(photos)) {
-        tripDetailState.photos = photos;
-    }
-
-    if (url !== undefined) {
-        const finalUrl = typeof url === 'string' ? url.trim() : '';
-        tripDescriptionState.lastAppliedPhotosUrl = finalUrl;
-        if (tripPhotosInputElement && (!tripProfileEditState.active || !tripDescriptionState.isPhotosUrlDirty)) {
-            tripPhotosInputElement.value = finalUrl;
-            if (!tripProfileEditState.active) {
-                tripDescriptionState.isPhotosUrlDirty = false;
-            }
-        }
-    }
-
-    const resolvedUrl = tripDescriptionState.lastAppliedPhotosUrl || '';
-    const photoList = Array.isArray(tripDetailState.photos) ? tripDetailState.photos : [];
-
-    if (tripPhotosSectionElement) {
-        tripPhotosSectionElement.hidden = false;
-        tripPhotosSectionElement.setAttribute('aria-hidden', 'false');
-    }
-
-    renderTripPhotosGallery(photoList);
-    updateTripPhotosLink(resolvedUrl);
-
-    if (tripPhotosEmptyElement) {
-        if (photoList.length > 0) {
-            tripPhotosEmptyElement.hidden = true;
-        } else {
-            const message = resolvedUrl
-                ? 'No photos could be loaded from this album. Check the link and try again.'
-                : 'Add a Google Photos album link to see photos here.';
-            tripPhotosEmptyElement.textContent = message;
-            tripPhotosEmptyElement.hidden = false;
-        }
     }
 }
 
@@ -2674,19 +2231,13 @@ function enterTripProfileEditMode() {
         tripDescriptionField.value = descriptionValue;
     }
 
-    const photosUrlValue = tripDescriptionState.lastAppliedPhotosUrl || '';
-    if (tripPhotosInputElement) {
-        tripPhotosInputElement.value = photosUrlValue;
-    }
-
     tripDescriptionState.isDirty = false;
     tripDescriptionState.isNameDirty = false;
-    tripDescriptionState.isPhotosUrlDirty = false;
 
     showTripDescriptionStatus('');
     applyTripProfileEditMode();
 
-    const focusTarget = tripNameInputElement || tripDescriptionField || tripPhotosInputElement || null;
+    const focusTarget = tripNameInputElement || tripDescriptionField || null;
     if (focusTarget && typeof focusTarget.focus === 'function') {
         try {
             focusTarget.focus({ preventScroll: true });
@@ -2708,16 +2259,12 @@ function exitTripProfileEditMode(options = {}) {
     tripProfileEditState.active = false;
     tripDescriptionState.isDirty = false;
     tripDescriptionState.isNameDirty = false;
-    tripDescriptionState.isPhotosUrlDirty = false;
 
     if (tripNameInputElement) {
         tripNameInputElement.value = tripDescriptionState.lastAppliedName || '';
     }
     if (tripDescriptionField) {
         tripDescriptionField.value = tripDescriptionState.lastAppliedDescription || '';
-    }
-    if (tripPhotosInputElement) {
-        tripPhotosInputElement.value = tripDescriptionState.lastAppliedPhotosUrl || '';
     }
 
     applyTripProfileEditMode();
@@ -2745,9 +2292,6 @@ function setTripDescriptionSaving(isSaving) {
     if (tripDescriptionField) {
         tripDescriptionField.disabled = saving;
     }
-    if (tripPhotosInputElement) {
-        tripPhotosInputElement.disabled = saving;
-    }
     if (tripDetailEditButton) {
         tripDetailEditButton.disabled = saving || tripProfileEditState.active;
     }
@@ -2771,7 +2315,6 @@ function handleTripDescriptionCancel(event) {
     const wasDirty = Boolean(
         tripDescriptionState.isDirty
         || tripDescriptionState.isNameDirty
-        || tripDescriptionState.isPhotosUrlDirty
     );
     exitTripProfileEditMode({ restoreFocus: true });
 
@@ -2780,7 +2323,7 @@ function handleTripDescriptionCancel(event) {
 }
 
 function populateTripProfilePanel(trip, options = {}) {
-    const { preserveDirty = true, photos = undefined } = options || {};
+    const { preserveDirty = true } = options || {};
     const name = trip && trip.name ? String(trip.name) : TRIP_NAME_FALLBACK;
 
     if (tripDescriptionTitleElement) {
@@ -2838,31 +2381,7 @@ function populateTripProfilePanel(trip, options = {}) {
         tripDescriptionState.isDirty = false;
     }
 
-    const photosUrlRaw = trip && trip.google_photos_url !== undefined
-        ? trip.google_photos_url
-        : '';
-    const photosUrl = typeof photosUrlRaw === 'string'
-        ? photosUrlRaw.trim()
-        : (photosUrlRaw ? String(photosUrlRaw).trim() : '');
-    tripDescriptionState.lastAppliedPhotosUrl = photosUrl;
-
-    if (tripPhotosInputElement) {
-        const shouldUpdatePhotosField = !preserveDirty || !tripDescriptionState.isPhotosUrlDirty;
-        if (shouldUpdatePhotosField) {
-            tripPhotosInputElement.value = photosUrl;
-            tripDescriptionState.isPhotosUrlDirty = false;
-        }
-    }
-
-    const photosFromOptions = Array.isArray(photos)
-        ? photos
-        : (Array.isArray(trip && trip.photos) ? trip.photos : null);
-
     updateTripDescriptionDisplay(description);
-    updateTripPhotosSection({
-        photos: Array.isArray(photosFromOptions) ? photosFromOptions : undefined,
-        url: photosUrl,
-    });
     updateTripDescriptionSaveButtonState();
     updateTripDetailActions();
 }
@@ -2895,17 +2414,9 @@ async function refreshTripDescription(tripId, requestId) {
         const tripData = data && typeof data === 'object' && !Array.isArray(data)
             ? (data.trip ?? data)
             : {};
-        const photosRaw = data && typeof data === 'object' && Array.isArray(data.photos)
-            ? data.photos
-            : undefined;
-
         if (tripData && typeof tripData === 'object') {
-            if (Array.isArray(photosRaw)) {
-                tripDetailState.photos = photosRaw;
-            }
             populateTripProfilePanel(tripData, {
                 preserveDirty: true,
-                photos: Array.isArray(photosRaw) ? photosRaw : undefined,
             });
             upsertTripInList(tripData, { reloadDetail: false });
         }
@@ -2934,18 +2445,16 @@ async function handleTripDescriptionSubmit(event) {
 
     const nameField = tripNameInputElement || null;
     const descriptionField = tripDescriptionField || null;
-    const photosField = tripPhotosInputElement || null;
 
-    if (!nameField && !descriptionField && !photosField) {
+    if (!nameField && !descriptionField) {
         showTripDescriptionStatus('Editing controls are unavailable.', true);
         return;
     }
 
     const nameChanged = Boolean(tripDescriptionState.isNameDirty);
     const descriptionChanged = Boolean(tripDescriptionState.isDirty);
-    const photosUrlChanged = Boolean(tripDescriptionState.isPhotosUrlDirty);
 
-    if (!nameChanged && !descriptionChanged && !photosUrlChanged) {
+    if (!nameChanged && !descriptionChanged) {
         showTripDescriptionStatus('No changes to save.');
         return;
     }
@@ -2953,7 +2462,6 @@ async function handleTripDescriptionSubmit(event) {
     const payload = {};
     let description = '';
     let trimmedName = '';
-    let cleanedPhotosUrl = '';
 
     if (nameChanged) {
         const rawName = nameField ? nameField.value : '';
@@ -2992,47 +2500,9 @@ async function handleTripDescriptionSubmit(event) {
         payload.description = description;
     }
 
-    if (photosUrlChanged) {
-        if (!photosField) {
-            showTripDescriptionStatus('Photos field is unavailable.', true);
-            return;
-        }
-        const rawPhotosUrl = photosField.value || '';
-        const trimmedPhotosUrl = rawPhotosUrl.trim();
-        if (trimmedPhotosUrl && !/^https?:\/\//i.test(trimmedPhotosUrl)) {
-            showTripDescriptionStatus('Provide a valid Google Photos link.', true);
-            if (typeof photosField.focus === 'function') {
-                try {
-                    photosField.focus({ preventScroll: true });
-                } catch (error) {
-                    photosField.focus();
-                }
-            }
-            return;
-        }
-        if (trimmedPhotosUrl.length > MAX_TRIP_PHOTOS_URL_LENGTH) {
-            showTripDescriptionStatus(
-                `Google Photos link must be ${MAX_TRIP_PHOTOS_URL_LENGTH} characters or fewer.`,
-                true,
-            );
-            if (typeof photosField.focus === 'function') {
-                try {
-                    photosField.focus({ preventScroll: true });
-                } catch (error) {
-                    photosField.focus();
-                }
-            }
-            return;
-        }
-        cleanedPhotosUrl = trimmedPhotosUrl;
-        payload.google_photos_url = cleanedPhotosUrl;
-    }
-
     const previousState = {
         lastAppliedName: tripDescriptionState.lastAppliedName,
         lastAppliedDescription: tripDescriptionState.lastAppliedDescription,
-        lastAppliedPhotosUrl: tripDescriptionState.lastAppliedPhotosUrl,
-        photos: Array.isArray(tripDetailState.photos) ? [...tripDetailState.photos] : [],
         trip: (tripDetailState.trip && String(tripDetailState.trip.id) === tripId)
             ? { ...tripDetailState.trip }
             : null,
@@ -3041,7 +2511,6 @@ async function handleTripDescriptionSubmit(event) {
     const draftValues = {
         name: nameChanged ? trimmedName : null,
         description: descriptionChanged ? description : null,
-        photosUrl: photosUrlChanged ? cleanedPhotosUrl : null,
     };
 
     if (nameChanged) {
@@ -3053,9 +2522,6 @@ async function handleTripDescriptionSubmit(event) {
     if (descriptionChanged) {
         tripDescriptionState.lastAppliedDescription = description;
     }
-    if (photosUrlChanged) {
-        tripDescriptionState.lastAppliedPhotosUrl = cleanedPhotosUrl;
-    }
 
     if (tripDetailState.trip && String(tripDetailState.trip.id) === tripId) {
         const updatedDetail = { ...tripDetailState.trip };
@@ -3065,22 +2531,11 @@ async function handleTripDescriptionSubmit(event) {
         if (descriptionChanged) {
             updatedDetail.description = description;
         }
-        if (photosUrlChanged) {
-            updatedDetail.google_photos_url = cleanedPhotosUrl;
-            updatedDetail.photo_count = 0;
-        }
         tripDetailState.trip = updatedDetail;
         updateTripDetailHeader();
     }
 
-    if (photosUrlChanged) {
-        tripDetailState.photos = [];
-    }
-
     updateTripDescriptionDisplay(descriptionChanged ? description : undefined);
-    if (photosUrlChanged) {
-        updateTripPhotosSection({ url: cleanedPhotosUrl, photos: [] });
-    }
 
     exitTripProfileEditMode({ restoreFocus: false });
     setTripDescriptionSaving(true);
@@ -3102,15 +2557,10 @@ async function handleTripDescriptionSubmit(event) {
         }
 
         const updatedTrip = result && result.trip ? result.trip : null;
-        const responsePhotos = Array.isArray(result && result.photos) ? result.photos : undefined;
         if (updatedTrip && typeof updatedTrip === 'object') {
             populateTripProfilePanel(updatedTrip, {
                 preserveDirty: false,
-                photos: responsePhotos,
             });
-            if (Array.isArray(responsePhotos)) {
-                tripDetailState.photos = responsePhotos;
-            }
             upsertTripInList(updatedTrip, { reloadDetail: false });
         } else {
             if (typeof payload.name === 'string') {
@@ -3122,12 +2572,6 @@ async function handleTripDescriptionSubmit(event) {
                     tripDescriptionState.isDirty = false;
                 }
             }
-            if (payload.google_photos_url !== undefined) {
-                tripDescriptionState.lastAppliedPhotosUrl = payload.google_photos_url;
-                tripDescriptionState.isPhotosUrlDirty = false;
-                tripDetailState.photos = [];
-                updateTripPhotosSection({ url: payload.google_photos_url, photos: [] });
-            }
             tripDescriptionState.isNameDirty = false;
         }
 
@@ -3137,7 +2581,6 @@ async function handleTripDescriptionSubmit(event) {
         console.error('Failed to update trip description', error);
         tripDescriptionState.lastAppliedName = previousState.lastAppliedName;
         tripDescriptionState.lastAppliedDescription = previousState.lastAppliedDescription;
-        tripDescriptionState.lastAppliedPhotosUrl = previousState.lastAppliedPhotosUrl || '';
         if (tripDescriptionTitleElement) {
             const previousName = previousState.lastAppliedName || '';
             const displayName = previousName.trim().length > 0
@@ -3149,12 +2592,7 @@ async function handleTripDescriptionSubmit(event) {
             tripDetailState.trip = previousState.trip;
             updateTripDetailHeader();
         }
-        tripDetailState.photos = Array.isArray(previousState.photos) ? previousState.photos : [];
         updateTripDescriptionDisplay();
-        updateTripPhotosSection({
-            url: previousState.lastAppliedPhotosUrl || '',
-            photos: Array.isArray(previousState.photos) ? previousState.photos : undefined,
-        });
 
         enterTripProfileEditMode();
 
@@ -3165,10 +2603,6 @@ async function handleTripDescriptionSubmit(event) {
         if (tripDescriptionField && draftValues.description !== null) {
             tripDescriptionField.value = draftValues.description;
             tripDescriptionState.isDirty = true;
-        }
-        if (tripPhotosInputElement && draftValues.photosUrl !== null) {
-            tripPhotosInputElement.value = draftValues.photosUrl;
-            tripDescriptionState.isPhotosUrlDirty = true;
         }
 
         updateTripDescriptionSaveButtonState();
@@ -3209,11 +2643,6 @@ function initTripProfilePanel() {
     tripDescriptionCloseButton = document.getElementById('tripDetailBack');
     tripNameInputContainer = document.getElementById('tripNameField');
     tripNameInputElement = document.getElementById('tripNameInput');
-    tripPhotosSectionElement = document.getElementById('tripPhotosSection');
-    tripPhotosGalleryElement = document.getElementById('tripPhotosGallery');
-    tripPhotosEmptyElement = document.getElementById('tripPhotosEmpty');
-    tripPhotosLinkElement = document.getElementById('tripPhotosLink');
-    tripPhotosInputElement = document.getElementById('tripPhotosInput');
 
     if (!tripDescriptionTitleElement) {
         if (!tripDetailState.initialised) { initTripDetailPanel(); }
@@ -3261,27 +2690,10 @@ function initTripProfilePanel() {
         });
     }
 
-    if (tripPhotosInputElement && !tripPhotosInputElement.dataset.initialised) {
-        tripPhotosInputElement.addEventListener('input', () => {
-            const currentValue = tripPhotosInputElement.value ? tripPhotosInputElement.value.trim() : '';
-            const lastValue = tripDescriptionState.lastAppliedPhotosUrl
-                ? tripDescriptionState.lastAppliedPhotosUrl.trim()
-                : '';
-            tripDescriptionState.isPhotosUrlDirty = tripProfileEditState.active
-                && currentValue !== lastValue;
-            updateTripDescriptionSaveButtonState();
-            if (tripDescriptionStatusElement && !tripDescriptionStatusElement.hidden) {
-                showTripDescriptionStatus('');
-            }
-        });
-        tripPhotosInputElement.dataset.initialised = 'true';
-    }
-
     tripProfilePanelInitialised = true;
     applyTripProfileEditMode();
     updateTripDescriptionDisplay();
     updateTripDescriptionSaveButtonState();
-    updateTripPhotosSection();
 }
 
 function openTripProfile(tripId, options = {}) {
@@ -3298,10 +2710,8 @@ function openTripProfile(tripId, options = {}) {
     tripDescriptionState.isSaving = false;
     tripDescriptionState.isDirty = false;
     tripDescriptionState.isNameDirty = false;
-    tripDescriptionState.isPhotosUrlDirty = false;
     tripDescriptionState.lastAppliedDescription = '';
     tripDescriptionState.lastAppliedName = '';
-    tripDescriptionState.lastAppliedPhotosUrl = '';
     tripDescriptionState.triggerElement = triggerElement || null;
 
     exitTripProfileEditMode({ force: true });
@@ -3318,7 +2728,6 @@ function openTripProfile(tripId, options = {}) {
     if (tripDescriptionDisplayElement) {
         updateTripDescriptionDisplay('');
     }
-    updateTripPhotosSection({ photos: [], url: '' });
     if (tripDescriptionUpdatedReadOnlyElement) {
         tripDescriptionUpdatedReadOnlyElement.hidden = true;
     }
@@ -3352,10 +2761,8 @@ function closeTripProfileOverlay(options = {}) {
     tripDescriptionState.isSaving = false;
     tripDescriptionState.isDirty = false;
     tripDescriptionState.isNameDirty = false;
-    tripDescriptionState.isPhotosUrlDirty = false;
     tripDescriptionState.lastAppliedDescription = '';
     tripDescriptionState.lastAppliedName = '';
-    tripDescriptionState.lastAppliedPhotosUrl = '';
     tripDescriptionState.triggerElement = null;
 
     exitTripProfileEditMode({ force: true, restoreFocus: false });
@@ -3390,9 +2797,6 @@ function closeTripProfileOverlay(options = {}) {
         updateTripDescriptionDisplay('');
     }
 
-    tripDetailState.photos = [];
-    updateTripPhotosSection({ photos: [], url: '' });
-
     showTripDescriptionStatus('');
     updateTripDescriptionSaveButtonState();
 
@@ -3419,7 +2823,6 @@ function openTripDetail(tripId, triggerElement) {
     tripDetailState.sortDirection = TRIP_SORT_DIRECTION_ASC;
     tripDetailState.locations = [];
     tripDetailState.trip = null;
-    tripDetailState.photos = [];
     tripDetailState.activeLocationId = null;
 
     activateTripMapMode();
@@ -3433,8 +2836,6 @@ function openTripDetail(tripId, triggerElement) {
         tripLocationListContainer.hidden = true;
     }
     hideTripLocationError();
-    updateTripPhotosSection({ photos: [], url: tripDescriptionState.lastAppliedPhotosUrl || '' });
-
     const fallbackTrip = Array.isArray(tripListState.trips)
         ? tripListState.trips.find((entry) => entry.id === tripId)
         : null;
@@ -3451,19 +2852,10 @@ function openTripDetail(tripId, triggerElement) {
     if (cached && Array.isArray(cached.locations)) {
         const normalisedTrip = normaliseTrip(cached.trip) || fallbackTrip || { id: tripId, name: TRIP_NAME_FALLBACK };
         const locations = normaliseTripLocationList(cached.locations);
-        const photos = Array.isArray(cached.photos) ? cached.photos : [];
         tripDetailState.trip = { ...normalisedTrip, location_count: locations.length };
         tripDetailState.locations = locations;
-        tripDetailState.photos = photos;
-        updateTripPhotosSection({
-            photos,
-            url: normalisedTrip && normalisedTrip.google_photos_url
-                ? normalisedTrip.google_photos_url
-                : tripDescriptionState.lastAppliedPhotosUrl,
-        });
         populateTripProfilePanel(normalisedTrip, {
             preserveDirty: tripProfileEditState.active,
-            photos,
         });
         updateTripDetailHeader();
         renderTripLocationList();
@@ -4204,27 +3596,15 @@ async function loadTripDetailData(tripId, requestId) {
         const locationsRaw = data && typeof data === 'object' && Array.isArray(data.locations)
             ? data.locations
             : [];
-        const photosRaw = data && typeof data === 'object' && Array.isArray(data.photos)
-            ? data.photos
-            : [];
-
-        tripLocationCache.set(tripId, { trip: tripData, locations: locationsRaw, photos: photosRaw });
+        tripLocationCache.set(tripId, { trip: tripData, locations: locationsRaw });
 
         const normalisedTrip = normaliseTrip(tripData) || { id: tripId, name: TRIP_NAME_FALLBACK };
         const locations = normaliseTripLocationList(locationsRaw);
 
         tripDetailState.trip = { ...normalisedTrip, location_count: locations.length };
         tripDetailState.locations = locations;
-        tripDetailState.photos = Array.isArray(photosRaw) ? photosRaw : [];
-        updateTripPhotosSection({
-            photos: Array.isArray(photosRaw) ? photosRaw : undefined,
-            url: normalisedTrip && normalisedTrip.google_photos_url
-                ? normalisedTrip.google_photos_url
-                : tripDescriptionState.lastAppliedPhotosUrl,
-        });
         populateTripProfilePanel(normalisedTrip, {
             preserveDirty: tripProfileEditState.active,
-            photos: Array.isArray(photosRaw) ? photosRaw : undefined,
         });
         updateTripDetailHeader();
         renderTripLocationList();
@@ -6629,9 +6009,6 @@ function toggleMenu() {
     if (!menu) { return; }
     const isOpen = menu.classList.toggle('open');
     applyMenuState(menu, isOpen);
-    if (isOpen && typeof googleAuthRefreshHandler === 'function') {
-        googleAuthRefreshHandler();
-    }
 }
 
 function applyMenuState(menu, isOpen, options = {}) {
