@@ -2,6 +2,6 @@ Flask==3.0.0
 folium==0.15.0
 pandas==2.1.4
 python-dotenv==1.0.0
-google-auth==2.26.1
-google-auth-oauthlib==1.2.0
+# google-auth==2.26.1
+# google-auth-oauthlib==1.2.0
 requests==2.31.0
