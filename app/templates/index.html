@@ -24,6 +24,87 @@
             <span class="menu-toggle-text">Menu</span>
         </button>
         <div class="overlay-controls" id="menuControls" aria-hidden="true" inert>
+            {% if google_auth_enabled %}
+            {#
+                When Google OAuth is configured we render a dedicated account
+                card.  The JavaScript initialises behaviour by querying these
+                ``data-`` attributes once the page loads.
+            #}
+            <section class="auth-card" aria-label="Account" data-google-auth-card>
+                <div class="auth-card-status" data-auth-status {% if not google_user %}hidden{% endif %}>
+                    <span class="auth-card-avatar" data-auth-avatar aria-hidden="true">
+                        <img
+                            data-auth-avatar-image
+                            src="{{ google_user.picture if google_user and google_user.picture else '' }}"
+                            alt=""
+                            referrerpolicy="no-referrer"
+                            {% if not google_user or not google_user.picture %}hidden{% endif %}
+                        >
+                        <span data-auth-avatar-initial {% if google_user and google_user.picture %}hidden{% endif %}>
+                            {% if google_user %}
+                                {{ google_user.name[:1] if google_user.name else google_user.email[:1] }}
+                            {% endif %}
+                        </span>
+                    </span>
+                    <div class="auth-card-details">
+                        <p class="auth-card-title" data-auth-status-title>{% if google_user %}Signed in{% endif %}</p>
+                        <p class="auth-card-subtitle" data-auth-status-subtitle>{% if google_user %}{{ google_user.name or google_user.email }}{% endif %}</p>
+                    </div>
+                </div>
+                {% set auth_button_classes = ["overlay-button", "auth-card-action"] %}
+                {% if google_user %}
+                    {% set auth_button_classes = auth_button_classes + ["overlay-button-secondary"] %}
+                    {% set auth_button_href = url_for('main.logout') %}
+                    {% set auth_button_label = "Sign Out" %}
+                {% else %}
+                    {% set auth_button_classes = auth_button_classes + ["overlay-button-google"] %}
+                    {% set auth_button_href = url_for('main.google_auth_start') %}
+                    {% set auth_button_label = "Sign in with Google" %}
+                {% endif %}
+                {#
+                    ``data-auth-*`` attributes capture the alternative labels,
+                    URLs, and CSS classes so the front-end can swap between
+                    "Sign in" and "Sign out" states without extra templates.
+                #}
+                <a
+                    class="{{ ' '.join(auth_button_classes) }}"
+                    href="{{ auth_button_href }}"
+                    data-auth-button
+                    data-auth-login-url="{{ url_for('main.google_auth_start') }}"
+                    data-auth-logout-url="{{ url_for('main.logout') }}"
+                    data-auth-login-label="Sign in with Google"
+                    data-auth-logout-label="Sign Out"
+                    data-auth-login-class="overlay-button-google"
+                    data-auth-logout-class="overlay-button-secondary"
+                >
+                    <span class="overlay-button-google-icon" data-auth-button-icon aria-hidden="true" {% if google_user %}hidden{% endif %}>
+                        <img src="{{ url_for('static', filename='assets/google-logo.svg') }}" alt="">
+                    </span>
+                    <span data-auth-button-label>{{ auth_button_label }}</span>
+                </a>
+                {#
+                    The album tester button surfaces Google Photos albums using
+                    the stored OAuth credentials.  It remains disabled until the
+                    user signs in so we never attempt API calls without a
+                    token.
+                #}
+                <button
+                    type="button"
+                    class="overlay-button auth-card-albums-button"
+                    data-auth-albums-button
+                    data-auth-albums-default-label="View Google Photos Albums"
+                    data-auth-albums-loading-label="Loading albums..."
+                    {% if not google_user %}hidden disabled{% endif %}
+                >
+                    <span data-auth-albums-button-label>View Google Photos Albums</span>
+                </button>
+                <div class="auth-card-albums" data-auth-albums-section hidden>
+                    <p class="auth-card-albums-empty" data-auth-albums-empty hidden>No albums found for this account.</p>
+                    <p class="auth-card-albums-error" data-auth-albums-error role="alert" hidden></p>
+                    <ul class="auth-card-albums-list" data-auth-albums-list hidden></ul>
+                </div>
+            </section>
+            {% endif %}
             <div class="overlay-tabs-wrapper">
                 <div class="overlay-tabs" role="tablist" aria-label="Menu sections">
                     <button type="button" class="overlay-tab" role="tab" id="menuTabTrips" aria-selected="true" aria-controls="menuPanelTrips">Trips</button>
@@ -265,12 +346,25 @@
                     </div>
                 </div>
                 <div id="tripDescriptionDisplay" class="trip-profile-description-display" aria-live="polite"></div>
+                <div id="tripPhotosSection" class="trip-profile-photos" aria-live="polite" hidden>
+                    <div class="trip-profile-photos-header">
+                        <h3 class="trip-profile-photos-title">Trip photos</h3>
+                        <a id="tripPhotosLink" class="trip-profile-photos-link" href="#" target="_blank" rel="noopener" hidden>Open album</a>
+                    </div>
+                    <p id="tripPhotosEmpty" class="trip-profile-photos-empty">Add a Google Photos album link to see photos here.</p>
+                    <div id="tripPhotosGallery" class="trip-profile-photos-gallery" role="list" hidden></div>
+                </div>
                 <div class="trip-profile-updated trip-profile-updated-readonly" id="tripDescriptionUpdatedReadOnly" hidden>
                     Last updated <time id="tripDescriptionUpdatedReadOnlyTime"></time>
                 </div>
                 <form id="tripDescriptionForm" class="trip-profile-description" novalidate hidden>
                     <label class="trip-profile-description-label" for="tripDescriptionInput">Description</label>
                     <textarea id="tripDescriptionInput" name="description" rows="6" maxlength="2000" placeholder="Describe this trip"></textarea>
+                    <div class="trip-profile-input-group">
+                        <label class="trip-profile-description-label" for="tripPhotosInput">Google Photos album link</label>
+                        <input type="url" id="tripPhotosInput" name="google_photos_url" placeholder="https://photos.app.goo.gl/" autocomplete="off">
+                        <p class="trip-profile-helper-text">Paste a shared Google Photos album link to display images for this trip.</p>
+                    </div>
                     <div class="trip-profile-description-footer">
                         <div class="trip-profile-updated" id="tripDescriptionUpdated" hidden>
                             Last updated <time id="tripDescriptionUpdatedTime"></time>
@@ -323,6 +417,14 @@
             google_timeline: "{{ url_for('static', filename='assets/marker-pin-blue.svg') }}",
             manual: "{{ url_for('static', filename='assets/marker-pin-orange.svg') }}",
             default: "{{ url_for('static', filename='assets/marker-pin-gray.svg') }}",
+        },
+        auth: {
+            google: {
+                enabled: {{ google_auth_enabled | tojson }},
+                user: {{ google_user | tojson }},
+                loginUrl: "{{ url_for('main.google_auth_start') if google_auth_enabled else '' }}",
+                logoutUrl: "{{ url_for('main.logout') if google_auth_enabled else '' }}",
+            },
         },
     };
 </script>

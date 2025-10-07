@@ -33,6 +33,7 @@ class Trip:
     name: str
     place_ids: List[str] = field(default_factory=list)
     description: str = ""
+    google_photos_url: str = ""
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
 
@@ -74,6 +75,13 @@ def _normalise_trip_data(raw: dict) -> Optional[Trip]:
         description_candidate = str(description_raw)
         description = description_candidate if description_candidate.strip() else ""
 
+    photos_raw = raw.get("google_photos_url") or raw.get("photos_url")
+    if photos_raw is None:
+        google_photos_url = ""
+    else:
+        photos_candidate = str(photos_raw)
+        google_photos_url = photos_candidate.strip()
+
     created_at = str(raw.get("created_at") or raw.get("created") or "").strip()
     if not created_at:
         created_at = _utcnow_iso()
@@ -89,6 +97,7 @@ def _normalise_trip_data(raw: dict) -> Optional[Trip]:
         created_at=created_at,
         updated_at=updated_at,
         description=description,
+        google_photos_url=google_photos_url,
     )
 
 
@@ -162,6 +171,7 @@ def create_trip(
     name: str,
     *,
     description: str = "",
+    google_photos_url: str = "",
 ) -> Trip:
     """Create a new trip with ``name`` and persist it."""
 
@@ -172,12 +182,16 @@ def create_trip(
     raw_description = str(description or "")
     cleaned_description = raw_description if raw_description.strip() else ""
 
+    raw_photos_url = str(google_photos_url or "")
+    cleaned_photos_url = raw_photos_url.strip()
+
     _ensure_cache()
 
     trip = Trip(
         id=uuid4().hex,
         name=cleaned_name,
         description=cleaned_description,
+        google_photos_url=cleaned_photos_url,
     )
     _trips_cache.append(trip)
     save_trips()
@@ -335,6 +349,7 @@ def update_trip_metadata(
     *,
     name: Optional[str] = None,
     description: Optional[str] = None,
+    google_photos_url: Optional[str] = None,
 ) -> Trip:
     """Update metadata for the trip identified by ``trip_id``."""
 
@@ -357,6 +372,13 @@ def update_trip_metadata(
         final_description = raw_description if raw_description.strip() else ""
         if final_description != trip.description:
             trip.description = final_description
+            updated = True
+
+    if google_photos_url is not None:
+        raw_photos_url = str(google_photos_url or "")
+        final_photos_url = raw_photos_url.strip()
+        if final_photos_url != trip.google_photos_url:
+            trip.google_photos_url = final_photos_url
             updated = True
 
     if updated:
