@@ -25,6 +25,11 @@
         </button>
         <div class="overlay-controls" id="menuControls" aria-hidden="true" inert>
             {% if google_auth_enabled %}
+            {#
+                When Google OAuth is configured we render a dedicated account
+                card.  The JavaScript initialises behaviour by querying these
+                ``data-`` attributes once the page loads.
+            #}
             <section class="auth-card" aria-label="Account" data-google-auth-card>
                 <div class="auth-card-status" data-auth-status {% if not google_user %}hidden{% endif %}>
                     <span class="auth-card-avatar" data-auth-avatar aria-hidden="true">
@@ -56,6 +61,11 @@
                     {% set auth_button_href = url_for('main.google_auth_start') %}
                     {% set auth_button_label = "Sign in with Google" %}
                 {% endif %}
+                {#
+                    ``data-auth-*`` attributes capture the alternative labels,
+                    URLs, and CSS classes so the front-end can swap between
+                    "Sign in" and "Sign out" states without extra templates.
+                #}
                 <a
                     class="{{ ' '.join(auth_button_classes) }}"
                     href="{{ auth_button_href }}"
@@ -72,6 +82,12 @@
                     </span>
                     <span data-auth-button-label>{{ auth_button_label }}</span>
                 </a>
+                {#
+                    The album tester button surfaces Google Photos albums using
+                    the stored OAuth credentials.  It remains disabled until the
+                    user signs in so we never attempt API calls without a
+                    token.
+                #}
                 <button
                     type="button"
                     class="overlay-button auth-card-albums-button"
