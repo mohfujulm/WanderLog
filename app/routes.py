@@ -53,7 +53,10 @@ _GOOGLE_OAUTH_SCOPES = [
     _GOOGLE_PHOTOS_PICKER_SCOPE,
 ]
 
-_PHOTOS_PICKER_ALBUMS_ENDPOINT = "https://photospicker.googleapis.com/v1/albums"
+# The Photos Picker scope still uses the legacy Photos Library REST endpoint for
+# listing albums.  The scope governs access while the hostname/path stay the
+# same, so we continue to call ``photoslibrary.googleapis.com``.
+_PHOTOS_PICKER_ALBUMS_ENDPOINT = "https://photoslibrary.googleapis.com/v1/albums"
 
 
 def _is_google_auth_configured() -> bool:
