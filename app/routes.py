@@ -42,21 +42,14 @@ MAX_LOCATION_DESCRIPTION_LENGTH = 2000
 MAX_TRIP_PHOTOS_URL_LENGTH = 1000
 
 # Scopes control which Google APIs the user grants access to.  ``openid`` and
-# the ``userinfo`` scopes allow us to obtain the signed-in profile, while the
-# Photos Library scope lets us list albums for import into WanderLog.
-_GOOGLE_PHOTOS_PICKER_SCOPE = "https://www.googleapis.com/auth/photospicker.mediaitems.readonly"
-
+# the ``userinfo`` scopes allow WanderLog to read the signed-in profile details
+# required for the Google sign-in experience.
 _GOOGLE_OAUTH_SCOPES = [
     "openid",
     "https://www.googleapis.com/auth/userinfo.email",
     "https://www.googleapis.com/auth/userinfo.profile",
-    _GOOGLE_PHOTOS_PICKER_SCOPE,
+    "https://www.googleapis.com/auth/photoslibrary.readonly",
 ]
-
-# The Photos Picker scope still uses the legacy Photos Library REST endpoint for
-# listing albums.  The scope governs access while the hostname/path stay the
-# same, so we continue to call ``photoslibrary.googleapis.com``.
-_PHOTOS_PICKER_ALBUMS_ENDPOINT = "https://photoslibrary.googleapis.com/v1/albums"
 
 
 def _is_google_auth_configured() -> bool:
@@ -204,51 +197,6 @@ def _load_google_credentials() -> Optional[GoogleCredentials]:
     return credentials
 
 
-def _ensure_photos_picker_credentials() -> tuple[Optional[GoogleCredentials], Optional[tuple]]:
-    """Return refreshed Google credentials and an optional error response.
-
-    The Photos Picker API uses the ``/auth/photospicker.mediaitems.readonly``
-    scope.  Google recently deprecated the old Photos Library scopes, so this
-    helper keeps the refresh/check logic in one place and guarantees that the
-    stored credentials still grant the modern scope we rely on.
-    """
-
-    credentials = _load_google_credentials()
-    if not credentials:
-        return None, (
-            jsonify(error='Google authentication credentials are missing. Please sign in again.'),
-            401,
-        )
-
-    try:
-        if credentials.expired and credentials.refresh_token:
-            credentials.refresh(google_requests.Request(session=requests.Session()))
-    except Exception:
-        current_app.logger.exception('Failed to refresh Google credentials')
-        _clear_google_credentials()
-        return None, (
-            jsonify(error='Failed to refresh Google credentials. Please sign in again.'),
-            401,
-        )
-
-    if not credentials.valid:
-        _clear_google_credentials()
-        return None, (
-            jsonify(error='Google credentials are invalid. Please sign in again.'),
-            401,
-        )
-
-    scopes = set(credentials.scopes or [])
-    if _GOOGLE_PHOTOS_PICKER_SCOPE not in scopes:
-        current_app.logger.error('Google credentials missing Photos Picker scope')
-        _clear_google_credentials()
-        return None, (
-            jsonify(error='Google Photos access has changed. Please sign in again.'),
-            403,
-        )
-
-    _store_google_credentials(credentials)
-    return credentials, None
 
 
 def _normalise_google_user(data):
@@ -557,12 +505,17 @@ def index():
 
     google_user = _normalise_google_user(session.get('google_user'))
     auth_enabled = _is_google_auth_configured()
+    photos_picker_api_key = current_app.config.get('GOOGLE_PHOTOS_PICKER_API_KEY', '') or ''
+    photos_picker_enabled = bool(auth_enabled and photos_picker_api_key)
 
     return render_template(
         "index.html",
         mapbox_token=MAPBOX_ACCESS_TOKEN,
         google_auth_enabled=auth_enabled,
         google_user=google_user,
+        google_photos_picker_api_key=photos_picker_api_key,
+        google_photos_picker_enabled=photos_picker_enabled,
+        google_client_id=current_app.config.get('GOOGLE_CLIENT_ID', '') or '',
     )
 
 
@@ -689,8 +642,8 @@ def google_auth_callback():
     )
     session['google_user'] = user
     session.pop('google_oauth_state', None)
-    # Saving the credentials (which include a refresh token) lets us call the
-    # Google Photos API on subsequent requests without prompting the user again.
+    # Saving the credentials (which include a refresh token) lets us maintain the
+    # Google session without prompting the user again.
     _store_google_credentials(credentials)
 
     return redirect(url_for('main.index'))
@@ -720,90 +673,51 @@ def api_auth_status():
     return jsonify(authenticated=True, user=user)
 
 
-@main.route('/api/google/photos/albums')
-def api_google_photos_albums():
-    """Return Google Photos albums for the authenticated user."""
+@main.route('/api/google/photos/picker-token')
+def api_google_photos_picker_token():
+    """Return an OAuth access token for the Google Photos Picker."""
 
     if not _is_google_auth_configured():
-        return jsonify(error='Google OAuth is not configured.'), 400
+        return jsonify(error='Google sign-in is not configured.'), 404
+
+    api_key = current_app.config.get('GOOGLE_PHOTOS_PICKER_API_KEY', '') or ''
+    if not api_key:
+        return jsonify(error='Google Photos Picker is not configured.'), 503
 
     user = _normalise_google_user(session.get('google_user'))
     if not user:
-        return jsonify(error='You must be signed in with Google to view albums.'), 401
+        return jsonify(error='Authentication with Google is required.'), 401
 
-    credentials, error_response = _ensure_photos_picker_credentials()
-    if error_response is not None:
-        return error_response
-    if credentials is None:
-        return jsonify(error='Google credentials are unavailable. Please sign in again.'), 401
+    credentials = _load_google_credentials()
+    if not credentials:
+        return jsonify(error='Google credentials are unavailable.'), 401
 
-    try:
-        page_size = int(request.args.get('pageSize', 20))
-    except (TypeError, ValueError):
-        page_size = 20
-    page_size = max(1, min(page_size, 50))
+    if not credentials.valid or credentials.expired:
+        try:
+            credentials.refresh(google_requests.Request(session=requests.Session()))
+        except Exception:
+            current_app.logger.exception('Failed to refresh Google OAuth credentials for Photos Picker')
+            _clear_google_credentials()
+            return jsonify(error='Failed to refresh Google credentials.'), 401
+        _store_google_credentials(credentials)
 
-    params = {'pageSize': page_size}
-    page_token = request.args.get('pageToken')
-    if page_token:
-        params['pageToken'] = page_token
+    access_token = getattr(credentials, 'token', None)
+    if not access_token:
+        return jsonify(error='Failed to obtain Google access token.'), 401
 
-    try:
-        # Call the Google Photos Picker ``albums`` endpoint using the OAuth
-        # access token as a Bearer token. ``pageSize`` and ``pageToken`` mirror
-        # the API's pagination parameters so the front-end can step through
-        # albums.
-        response = requests.get(
-            _PHOTOS_PICKER_ALBUMS_ENDPOINT,
-            headers={
-                'Authorization': f'Bearer {credentials.token}',
-                'Accept': 'application/json',
-            },
-            params=params,
-            timeout=15,
-        )
-    except requests.RequestException as exc:
-        _log_google_oauth(
-            logging.ERROR,
-            'albums_request_error',
-            params=params,
-            error=str(exc),
-        )
-        current_app.logger.exception('Failed to contact Google Photos API')
-        return jsonify(error='Unable to contact Google Photos. Please try again later.'), 502
-    except Exception as exc:
-        _log_google_oauth(
-            logging.ERROR,
-            'albums_request_unexpected_error',
-            params=params,
-            error=str(exc),
-        )
-        current_app.logger.exception('Unexpected error contacting Google Photos API')
-        return jsonify(error='Unexpected Google Photos error. Please try again later.'), 502
+    expires_at = getattr(credentials, 'expiry', None)
+    if expires_at is not None:
+        try:
+            expires_at_value = expires_at.isoformat()
+        except Exception:
+            expires_at_value = None
+    else:
+        expires_at_value = None
 
-    if response.status_code != 200:
-        _log_google_oauth(
-            logging.ERROR,
-            'albums_request_response_error',
-            status_code=response.status_code,
-            response_text=response.text,
-        )
-        return jsonify(error='Google Photos request failed. Please try again later.'), 502
-
-    payload = response.json() if response.content else {}
-    albums = []
-    for album in payload.get('albums', []) or []:
-        if not isinstance(album, dict):
-            continue
-        albums.append({
-            'id': album.get('id'),
-            'title': album.get('title'),
-            'productUrl': album.get('productUrl'),
-            'mediaItemsCount': album.get('mediaItemsCount'),
-            'coverPhotoBaseUrl': album.get('coverPhotoBaseUrl'),
-        })
-
-    return jsonify(albums=albums, nextPageToken=payload.get('nextPageToken'))
+    return jsonify(
+        access_token=access_token,
+        expires_at=expires_at_value,
+    )
 
 
 @main.route('/api/update_timeline', methods=['POST'])

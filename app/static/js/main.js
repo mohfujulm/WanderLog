@@ -3,6 +3,7 @@ const ASSET_CONFIG = APP_CONFIG.assets || {};
 const MAPBOX_TOKEN = APP_CONFIG.mapboxToken || '';
 const AUTH_CONFIG = APP_CONFIG.auth || {};
 const GOOGLE_AUTH_CONFIG = AUTH_CONFIG.google || null;
+const GOOGLE_PHOTOS_PICKER_DEFAULT_SCRIPT_URL = 'https://developers.google.com/photos/picker/assets/photos-picker.min.js';
 const MENU_ICON_PATH = ASSET_CONFIG.menuIcon || '';
 const CLOSE_ICON_PATH = ASSET_CONFIG.closeIcon || '';
 const MAP_DEFAULT_CENTER = [40.65997395108914, -73.71300111746832];
@@ -30,6 +31,8 @@ let loadMarkersAbortController = null;
 let loadMarkersRequestToken = 0;
 let googleAuthRefreshHandler = null;
 let googleAuthRequestToken = 0;
+let googlePhotosPickerButton = null;
+let googlePhotosPickerScriptPromise = null;
 let isTripMapModeActive = false;
 let previousMapView = null;
 let manualPointForm;
@@ -501,9 +504,231 @@ function updateGoogleAuthConfig(user) {
     }
 }
 
+function getGooglePhotosPickerRawConfig() {
+    if (!GOOGLE_AUTH_CONFIG || !GOOGLE_AUTH_CONFIG.photosPicker) { return null; }
+    return GOOGLE_AUTH_CONFIG.photosPicker;
+}
+
+function getGooglePhotosPickerSettings() {
+    const config = getGooglePhotosPickerRawConfig();
+    if (!config || !config.enabled) { return null; }
+
+    const apiKey = typeof config.apiKey === 'string' ? config.apiKey.trim() : '';
+    if (!apiKey) { return null; }
+
+    const clientId = typeof config.clientId === 'string' ? config.clientId.trim() : '';
+    const scriptUrlRaw = typeof config.scriptUrl === 'string' ? config.scriptUrl.trim() : '';
+    const scriptUrl = scriptUrlRaw || GOOGLE_PHOTOS_PICKER_DEFAULT_SCRIPT_URL;
+
+    return {
+        apiKey,
+        clientId,
+        scriptUrl,
+    };
+}
+
+function updateGooglePhotosPickerButtonState(isAuthenticated) {
+    if (!googlePhotosPickerButton) {
+        googlePhotosPickerButton = document.querySelector('[data-google-photos-picker-button]');
+    }
+    if (!googlePhotosPickerButton) { return; }
+
+    const settings = getGooglePhotosPickerSettings();
+    const shouldEnable = Boolean(isAuthenticated && settings);
+
+    setElementHidden(googlePhotosPickerButton, !shouldEnable);
+    googlePhotosPickerButton.disabled = !shouldEnable;
+    if (!shouldEnable) {
+        googlePhotosPickerButton.removeAttribute('aria-busy');
+    }
+}
+
+function loadGooglePhotosPickerScript() {
+    const settings = getGooglePhotosPickerSettings();
+    if (!settings) {
+        return Promise.reject(new Error('Google Photos Picker is not configured.'));
+    }
+
+    if (window.google && window.google.photos && window.google.photos.picker) {
+        return Promise.resolve(window.google.photos.picker);
+    }
+
+    if (googlePhotosPickerScriptPromise) {
+        return googlePhotosPickerScriptPromise;
+    }
+
+    googlePhotosPickerScriptPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = settings.scriptUrl || GOOGLE_PHOTOS_PICKER_DEFAULT_SCRIPT_URL;
+        script.async = true;
+        script.onload = () => {
+            if (window.google && window.google.photos && window.google.photos.picker) {
+                resolve(window.google.photos.picker);
+            } else {
+                reject(new Error('Google Photos Picker library did not initialise.'));
+            }
+        };
+        script.onerror = () => reject(new Error('Failed to load Google Photos Picker library.'));
+        document.head.appendChild(script);
+    }).catch((error) => {
+        googlePhotosPickerScriptPromise = null;
+        throw error;
+    });
+
+    return googlePhotosPickerScriptPromise;
+}
+
+async function requestGooglePhotosAccessToken() {
+    let response;
+    try {
+        response = await fetch('/api/google/photos/picker-token', {
+            credentials: 'include',
+            cache: 'no-store',
+        });
+    } catch (error) {
+        throw new Error('Network error while requesting Google Photos access token.');
+    }
+
+    let payload = null;
+    try {
+        payload = await response.json();
+    } catch (error) {
+        payload = null;
+    }
+
+    if (!response.ok) {
+        const message = payload && payload.error ? payload.error : 'Failed to fetch Google Photos access token.';
+        throw new Error(message);
+    }
+
+    const token = payload && typeof payload.access_token === 'string' ? payload.access_token : '';
+    if (!token) {
+        const message = payload && payload.error ? payload.error : 'No Google Photos access token returned.';
+        throw new Error(message);
+    }
+
+    return {
+        accessToken: token,
+        expiresAt: payload && typeof payload.expires_at === 'string' ? payload.expires_at : null,
+    };
+}
+
+function handleGooglePhotosPickerResponse(data) {
+    if (!data || typeof data !== 'object') { return; }
+
+    const actionRaw = typeof data.action === 'string' ? data.action : '';
+    const action = actionRaw.toLowerCase();
+    const documents = Array.isArray(data.documents) ? data.documents : [];
+
+    if (action && (action.includes('cancel') || action.includes('close'))) {
+        showStatus('Google Photos Picker closed without selecting photos.');
+        return;
+    }
+
+    if (documents.length) {
+        const description = documents
+            .map((doc) => (doc && (doc.description || doc.name || doc.filename || doc.id)) || '')
+            .filter((value) => value)
+            .slice(0, 3);
+        const preview = description.length
+            ? ` (${description.join(', ')}${documents.length > description.length ? ', …' : ''})`
+            : '';
+        const noun = documents.length === 1 ? 'photo' : 'photos';
+        showStatus(`Selected ${documents.length} ${noun} from Google Photos${preview}.`);
+        try {
+            console.info('Google Photos Picker selection', data);
+        } catch (error) {
+            // Ignore console errors in restricted environments.
+        }
+    }
+}
+
+async function openGooglePhotosPicker(button) {
+    const settings = getGooglePhotosPickerSettings();
+    if (!settings) {
+        throw new Error('Google Photos Picker is not configured.');
+    }
+
+    const [pickerNamespace, tokenPayload] = await Promise.all([
+        loadGooglePhotosPickerScript(),
+        requestGooglePhotosAccessToken(),
+    ]);
+
+    if (!pickerNamespace || typeof pickerNamespace.PickerBuilder !== 'function') {
+        throw new Error('Google Photos Picker library is unavailable.');
+    }
+
+    const builder = new pickerNamespace.PickerBuilder();
+
+    if (typeof builder.setDeveloperKey === 'function') {
+        builder.setDeveloperKey(settings.apiKey);
+    }
+    if (typeof builder.setOAuthToken === 'function') {
+        builder.setOAuthToken(tokenPayload.accessToken);
+    }
+    if (settings.clientId && typeof builder.setClientId === 'function') {
+        builder.setClientId(settings.clientId);
+    }
+    if (typeof builder.setCallback === 'function') {
+        builder.setCallback((response) => { handleGooglePhotosPickerResponse(response); });
+    }
+    if (typeof builder.addView === 'function') {
+        if (pickerNamespace.ViewType && pickerNamespace.ViewType.PHOTOS) {
+            builder.addView(pickerNamespace.ViewType.PHOTOS);
+        } else if (typeof pickerNamespace.PhotosView === 'function') {
+            try {
+                builder.addView(new pickerNamespace.PhotosView());
+            } catch (error) {
+                builder.addView(pickerNamespace.PhotosView);
+            }
+        }
+    }
+
+    const picker = typeof builder.build === 'function' ? builder.build() : null;
+    if (picker && typeof picker.setVisible === 'function') {
+        picker.setVisible(true);
+    } else if (picker && typeof picker.show === 'function') {
+        picker.show();
+    } else {
+        throw new Error('Failed to open Google Photos Picker.');
+    }
+
+    showStatus('Opened Google Photos Picker. Complete your selection in the new window.');
+}
+
+function handleGooglePhotosPickerButtonClick(event) {
+    event.preventDefault();
+
+    const button = event.currentTarget;
+    if (!button || button.disabled) { return; }
+
+    button.disabled = true;
+    button.setAttribute('aria-busy', 'true');
+
+    openGooglePhotosPicker(button)
+        .catch((error) => {
+            const message = error && error.message ? error.message : 'Failed to open Google Photos Picker.';
+            showStatus(message, true);
+        })
+        .finally(() => {
+            button.removeAttribute('aria-busy');
+            updateGooglePhotosPickerButtonState(Boolean(GOOGLE_AUTH_CONFIG && GOOGLE_AUTH_CONFIG.user));
+        });
+}
+
+function setupGooglePhotosPickerTestButton() {
+    if (googlePhotosPickerButton) { return; }
+
+    googlePhotosPickerButton = document.querySelector('[data-google-photos-picker-button]');
+    if (!googlePhotosPickerButton) { return; }
+
+    googlePhotosPickerButton.addEventListener('click', handleGooglePhotosPickerButtonClick);
+    updateGooglePhotosPickerButtonState(Boolean(GOOGLE_AUTH_CONFIG && GOOGLE_AUTH_CONFIG.user));
+}
+
 // Update the Google authentication card UI to reflect the latest state.  This
-// controls the sign-in button label, the avatar, and the album tester
-// visibility based on whether the user is authenticated.
+// controls the sign-in button label and the avatar based on whether the user is
+// authenticated.
 function applyGoogleAuthState(state) {
     const card = document.querySelector('[data-google-auth-card]');
     if (!card) { return; }
@@ -519,15 +744,11 @@ function applyGoogleAuthState(state) {
     const avatarElement = card.querySelector('[data-auth-avatar]');
     const avatarImageElement = avatarElement ? avatarElement.querySelector('[data-auth-avatar-image]') : null;
     const avatarInitialElement = avatarElement ? avatarElement.querySelector('[data-auth-avatar-initial]') : null;
-    const albumsButton = card.querySelector('[data-auth-albums-button]');
-    const albumsLabelElement = albumsButton ? albumsButton.querySelector('[data-auth-albums-button-label]') : null;
-    const albumsSection = card.querySelector('[data-auth-albums-section]');
-    const albumsListElement = albumsSection ? albumsSection.querySelector('[data-auth-albums-list]') : null;
-    const albumsEmptyElement = albumsSection ? albumsSection.querySelector('[data-auth-albums-empty]') : null;
-    const albumsErrorElement = albumsSection ? albumsSection.querySelector('[data-auth-albums-error]') : null;
 
     const normalisedUser = state && state.authenticated ? normaliseGoogleAuthUser(state.user) : null;
     const isAuthenticated = Boolean(normalisedUser);
+
+    updateGoogleAuthConfig(normalisedUser);
 
     const loginLabel = button.dataset.authLoginLabel || 'Sign in with Google';
     const logoutLabel = button.dataset.authLogoutLabel || 'Sign Out';
@@ -584,31 +805,7 @@ function applyGoogleAuthState(state) {
         }
     }
 
-    if (albumsButton) {
-        albumsButton.hidden = !isAuthenticated;
-        albumsButton.disabled = !isAuthenticated;
-        if (!isAuthenticated && albumsLabelElement) {
-            const defaultLabel = albumsButton.dataset.authAlbumsDefaultLabel || 'View Google Photos Albums';
-            albumsLabelElement.textContent = defaultLabel;
-        }
-    }
-
-    if (!isAuthenticated && albumsSection) {
-        setElementHidden(albumsSection, true);
-        if (albumsListElement) {
-            albumsListElement.innerHTML = '';
-            setElementHidden(albumsListElement, true);
-        }
-        if (albumsEmptyElement) {
-            setElementHidden(albumsEmptyElement, true);
-        }
-        if (albumsErrorElement) {
-            albumsErrorElement.textContent = '';
-            setElementHidden(albumsErrorElement, true);
-        }
-    }
-
-    updateGoogleAuthConfig(normalisedUser);
+    updateGooglePhotosPickerButtonState(isAuthenticated);
 }
 
 // Ask the backend whether the current session is authenticated with Google.
@@ -650,149 +847,6 @@ function setupGoogleAuthCard() {
 
     googleAuthRefreshHandler = () => { requestGoogleAuthStatus(); };
     requestGoogleAuthStatus();
-}
-
-// Wire up the optional "Google Photos albums" tester.  When triggered it calls
-// our backend, which in turn queries the Google Photos Library API with the
-// stored OAuth credentials.
-function setupGooglePhotosAlbumsTester() {
-    const card = document.querySelector('[data-google-auth-card]');
-    if (!card) { return; }
-
-    const button = card.querySelector('[data-auth-albums-button]');
-    const section = card.querySelector('[data-auth-albums-section]');
-    const listElement = section ? section.querySelector('[data-auth-albums-list]') : null;
-    const emptyElement = section ? section.querySelector('[data-auth-albums-empty]') : null;
-    const errorElement = section ? section.querySelector('[data-auth-albums-error]') : null;
-    const labelElement = button ? button.querySelector('[data-auth-albums-button-label]') : null;
-
-    if (!button || !section || !listElement || !emptyElement || !errorElement) { return; }
-
-    const defaultLabel = button.dataset.authAlbumsDefaultLabel || (labelElement ? labelElement.textContent.trim() : 'View Google Photos Albums');
-    const loadingLabel = button.dataset.authAlbumsLoadingLabel || 'Loading albums...';
-
-    function setButtonLabel(value) {
-        if (labelElement) { labelElement.textContent = value; }
-        else { button.textContent = value; }
-    }
-
-    function clearAlbumsView() {
-        listElement.innerHTML = '';
-        setElementHidden(listElement, true);
-        setElementHidden(emptyElement, true);
-        errorElement.textContent = '';
-        setElementHidden(errorElement, true);
-    }
-
-    function showAlbums(albums) {
-        clearAlbumsView();
-
-        if (!Array.isArray(albums) || albums.length === 0) {
-            emptyElement.textContent = 'No albums found for this account.';
-            setElementHidden(emptyElement, false);
-            return;
-        }
-
-        const fragment = document.createDocumentFragment();
-        albums.forEach((album) => {
-            if (!album || typeof album !== 'object') { return; }
-            const item = document.createElement('li');
-            item.className = 'auth-card-albums-item';
-
-            const link = document.createElement('a');
-            const rawTitle = typeof album.title === 'string' ? album.title.trim() : '';
-            const title = rawTitle || 'Untitled album';
-            if (album.productUrl) {
-                link.href = album.productUrl;
-                link.target = '_blank';
-                link.rel = 'noopener noreferrer';
-            } else {
-                link.href = '#';
-                link.setAttribute('aria-disabled', 'true');
-                link.classList.add('auth-card-album-link-disabled');
-            }
-            link.textContent = title;
-            item.appendChild(link);
-
-            const metaParts = [];
-            const countValue = album.mediaItemsCount;
-            if (countValue !== undefined && countValue !== null && countValue !== '') {
-                const countNumber = Number(countValue);
-                if (!Number.isNaN(countNumber)) {
-                    metaParts.push(`${countNumber} item${countNumber === 1 ? '' : 's'}`);
-                }
-            }
-
-            if (metaParts.length) {
-                const meta = document.createElement('span');
-                meta.className = 'auth-card-albums-meta';
-                meta.textContent = metaParts.join(' • ');
-                item.appendChild(meta);
-            }
-
-            fragment.appendChild(item);
-        });
-
-        listElement.innerHTML = '';
-        listElement.appendChild(fragment);
-        setElementHidden(listElement, false);
-    }
-
-    function showError(message) {
-        clearAlbumsView();
-        errorElement.textContent = message || 'Failed to load albums.';
-        setElementHidden(errorElement, false);
-    }
-
-    button.addEventListener('click', async (event) => {
-        event.preventDefault();
-        if (button.disabled) { return; }
-
-        button.disabled = true;
-        setButtonLabel(loadingLabel);
-        clearAlbumsView();
-        setElementHidden(section, false);
-
-        const requestId = `albums-${Date.now()}`;
-        console.groupCollapsed('[Google Photos Tester] Fetching albums');
-        console.info('[Google Photos Tester] Starting request', { requestId });
-
-        try {
-            const response = await fetch('/api/google/photos/albums', {
-                credentials: 'include',
-                cache: 'no-store',
-            });
-            const payload = await response.json().catch(() => ({}));
-
-            console.info('[Google Photos Tester] Response received', {
-                requestId,
-                ok: response.ok,
-                status: response.status,
-            });
-            if (payload && typeof payload === 'object') {
-                console.debug('[Google Photos Tester] Response payload', payload);
-            }
-
-            if (!response.ok) {
-                const message = payload && payload.error ? payload.error : 'Failed to load albums.';
-                throw new Error(message);
-            }
-
-            showAlbums(payload.albums);
-            const albumCount = Array.isArray(payload.albums) ? payload.albums.length : 0;
-            console.info('[Google Photos Tester] Albums rendered', { requestId, albumCount });
-        } catch (error) {
-            const message = (error && error.message) ? error.message : 'Failed to load albums.';
-            showError(message);
-            console.error('[Google Photos Tester] Album fetch failed', { requestId, error });
-        } finally {
-            setButtonLabel(defaultLabel);
-            button.disabled = false;
-            console.groupEnd();
-        }
-    });
-
-    clearAlbumsView();
 }
 
 const MAX_ALIAS_LENGTH = 120;
@@ -6352,7 +6406,7 @@ async function deleteMarker(markerId, markerInstance, triggerButton) {
 
 document.addEventListener('DOMContentLoaded', async () => {
     setupGoogleAuthCard();
-    setupGooglePhotosAlbumsTester();
+    setupGooglePhotosPickerTestButton();
     ensureManualPointModal();
     ensureAliasModal();
     ensureArchivedPointsModal();
