@@ -256,11 +256,18 @@ def _call_google_photos_picker_api(
     if not token:
         raise RuntimeError('Google credentials are missing an access token.')
 
+    api_key = current_app.config.get('GOOGLE_PHOTOS_PICKER_API_KEY', '') or ''
+    if not api_key:
+        raise RuntimeError('Google Photos Picker API key is not configured.')
+
     url = f"{_GOOGLE_PHOTOS_PICKER_BASE_URL}{path}"
     headers = {
         'Authorization': f'Bearer {token}',
         'Accept': 'application/json',
     }
+    params = dict(params or {})
+    params.setdefault('key', api_key)
+    headers['X-Goog-Api-Key'] = api_key
     if json_payload is not None:
         headers['Content-Type'] = 'application/json'
 
