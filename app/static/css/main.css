@@ -551,6 +551,14 @@ button, input, select { font-family: inherit; }
     gap: 12px;
 }
 
+.trip-profile-photos-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
 .trip-profile-photos-title {
     font-size: 16px;
     font-weight: 600;
@@ -559,16 +567,31 @@ button, input, select { font-family: inherit; }
     letter-spacing: 0.08em;
 }
 
-.trip-profile-photos-link {
+.trip-profile-photos-picker-button {
+    border: none;
+    border-radius: 999px;
+    padding: 8px 16px;
     font-size: 13px;
     font-weight: 600;
-    color: #2563eb;
-    text-decoration: none;
+    background: #111827;
+    color: #ffffff;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
-.trip-profile-photos-link:hover,
-.trip-profile-photos-link:focus-visible {
-    text-decoration: underline;
+.trip-profile-photos-picker-button:hover:not(:disabled),
+.trip-profile-photos-picker-button:focus-visible {
+    background: #1f2937;
+    box-shadow: 0 6px 14px rgba(17, 24, 39, 0.25);
+    transform: translateY(-1px);
+    outline: none;
+}
+
+.trip-profile-photos-picker-button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
 }
 
 .trip-profile-photos-empty {
@@ -701,11 +724,6 @@ button, input, select { font-family: inherit; }
 .trip-profile-input-group input[type="url"]:disabled {
     opacity: 0.7;
     cursor: not-allowed;
-}
-
-.trip-profile-helper-text {
-    font-size: 12px;
-    color: #6b7280;
 }
 
 .trip-profile-description textarea:focus {
@@ -1281,6 +1299,16 @@ button, input, select { font-family: inherit; }
     border-radius: 18px;
     border: 1px solid rgba(229, 231, 235, 0.8);
     margin-bottom: 16px;
+}
+
+.auth-card-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.auth-card-actions [data-google-photos-picker-button][hidden] {
+    display: none !important;
 }
 
 .auth-card-action {
