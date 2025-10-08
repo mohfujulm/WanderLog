@@ -3,10 +3,98 @@
 
   const config = window.wanderLogConfig || {};
   const mapElement = document.getElementById('map');
+  const menuContainer = document.querySelector('.menu-container');
+  const menuToggle = document.getElementById('menuToggle');
+  const menuControls = document.getElementById('menuControls');
 
   if (!mapElement) {
     console.error('WanderLog: Unable to find map container element.');
     return;
+  }
+
+  const MAX_MAP_BOUNDS = L.latLngBounds([-85, -180], [85, 180]);
+  const FOCUSABLE_SELECTOR =
+    'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])';
+
+  function ensureMenuInitialState() {
+    if (!menuControls) {
+      return;
+    }
+
+    if (!menuControls.hasAttribute('hidden')) {
+      menuControls.setAttribute('hidden', '');
+    }
+    menuControls.setAttribute('aria-hidden', 'true');
+    menuControls.setAttribute('inert', '');
+  }
+
+  function focusFirstMenuControl() {
+    if (!menuControls) {
+      return;
+    }
+
+    const focusable = menuControls.querySelector(FOCUSABLE_SELECTOR);
+    if (focusable && typeof focusable.focus === 'function') {
+      focusable.focus({ preventScroll: true });
+    }
+  }
+
+  function setMenuOpen(isOpen, { restoreFocusToToggle = true } = {}) {
+    if (!menuContainer || !menuToggle || !menuControls) {
+      return;
+    }
+
+    menuContainer.classList.toggle('open', isOpen);
+    menuToggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    menuToggle.setAttribute('aria-label', isOpen ? 'Close menu' : 'Open menu');
+
+    if (isOpen) {
+      menuControls.removeAttribute('hidden');
+      menuControls.removeAttribute('aria-hidden');
+      menuControls.removeAttribute('inert');
+      focusFirstMenuControl();
+      return;
+    }
+
+    menuControls.setAttribute('hidden', '');
+    menuControls.setAttribute('aria-hidden', 'true');
+    menuControls.setAttribute('inert', '');
+
+    if (restoreFocusToToggle) {
+      menuToggle.focus({ preventScroll: true });
+    }
+  }
+
+  function handleMenuToggleClick(event) {
+    event.preventDefault();
+    const isOpen = menuContainer.classList.contains('open');
+    setMenuOpen(!isOpen, { restoreFocusToToggle: false });
+  }
+
+  function handleDocumentKeydown(event) {
+    if (event.key === 'Escape' && menuContainer && menuContainer.classList.contains('open')) {
+      setMenuOpen(false);
+    }
+  }
+
+  function handleDocumentClick(event) {
+    if (
+      !menuContainer ||
+      !menuContainer.classList.contains('open') ||
+      menuContainer.contains(event.target)
+    ) {
+      return;
+    }
+
+    setMenuOpen(false, { restoreFocusToToggle: false });
+  }
+
+  ensureMenuInitialState();
+
+  if (menuToggle) {
+    menuToggle.addEventListener('click', handleMenuToggleClick);
+    document.addEventListener('keydown', handleDocumentKeydown);
+    document.addEventListener('click', handleDocumentClick);
   }
 
   const statusElement = document.getElementById('status');
@@ -54,6 +142,8 @@
           tileSize: 512,
           zoomOffset: -1,
           crossOrigin: true,
+          noWrap: true,
+          bounds: MAX_MAP_BOUNDS,
         },
       );
     }
@@ -65,6 +155,8 @@
 
     return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: "© <a href='https://www.openstreetmap.org/'>OpenStreetMap</a> contributors",
+      noWrap: true,
+      bounds: MAX_MAP_BOUNDS,
     });
   }
 
@@ -107,7 +199,10 @@
 
   const map = L.map(mapElement, {
     preferCanvas: true,
-    worldCopyJump: true,
+    worldCopyJump: false,
+    maxBounds: MAX_MAP_BOUNDS,
+    maxBoundsViscosity: 0.85,
+    minZoom: 2,
   });
   map.setView([20, 0], 2);
 
