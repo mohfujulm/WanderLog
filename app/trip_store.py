@@ -158,7 +158,11 @@ def get_trip(trip_id: str) -> Optional[Trip]:
     return None
 
 
-def create_trip(name: str, *, description: str = "") -> Trip:
+def create_trip(
+    name: str,
+    *,
+    description: str = "",
+) -> Trip:
     """Create a new trip with ``name`` and persist it."""
 
     cleaned_name = (name or "").strip()
@@ -170,7 +174,11 @@ def create_trip(name: str, *, description: str = "") -> Trip:
 
     _ensure_cache()
 
-    trip = Trip(id=uuid4().hex, name=cleaned_name, description=cleaned_description)
+    trip = Trip(
+        id=uuid4().hex,
+        name=cleaned_name,
+        description=cleaned_description,
+    )
     _trips_cache.append(trip)
     save_trips()
     return trip

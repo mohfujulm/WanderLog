@@ -37,6 +37,19 @@ def ensure_archived_column():
             lambda value: "" if pd.isna(value) else str(value)
         )
 
+    if "Description" not in timeline_df.columns:
+        timeline_df["Description"] = ""
+    else:
+        def _clean_description(value):
+            if pd.isna(value):
+                return ""
+            text = str(value)
+            return text if text.strip() else ""
+
+        timeline_df["Description"] = timeline_df["Description"].apply(
+            _clean_description
+        )
+
 def load_timeline_data():
     """Load the timeline CSV into ``timeline_df`` if present."""
     global timeline_df

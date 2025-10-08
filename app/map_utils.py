@@ -248,6 +248,13 @@ def dataframe_to_markers(
         else:
             alias_value = str(alias_value).strip()
 
+        description_value = row.get("Description", "")
+        if pd.isna(description_value):
+            description_value = ""
+        else:
+            description_str = str(description_value)
+            description_value = description_str if description_str.strip() else ""
+
         display_name = alias_value or place_name
 
         markers.append(
@@ -258,6 +265,7 @@ def dataframe_to_markers(
                 "place": place_name,               # Human readable place name
                 "alias": alias_value,              # Optional custom alias provided by the user
                 "display_name": display_name,      # Alias when present otherwise the place name
+                "description": description_value,  # Optional location description
                 "date": row.get("Start Date", ""),   # Date when the place was visited
                 "source_type": row.get("Source Type", ""),  # Data source category
                 "archived": archived_value,
