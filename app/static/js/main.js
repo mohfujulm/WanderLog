@@ -736,7 +736,13 @@ async function openGooglePhotosPicker(button) {
         // Ignore logging errors in restricted environments.
     }
 
-    const popup = window.open('', '_blank', 'noopener,noreferrer');
+    let popup = window.open('', '_blank', 'noopener,noreferrer');
+    if (!popup) {
+        popup = window.open('', '_blank');
+        if (popup) {
+            try { popup.opener = null; } catch (error) { /* Ignore */ }
+        }
+    }
     if (!popup) {
         throw new Error('Please allow pop-ups to open the Google Photos Picker.');
     }
@@ -816,12 +822,16 @@ function handleGooglePhotosPickerButtonClick(event) {
 }
 
 function setupGooglePhotosPickerTestButton() {
-    if (googlePhotosPickerButton) { return; }
+    const button = document.querySelector('[data-google-photos-picker-button]');
+    if (!button) { return; }
+    if (button.dataset.googlePhotosPickerInitialised === 'true') {
+        googlePhotosPickerButton = button;
+        return;
+    }
 
-    googlePhotosPickerButton = document.querySelector('[data-google-photos-picker-button]');
-    if (!googlePhotosPickerButton) { return; }
-
+    googlePhotosPickerButton = button;
     googlePhotosPickerButton.addEventListener('click', handleGooglePhotosPickerButtonClick);
+    googlePhotosPickerButton.dataset.googlePhotosPickerInitialised = 'true';
     updateGooglePhotosPickerButtonState(Boolean(GOOGLE_AUTH_CONFIG && GOOGLE_AUTH_CONFIG.user));
 
     try {
