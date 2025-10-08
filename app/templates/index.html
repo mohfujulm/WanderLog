@@ -66,24 +66,22 @@
                     URLs, and CSS classes so the front-end can swap between
                     "Sign in" and "Sign out" states without extra templates.
                 #}
-                <div class="auth-card-actions">
-                    <a
-                        class="{{ ' '.join(auth_button_classes) }}"
-                        href="{{ auth_button_href }}"
-                        data-auth-button
-                        data-auth-login-url="{{ url_for('main.google_auth_start') }}"
-                        data-auth-logout-url="{{ url_for('main.logout') }}"
-                        data-auth-login-label="Sign in with Google"
-                        data-auth-logout-label="Sign Out"
-                        data-auth-login-class="overlay-button-google"
-                        data-auth-logout-class="overlay-button-secondary"
-                    >
-                        <span class="overlay-button-google-icon" data-auth-button-icon aria-hidden="true" {% if google_user %}hidden{% endif %}>
-                            <img src="{{ url_for('static', filename='assets/google-logo.svg') }}" alt="">
-                        </span>
-                        <span data-auth-button-label>{{ auth_button_label }}</span>
-                    </a>
-                </div>
+                <a
+                    class="{{ ' '.join(auth_button_classes) }}"
+                    href="{{ auth_button_href }}"
+                    data-auth-button
+                    data-auth-login-url="{{ url_for('main.google_auth_start') }}"
+                    data-auth-logout-url="{{ url_for('main.logout') }}"
+                    data-auth-login-label="Sign in with Google"
+                    data-auth-logout-label="Sign Out"
+                    data-auth-login-class="overlay-button-google"
+                    data-auth-logout-class="overlay-button-secondary"
+                >
+                    <span class="overlay-button-google-icon" data-auth-button-icon aria-hidden="true" {% if google_user %}hidden{% endif %}>
+                        <img src="{{ url_for('static', filename='assets/google-logo.svg') }}" alt="">
+                    </span>
+                    <span data-auth-button-label>{{ auth_button_label }}</span>
+                </a>
             </section>
             {% endif %}
             <div class="overlay-tabs-wrapper">
@@ -330,19 +328,9 @@
                 <div id="tripPhotosSection" class="trip-profile-photos" aria-live="polite" hidden>
                     <div class="trip-profile-photos-header">
                         <h3 class="trip-profile-photos-title">Trip photos</h3>
-                        <div class="trip-profile-photos-actions">
-                            <button
-                                type="button"
-                                class="trip-profile-photos-picker-button"
-                                data-google-photos-picker-button
-                                hidden
-                                disabled
-                            >
-                                Import from Google Photos
-                            </button>
-                        </div>
+                        <a id="tripPhotosLink" class="trip-profile-photos-link" href="#" target="_blank" rel="noopener" hidden>Open album</a>
                     </div>
-                    <p id="tripPhotosEmpty" class="trip-profile-photos-empty">No photos yet. Use the Google Photos import button to add images to this trip.</p>
+                    <p id="tripPhotosEmpty" class="trip-profile-photos-empty">Add a Google Photos album link to see photos here.</p>
                     <div id="tripPhotosGallery" class="trip-profile-photos-gallery" role="list" hidden></div>
                 </div>
                 <div class="trip-profile-updated trip-profile-updated-readonly" id="tripDescriptionUpdatedReadOnly" hidden>
@@ -351,6 +339,11 @@
                 <form id="tripDescriptionForm" class="trip-profile-description" novalidate hidden>
                     <label class="trip-profile-description-label" for="tripDescriptionInput">Description</label>
                     <textarea id="tripDescriptionInput" name="description" rows="6" maxlength="2000" placeholder="Describe this trip"></textarea>
+                    <div class="trip-profile-input-group">
+                        <label class="trip-profile-description-label" for="tripPhotosInput">Google Photos album link</label>
+                        <input type="url" id="tripPhotosInput" name="google_photos_url" placeholder="https://photos.app.goo.gl/" autocomplete="off">
+                        <p class="trip-profile-helper-text">Paste a shared Google Photos album link to display images for this trip.</p>
+                    </div>
                     <div class="trip-profile-description-footer">
                         <div class="trip-profile-updated" id="tripDescriptionUpdated" hidden>
                             Last updated <time id="tripDescriptionUpdatedTime"></time>
@@ -410,12 +403,6 @@
                 user: {{ google_user | tojson }},
                 loginUrl: "{{ url_for('main.google_auth_start') if google_auth_enabled else '' }}",
                 logoutUrl: "{{ url_for('main.logout') if google_auth_enabled else '' }}",
-                photosPicker: {
-                    enabled: {{ google_photos_picker_enabled | tojson }},
-                    apiKey: {{ google_photos_picker_api_key | tojson }},
-                    clientId: {{ google_client_id | tojson }},
-                    maxItemCount: 0,
-                },
             },
         },
     };

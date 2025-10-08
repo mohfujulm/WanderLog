@@ -30,7 +30,6 @@ def create_app():
 
     app.config["GOOGLE_CLIENT_ID"] = os.getenv("GOOGLE_CLIENT_ID", "")
     app.config["GOOGLE_CLIENT_SECRET"] = os.getenv("GOOGLE_CLIENT_SECRET", "")
-    app.config["GOOGLE_PHOTOS_PICKER_API_KEY"] = os.getenv("GOOGLE_PHOTOS_PICKER_API_KEY", "")
 
     # Load cached timeline data once during application startup
     data_cache.load_timeline_data()
