@@ -38,6 +38,8 @@ MAPBOX_ACCESS_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN")
 MAX_ALIAS_LENGTH = 120
 MAX_TRIP_NAME_LENGTH = 120
 MAX_TRIP_DESCRIPTION_LENGTH = 2000
+MAX_TRIP_PHOTOS_URL_LENGTH = 1000
+MAX_TRIP_PHOTO_COUNT = 50
 MAX_LOCATION_DESCRIPTION_LENGTH = 2000
 
 # Scopes control which Google APIs the user grants access to.  ``openid`` and
@@ -393,6 +395,7 @@ def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
             'latest_location_date': latest_location_date,
             'description': trip.get('description', ''),
             'photo_count': len(trip.get('photos', []) or []),
+            'google_photos_url': trip.get('google_photos_url', ''),
         }
 
     place_ids = getattr(trip, 'place_ids', []) or []
@@ -407,6 +410,7 @@ def _serialise_trip(trip, *, place_date_lookup=None) -> dict:
         'latest_location_date': latest_location_date,
         'description': getattr(trip, 'description', ''),
         'photo_count': len(getattr(trip, 'photos', []) or []),
+        'google_photos_url': getattr(trip, 'google_photos_url', ''),
     }
 
 
@@ -1378,7 +1382,21 @@ def api_get_trip(trip_id: str):
         for index, place_id in enumerate(cleaned_ids)
     ]
 
+    raw_photos = getattr(trip, 'photos', []) or []
     photos: list[str] = []
+    if isinstance(raw_photos, list):
+        for entry in raw_photos:
+            if entry is None:
+                continue
+            if isinstance(entry, str):
+                cleaned = entry.strip()
+            else:
+                try:
+                    cleaned = str(entry).strip()
+                except Exception:
+                    continue
+            if cleaned:
+                photos.append(cleaned)
 
     serialised_trip['photo_count'] = len(photos)
 
@@ -1423,6 +1441,8 @@ def api_update_trip(trip_id: str):
 
     name_value = payload.get('name', None)
     description_value = payload.get('description', None)
+    photos_url_supplied = 'google_photos_url' in payload
+    photos_url_value = payload.get('google_photos_url') if photos_url_supplied else None
 
     cleaned_name = None
     if name_value is not None:
@@ -1451,7 +1471,25 @@ def api_update_trip(trip_id: str):
             ), 400
         cleaned_description = description_value
 
-    if cleaned_name is None and cleaned_description is None:
+    cleaned_photos_url = None
+    if photos_url_supplied:
+        if photos_url_value is None:
+            cleaned_photos_url = ''
+        else:
+            if not isinstance(photos_url_value, str):
+                photos_url_value = str(photos_url_value)
+            trimmed_photos_url = photos_url_value.strip()
+            if len(trimmed_photos_url) > MAX_TRIP_PHOTOS_URL_LENGTH:
+                return jsonify(
+                    status='error',
+                    message=(
+                        'Google Photos link must be '
+                        f'{MAX_TRIP_PHOTOS_URL_LENGTH} characters or fewer.'
+                    ),
+                ), 400
+            cleaned_photos_url = trimmed_photos_url
+
+    if cleaned_name is None and cleaned_description is None and not photos_url_supplied:
         return jsonify(status='error', message='No updates were supplied.'), 400
 
     try:
@@ -1459,6 +1497,7 @@ def api_update_trip(trip_id: str):
             identifier,
             name=cleaned_name,
             description=cleaned_description,
+            google_photos_url=cleaned_photos_url,
         )
     except ValueError as exc:
         return jsonify(status='error', message=str(exc)), 400
@@ -1466,13 +1505,30 @@ def api_update_trip(trip_id: str):
         return jsonify(status='error', message='Trip not found.'), 404
 
     serialised = _serialise_trip(trip)
-    serialised['photo_count'] = 0
+
+    photos: list[str] = []
+    raw_photos = getattr(trip, 'photos', []) or []
+    if isinstance(raw_photos, list):
+        for entry in raw_photos:
+            if entry is None:
+                continue
+            if isinstance(entry, str):
+                cleaned = entry.strip()
+            else:
+                try:
+                    cleaned = str(entry).strip()
+                except Exception:
+                    continue
+            if cleaned:
+                photos.append(cleaned)
+
+    serialised['photo_count'] = len(photos)
 
     return jsonify(
         status='success',
         message='Trip updated successfully.',
         trip=serialised,
-        photos=[],
+        photos=photos,
     )
 
 
@@ -1507,6 +1563,82 @@ def api_create_trip():
         trip=serialised,
         photos=[],
     ), 201
+
+
+@main.route('/api/trips/<trip_id>/photos', methods=['POST'])
+def api_update_trip_photos(trip_id: str):
+    """Replace the stored photo list for ``trip_id`` with the supplied URLs."""
+
+    identifier = (trip_id or '').strip()
+    if not identifier:
+        return jsonify(status='error', message='A valid trip ID is required.'), 400
+
+    payload = request.get_json(silent=True) or {}
+    photos_raw = payload.get('photos', None)
+
+    if photos_raw is None:
+        return jsonify(status='error', message='No photos were supplied.'), 400
+
+    if not isinstance(photos_raw, list):
+        return jsonify(status='error', message='Photos must be provided as a list.'), 400
+
+    cleaned_photos: list[str] = []
+    seen: set[str] = set()
+
+    for entry in photos_raw:
+        if entry is None:
+            continue
+        if not isinstance(entry, str):
+            try:
+                entry = str(entry)
+            except Exception:
+                continue
+        candidate = entry.strip()
+        if not candidate:
+            continue
+        lowered = candidate.lower()
+        if not (lowered.startswith('http://') or lowered.startswith('https://')):
+            continue
+        if candidate in seen:
+            continue
+        cleaned_photos.append(candidate)
+        seen.add(candidate)
+        if len(cleaned_photos) >= MAX_TRIP_PHOTO_COUNT:
+            break
+
+    try:
+        trip = trip_store.update_trip_photos(identifier, cleaned_photos)
+    except KeyError:
+        return jsonify(status='error', message='Trip not found.'), 404
+
+    serialised = _serialise_trip(trip)
+
+    photos: list[str] = []
+    raw_photos = getattr(trip, 'photos', []) or []
+    if isinstance(raw_photos, list):
+        for entry in raw_photos:
+            if entry is None:
+                continue
+            if isinstance(entry, str):
+                cleaned = entry.strip()
+            else:
+                try:
+                    cleaned = str(entry).strip()
+                except Exception:
+                    continue
+            if cleaned:
+                photos.append(cleaned)
+
+    serialised['photo_count'] = len(photos)
+
+    message = 'Trip photos updated successfully.' if photos else 'Trip photos cleared.'
+
+    return jsonify(
+        status='success',
+        message=message,
+        trip=serialised,
+        photos=photos,
+    )
 
 
 @main.route('/api/trips/assign', methods=['POST'])

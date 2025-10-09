@@ -33,6 +33,8 @@ class Trip:
     name: str
     place_ids: List[str] = field(default_factory=list)
     description: str = ""
+    photos: List[str] = field(default_factory=list)
+    google_photos_url: str = ""
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
 
@@ -74,6 +76,36 @@ def _normalise_trip_data(raw: dict) -> Optional[Trip]:
         description_candidate = str(description_raw)
         description = description_candidate if description_candidate.strip() else ""
 
+    photos_raw = raw.get("photos") or []
+    photos: list[str] = []
+    if isinstance(photos_raw, list):
+        seen: set[str] = set()
+        for entry in photos_raw:
+            if entry is None:
+                continue
+            try:
+                candidate = str(entry)
+            except Exception:
+                continue
+            cleaned_candidate = candidate.strip()
+            if not cleaned_candidate or cleaned_candidate in seen:
+                continue
+            photos.append(cleaned_candidate)
+            seen.add(cleaned_candidate)
+
+    google_photos_url_raw = (
+        raw.get("google_photos_url")
+        or raw.get("photos_url")
+        or ""
+    )
+    if isinstance(google_photos_url_raw, str):
+        google_photos_url = google_photos_url_raw.strip()
+    else:
+        try:
+            google_photos_url = str(google_photos_url_raw).strip()
+        except Exception:
+            google_photos_url = ""
+
     created_at = str(raw.get("created_at") or raw.get("created") or "").strip()
     if not created_at:
         created_at = _utcnow_iso()
@@ -89,6 +121,8 @@ def _normalise_trip_data(raw: dict) -> Optional[Trip]:
         created_at=created_at,
         updated_at=updated_at,
         description=description,
+        photos=photos,
+        google_photos_url=google_photos_url,
     )
 
 
@@ -335,6 +369,7 @@ def update_trip_metadata(
     *,
     name: Optional[str] = None,
     description: Optional[str] = None,
+    google_photos_url: Optional[str] = None,
 ) -> Trip:
     """Update metadata for the trip identified by ``trip_id``."""
 
@@ -359,7 +394,50 @@ def update_trip_metadata(
             trip.description = final_description
             updated = True
 
+    if google_photos_url is not None:
+        if not isinstance(google_photos_url, str):
+            cleaned_url = str(google_photos_url).strip()
+        else:
+            cleaned_url = google_photos_url.strip()
+        if cleaned_url != trip.google_photos_url:
+            trip.google_photos_url = cleaned_url
+            updated = True
+
     if updated:
+        trip.updated_at = _utcnow_iso()
+        save_trips()
+
+    return trip
+
+
+def update_trip_photos(trip_id: str, photos: Iterable[str]) -> Trip:
+    """Replace the stored photos for the trip identified by ``trip_id``."""
+
+    _ensure_cache()
+
+    trip = get_trip((trip_id or "").strip())
+    if trip is None:
+        raise KeyError("Trip not found.")
+
+    cleaned_photos: list[str] = []
+    seen: set[str] = set()
+
+    if photos is not None:
+        for entry in photos:
+            if entry is None:
+                continue
+            try:
+                candidate = str(entry)
+            except Exception:
+                continue
+            cleaned = candidate.strip()
+            if not cleaned or cleaned in seen:
+                continue
+            cleaned_photos.append(cleaned)
+            seen.add(cleaned)
+
+    if cleaned_photos != trip.photos:
+        trip.photos = cleaned_photos
         trip.updated_at = _utcnow_iso()
         save_trips()
 
