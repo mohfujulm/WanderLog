@@ -390,6 +390,28 @@
         </article>
     </div>
 </div>
+<div id="tripPhotoModal" class="modal-overlay" hidden aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="modal-content trip-photo-modal" tabindex="-1">
+        <button type="button" class="modal-close" data-trip-photo-modal-close aria-label="Close photo preview">
+            <span aria-hidden="true">&times;</span>
+        </button>
+        <button type="button" class="trip-photo-modal-nav trip-photo-modal-nav-prev" data-trip-photo-prev aria-label="Previous photo" hidden>
+            <span aria-hidden="true">&#10094;</span>
+        </button>
+        <button type="button" class="trip-photo-modal-nav trip-photo-modal-nav-next" data-trip-photo-next aria-label="Next photo" hidden>
+            <span aria-hidden="true">&#10095;</span>
+        </button>
+        <figure class="trip-photo-modal-figure">
+            <img id="tripPhotoModalImage" src="" alt="">
+            <figcaption id="tripPhotoModalCaption"></figcaption>
+        </figure>
+        <div class="trip-photo-modal-actions">
+            <button type="button" class="trip-photo-modal-delete" data-trip-photo-delete hidden>
+                Remove from trip
+            </button>
+        </div>
+    </div>
+</div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" defer></script>
 <script>
