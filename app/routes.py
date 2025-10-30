@@ -578,6 +578,136 @@ def _build_trip_photo_urls(trip) -> list[str]:
     return urls
 
 
+def _extract_photo_urls(entry: dict) -> tuple[str, str, str]:
+    """Return ``(base_url, download_url, public_url)`` for a stored photo entry."""
+
+    base_url = _clean_string(
+        entry.get('base_url')
+        or entry.get('baseUrl')
+        or entry.get('url')
+    )
+    download_url = _clean_string(entry.get('download_url') or entry.get('downloadUrl'))
+
+    public_url = ''
+    if base_url:
+        if any(separator in base_url for separator in ('=', '?')):
+            public_url = base_url
+        else:
+            public_url = f"{base_url}=w2048-h2048"
+    elif download_url:
+        public_url = download_url
+
+    return base_url, download_url, public_url
+
+
+def _refresh_trip_photo_entry(trip_id: str, photo_index: int, credentials, photo_entry: dict):
+    """Refresh metadata for the given photo entry when Google returns new details."""
+
+    photo_id = _clean_string(photo_entry.get('id'))
+    if not credentials or not photo_id:
+        return photo_entry, False
+
+    try:
+        response = _call_google_photos_picker_api(
+            credentials,
+            'GET',
+            f'/mediaItems/{photo_id}',
+        )
+    except RuntimeError:
+        return photo_entry, False
+
+    if response.status_code == 401:
+        _clear_google_credentials()
+        return photo_entry, False
+
+    if response.status_code != 200:
+        return photo_entry, False
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+
+    candidate = None
+    if isinstance(payload, dict):
+        candidate = payload.get('mediaItem') or payload.get('googleMediaItem') or payload
+
+    if not isinstance(candidate, dict):
+        return photo_entry, False
+
+    candidate.setdefault('id', photo_id)
+    updated_entry = dict(candidate)
+
+    try:
+        trip = trip_store.update_trip_photo_entry(trip_id, photo_index, updated_entry)
+    except Exception:
+        return photo_entry, False
+
+    photos = getattr(trip, 'photos', []) or []
+    if not isinstance(photos, list) or photo_index >= len(photos):
+        return photo_entry, False
+
+    return photos[photo_index], True
+
+
+def _ensure_trip_photo_download_url(trip_id: str, photo_index: int, credentials, photo_entry: dict):
+    """Ensure the photo entry has a valid ``download_url`` value."""
+
+    if not credentials:
+        return photo_entry, False
+
+    existing = _clean_string(photo_entry.get('download_url') or photo_entry.get('downloadUrl'))
+    if existing:
+        return photo_entry, False
+
+    photo_id = _clean_string(photo_entry.get('id'))
+    if not photo_id:
+        return photo_entry, False
+
+    try:
+        response = _call_google_photos_picker_api(
+            credentials,
+            'GET',
+            f'/mediaItems/{photo_id}:download',
+        )
+    except RuntimeError:
+        return photo_entry, False
+
+    if response.status_code == 401:
+        _clear_google_credentials()
+        return photo_entry, False
+
+    if response.status_code != 200:
+        return photo_entry, False
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+
+    download_url = _clean_string(
+        (payload or {}).get('downloadUrl')
+        or (payload or {}).get('download_url')
+    )
+
+    if not download_url:
+        return photo_entry, False
+
+    merged_entry = dict(photo_entry)
+    merged_entry['download_url'] = download_url
+
+    try:
+        trip = trip_store.update_trip_photo_entry(trip_id, photo_index, merged_entry)
+    except Exception:
+        return photo_entry, False
+
+    photos = getattr(trip, 'photos', []) or []
+    if not isinstance(photos, list) or photo_index >= len(photos):
+        return photo_entry, False
+
+    return photos[photo_index], True
+
+
 def _extract_trip_place_ids(trip):
     """Return the cleaned place identifiers associated with ``trip``."""
 
@@ -1798,6 +1928,83 @@ def api_delete_trip_photo(trip_id: str, photo_index: int):
     )
 
 
+@main.route('/api/trips/<trip_id>/photos/bulk-delete', methods=['POST'])
+def api_trip_photos_bulk_delete(trip_id: str):
+    """Remove multiple photos from a trip in a single operation."""
+
+    identifier = (trip_id or '').strip()
+    if not identifier:
+        return jsonify(status='error', message='A valid trip ID is required.'), 400
+
+    payload = request.get_json(silent=True) or {}
+    indices_payload = payload.get('indices') or payload.get('photo_indices')
+    ids_payload = payload.get('photo_ids')
+
+    if indices_payload is None and ids_payload is None:
+        return jsonify(status='error', message='Provide photo indices or photo IDs to remove.'), 400
+
+    indices: list[int] = []
+
+    if ids_payload:
+        if not isinstance(ids_payload, (list, tuple, set)):
+            return jsonify(status='error', message='photo_ids must be a list of strings.'), 400
+        raw_ids = [str(item).strip() for item in ids_payload if item is not None]
+
+        trip = trip_store.get_trip(identifier)
+        if trip is None:
+            return jsonify(status='error', message='Trip not found.'), 404
+
+        photos = getattr(trip, 'photos', []) or []
+        id_to_index: dict[str, int] = {}
+        for idx, entry in enumerate(photos):
+            if isinstance(entry, dict):
+                key = _clean_string(entry.get('id'))
+                if key and key not in id_to_index:
+                    id_to_index[key] = idx
+        for raw_id in raw_ids:
+            if not raw_id:
+                continue
+            idx = id_to_index.get(raw_id)
+            if idx is not None:
+                indices.append(idx)
+
+    if indices_payload is not None:
+        if not isinstance(indices_payload, (list, tuple, set)):
+            return jsonify(status='error', message='indices must be a list of integers.'), 400
+        for entry in indices_payload:
+            try:
+                indices.append(int(entry))
+            except (TypeError, ValueError):
+                return jsonify(status='error', message='indices must contain only integers.'), 400
+
+    if not indices:
+        return jsonify(status='error', message='No matching photos were found for removal.'), 400
+
+    try:
+        trip, removed_indices = trip_store.remove_trip_photos(identifier, indices)
+    except ValueError as exc:
+        return jsonify(status='error', message=str(exc)), 400
+    except IndexError as exc:
+        return jsonify(status='error', message=str(exc)), 404
+    except KeyError:
+        return jsonify(status='error', message='Trip not found.'), 404
+
+    photo_items = _serialise_trip_photo_items(trip)
+    photos = [item['url'] for item in photo_items]
+
+    serialised = _serialise_trip(trip)
+    serialised['photo_count'] = len(photo_items)
+
+    return jsonify(
+        status='success',
+        message=f'Removed {len(removed_indices)} photo(s) from the trip.',
+        trip=serialised,
+        photos=photos,
+        photo_items=photo_items,
+        removed_indices=removed_indices,
+    )
+
+
 @main.route('/api/trips/<trip_id>/photos/<int:photo_index>/image')
 def api_trip_photo_image(trip_id: str, photo_index: int):
     """Stream the selected trip photo through the backend using Google credentials."""
@@ -1818,64 +2025,85 @@ def api_trip_photo_image(trip_id: str, photo_index: int):
     if not isinstance(photo_entry, dict):
         abort(404)
 
-    base_url = _clean_string(
-        photo_entry.get('base_url')
-        or photo_entry.get('baseUrl')
-        or photo_entry.get('url')
-    )
-    download_url = _clean_string(
-        photo_entry.get('download_url')
-        or photo_entry.get('downloadUrl')
-    )
-
-    source_url = ''
-    if download_url:
-        source_url = download_url
-    elif base_url:
-        if base_url.endswith(('=d', '=D')):
-            source_url = base_url
-        else:
-            source_url = f"{base_url}=d"
-
-    if not source_url:
-        abort(404)
-
     credentials = _ensure_google_credentials(_GOOGLE_PHOTOS_PICKER_SCOPE)
     if not credentials:
+        _, _, public_url = _extract_photo_urls(photo_entry)
+        if public_url:
+            return redirect(public_url, code=302)
         return jsonify(error='Authentication with Google is required.'), 401
 
-    headers = {'Authorization': f'Bearer {credentials.token}'}
+    photo_entry, _ = _refresh_trip_photo_entry(identifier, photo_index, credentials, photo_entry)
+    photo_entry, _ = _ensure_trip_photo_download_url(identifier, photo_index, credentials, photo_entry)
 
-    try:
-        upstream = requests.get(source_url, headers=headers, stream=True, timeout=60)
-    except requests.RequestException:
-        return jsonify(error='Failed to retrieve photo from Google Photos.'), 503
+    last_status = None
+    fallback_url = None
 
-    if upstream.status_code >= 400:
-        upstream.close()
-        return jsonify(error='Google Photos returned an error when retrieving the image.'), upstream.status_code
+    for attempt in range(2):
+        base_url, download_url, public_url = _extract_photo_urls(photo_entry)
+        fallback_url = download_url or public_url or base_url or fallback_url
 
-    mime_type = _clean_string(photo_entry.get('mime_type')) or upstream.headers.get('Content-Type') or 'application/octet-stream'
-    filename = _clean_string(photo_entry.get('filename'))
+        candidates: list[tuple[str, dict]] = []
+        if download_url:
+            candidates.append((download_url, {}))
+        if base_url:
+            authorised = base_url if any(sep in base_url for sep in ('=', '?')) else f'{base_url}=d'
+            candidates.append((authorised, {'Authorization': f'Bearer {credentials.token}'}))
+        if public_url:
+            candidates.append((public_url, {}))
 
-    def generate():
-        try:
-            for chunk in upstream.iter_content(chunk_size=8192):
-                if chunk:
-                    yield chunk
-        finally:
+        refresh_required = False
+        for url, headers in candidates:
+            cleaned_url = _clean_string(url)
+            if not cleaned_url:
+                continue
+            try:
+                upstream = requests.get(cleaned_url, headers=headers, stream=True, timeout=60)
+            except requests.RequestException:
+                last_status = 503
+                continue
+
+            if upstream.status_code == 200:
+                mime_type = _clean_string(photo_entry.get('mime_type')) or upstream.headers.get('Content-Type') or 'application/octet-stream'
+                filename = _clean_string(photo_entry.get('filename'))
+
+                def generate():
+                    try:
+                        for chunk in upstream.iter_content(chunk_size=8192):
+                            if chunk:
+                                yield chunk
+                    finally:
+                        upstream.close()
+
+                response = Response(generate(), mimetype=mime_type)
+                response.headers['Cache-Control'] = 'private, max-age=3600'
+                response.headers['X-Source-Url'] = cleaned_url
+                if filename:
+                    response.headers['Content-Disposition'] = f'inline; filename="{filename}"'
+                length = upstream.headers.get('Content-Length')
+                if length:
+                    response.headers['Content-Length'] = length
+                return response
+
+            if upstream.status_code in (401, 403) and 'Authorization' in headers and attempt == 0:
+                last_status = upstream.status_code
+                upstream.close()
+                refresh_required = True
+                break
+
+            last_status = upstream.status_code
             upstream.close()
 
-    response = Response(generate(), mimetype=mime_type)
-    response.headers['Cache-Control'] = 'private, max-age=3600'
-    response.headers['X-Source-Url'] = source_url
-    if filename:
-        response.headers['Content-Disposition'] = f'inline; filename="{filename}"'
-    content_length = upstream.headers.get('Content-Length')
-    if content_length:
-        response.headers['Content-Length'] = content_length
+        if not refresh_required:
+            break
 
-    return response
+        photo_entry, _ = _refresh_trip_photo_entry(identifier, photo_index, credentials, photo_entry)
+        photo_entry, _ = _ensure_trip_photo_download_url(identifier, photo_index, credentials, photo_entry)
+
+    if fallback_url:
+        return redirect(fallback_url, code=302)
+
+    return jsonify(error='Failed to retrieve photo from Google Photos.'), last_status or 503
+
 
 
 @main.route('/api/trips/assign', methods=['POST'])

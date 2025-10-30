@@ -116,6 +116,9 @@ let tripPhotoActiveIndex = null;
 let tripPhotoPrevButton = null;
 let tripPhotoNextButton = null;
 let tripPhotoDeleteButton = null;
+let tripPhotoSelectToggleButton = null;
+let tripPhotoDeleteSelectedButton = null;
+let tripPhotoCancelSelectionButton = null;
 let tripPhotoModalKeydownHandler = null;
 let tripPhotoDeleteInProgress = false;
 let tripLocationSearchInput = null;
@@ -175,6 +178,13 @@ const tripDescriptionState = {
 
 const tripProfileEditState = {
     active: false,
+};
+
+const tripPhotoSelectionState = {
+    active: false,
+    selectedKeys: new Set(),
+    anchorIndex: null,
+    focusIndex: null,
 };
 
 const manageModeState = {
@@ -2242,6 +2252,26 @@ function showTripListEmpty(message) {
     if (tripListContainer) { tripListContainer.hidden = true; }
 }
 
+function computeTripPhotoKey(details, index) {
+    if (details && typeof details === 'object') {
+        const identifier = typeof details.id === 'string' ? details.id.trim() : '';
+        if (identifier) { return `id:${identifier}`; }
+        const downloadPrimary = typeof details.downloadUrl === 'string' ? details.downloadUrl.trim() : '';
+        if (downloadPrimary) { return `download:${downloadPrimary}`; }
+        const downloadAlt = typeof details.download_url === 'string' ? details.download_url.trim() : '';
+        if (downloadAlt) { return `download:${downloadAlt}`; }
+        const proxyCandidate = typeof details.proxyUrl === 'string' ? details.proxyUrl.trim() : '';
+        if (proxyCandidate) { return `proxy:${proxyCandidate}`; }
+        const baseCandidate = typeof details.baseUrl === 'string' ? details.baseUrl.trim() : '';
+        if (baseCandidate) { return `base:${baseCandidate}`; }
+        const baseAlt = typeof details.base_url === 'string' ? details.base_url.trim() : '';
+        if (baseAlt) { return `base:${baseAlt}`; }
+        const urlCandidate = typeof details.url === 'string' ? details.url.trim() : '';
+        if (urlCandidate) { return `url:${urlCandidate}`; }
+    }
+    return `index:${index}`;
+}
+
 function normaliseTripPhotoItems(photoItems, fallbackUrls) {
     const items = Array.isArray(photoItems) ? photoItems : [];
     const fallbacks = Array.isArray(fallbackUrls) ? fallbackUrls : [];
@@ -2317,7 +2347,7 @@ function normaliseTripPhotoItems(photoItems, fallbackUrls) {
         if (dedupeKey && seen.has(dedupeKey)) { return; }
         if (dedupeKey) { seen.add(dedupeKey); }
 
-        result.push({
+        const normalised = {
             id: id || null,
             url,
             proxyUrl,
@@ -2328,7 +2358,9 @@ function normaliseTripPhotoItems(photoItems, fallbackUrls) {
             mimeType: mimeType || '',
             width,
             height,
-        });
+        };
+        normalised.key = computeTripPhotoKey(normalised, result.length);
+        result.push(normalised);
     };
 
     items.forEach(addItem);
@@ -2337,6 +2369,343 @@ function normaliseTripPhotoItems(photoItems, fallbackUrls) {
     return result;
 }
 
+function getCurrentTripPhotoItems() {
+    return Array.isArray(tripDetailState.photoItems) ? tripDetailState.photoItems : [];
+}
+
+function clearTripPhotoSelection() {
+    tripPhotoSelectionState.selectedKeys.clear();
+    tripPhotoSelectionState.anchorIndex = null;
+    tripPhotoSelectionState.focusIndex = null;
+}
+
+function syncTripPhotoSelectionWithItems(items) {
+    if (!Array.isArray(items)) { items = []; }
+    const available = new Set();
+    items.forEach((details, index) => {
+        if (!details || typeof details !== 'object') { return; }
+        const key = typeof details.key === 'string' && details.key
+            ? details.key
+            : computeTripPhotoKey(details, index);
+        details.key = key;
+        available.add(key);
+    });
+
+    let removed = false;
+    for (const key of Array.from(tripPhotoSelectionState.selectedKeys)) {
+        if (!available.has(key)) {
+            tripPhotoSelectionState.selectedKeys.delete(key);
+            removed = true;
+        }
+    }
+
+    if (tripPhotoSelectionState.active && tripPhotoSelectionState.selectedKeys.size === 0 && items.length === 0) {
+        tripPhotoSelectionState.active = false;
+    }
+
+    let fallbackSelectedIndex = null;
+
+    if (tripPhotoSelectionState.anchorIndex !== null) {
+        const anchor = tripPhotoSelectionState.anchorIndex;
+        const hasValidAnchor = Number.isInteger(anchor) && anchor >= 0 && anchor < items.length;
+        if (!hasValidAnchor) {
+            if (fallbackSelectedIndex === null) {
+                fallbackSelectedIndex = findFirstSelectedTripPhotoIndex(items);
+            }
+            tripPhotoSelectionState.anchorIndex = fallbackSelectedIndex;
+        }
+    }
+
+    if (tripPhotoSelectionState.focusIndex !== null) {
+        const focus = tripPhotoSelectionState.focusIndex;
+        const hasValidFocus = Number.isInteger(focus) && focus >= 0 && focus < items.length;
+        if (!hasValidFocus) {
+            if (fallbackSelectedIndex === null) {
+                fallbackSelectedIndex = findFirstSelectedTripPhotoIndex(items);
+            }
+            if (fallbackSelectedIndex !== null) {
+                tripPhotoSelectionState.focusIndex = fallbackSelectedIndex;
+            } else if (Number.isInteger(tripPhotoSelectionState.anchorIndex)) {
+                tripPhotoSelectionState.focusIndex = tripPhotoSelectionState.anchorIndex;
+            } else {
+                tripPhotoSelectionState.focusIndex = null;
+            }
+        }
+    }
+
+    if (tripPhotoSelectionState.selectedKeys.size === 0) {
+        tripPhotoSelectionState.anchorIndex = null;
+        tripPhotoSelectionState.focusIndex = null;
+    }
+
+    if (removed) {
+        updateTripPhotoSelectionUI();
+    }
+}
+
+function updateTripPhotoSelectionUI() {
+    const items = getCurrentTripPhotoItems();
+    const hasItems = items.length > 0;
+    const selectedCount = tripPhotoSelectionState.selectedKeys.size;
+
+    if (tripPhotoSelectToggleButton) {
+        tripPhotoSelectToggleButton.hidden = !hasItems || tripPhotoSelectionState.active;
+        tripPhotoSelectToggleButton.disabled = !hasItems;
+    }
+
+    if (tripPhotoCancelSelectionButton) {
+        tripPhotoCancelSelectionButton.hidden = !tripPhotoSelectionState.active;
+    }
+
+    if (tripPhotoDeleteSelectedButton) {
+        tripPhotoDeleteSelectedButton.hidden = !tripPhotoSelectionState.active;
+        tripPhotoDeleteSelectedButton.disabled = !tripPhotoSelectionState.active || selectedCount === 0 || tripPhotoDeleteInProgress;
+        if (tripPhotoDeleteInProgress) {
+            tripPhotoDeleteSelectedButton.setAttribute('aria-busy', 'true');
+        } else {
+            tripPhotoDeleteSelectedButton.removeAttribute('aria-busy');
+        }
+        if (selectedCount > 0) {
+            tripPhotoDeleteSelectedButton.textContent = `Remove selected (${selectedCount})`;
+        } else {
+            tripPhotoDeleteSelectedButton.textContent = 'Remove selected';
+        }
+    }
+
+    if (tripPhotosGalleryElement) {
+        const buttons = tripPhotosGalleryElement.querySelectorAll('.trip-profile-photo-button');
+        buttons.forEach((button) => {
+            const key = button.dataset.tripPhotoKey || '';
+            const isSelected = tripPhotoSelectionState.selectedKeys.has(key);
+            const caption = button.dataset.tripPhotoCaption || 'photo';
+            button.classList.toggle('trip-profile-photo-button-selection', tripPhotoSelectionState.active);
+            button.classList.toggle('trip-profile-photo-button-selected', tripPhotoSelectionState.active && isSelected);
+            if (tripPhotoSelectionState.active) {
+                button.setAttribute('aria-pressed', String(isSelected));
+                button.setAttribute('aria-label', isSelected ? 'Deselect photo' : 'Select photo');
+            } else {
+                button.removeAttribute('aria-pressed');
+                button.setAttribute('aria-label', `Open photo preview: ${caption}`);
+            }
+        });
+    }
+}
+
+function enterTripPhotoSelectionMode() {
+    if (tripPhotoSelectionState.active) { return; }
+    tripPhotoSelectionState.active = true;
+    clearTripPhotoSelection();
+    if (tripPhotoModalController) {
+        tripPhotoModalController.close();
+    }
+    updateTripPhotoSelectionUI();
+}
+
+function exitTripPhotoSelectionMode(options = {}) {
+    const { preserveSelection = false, silent = false } = options || {};
+    if (!preserveSelection) {
+        clearTripPhotoSelection();
+    }
+    if (!tripPhotoSelectionState.active && tripPhotoSelectionState.selectedKeys.size === 0) {
+        if (!silent) {
+            updateTripPhotoSelectionUI();
+        }
+        return;
+    }
+    tripPhotoSelectionState.active = false;
+    tripPhotoSelectionState.anchorIndex = null;
+    tripPhotoSelectionState.focusIndex = null;
+    updateTripPhotoSelectionUI();
+}
+
+function toggleTripPhotoSelection(photoKey, options = {}) {
+    if (!tripPhotoSelectionState.active || !photoKey) { return; }
+
+    const { index = null } = options || {};
+    if (tripPhotoSelectionState.selectedKeys.has(photoKey)) {
+        tripPhotoSelectionState.selectedKeys.delete(photoKey);
+    } else {
+        tripPhotoSelectionState.selectedKeys.add(photoKey);
+    }
+
+    if (Number.isInteger(index)) {
+        tripPhotoSelectionState.anchorIndex = index;
+        tripPhotoSelectionState.focusIndex = index;
+    } else if (tripPhotoSelectionState.selectedKeys.size === 0) {
+        tripPhotoSelectionState.anchorIndex = null;
+        tripPhotoSelectionState.focusIndex = null;
+    }
+
+    updateTripPhotoSelectionUI();
+}
+
+function applyTripPhotoRangeSelection(startIndex, endIndex, options = {}) {
+    if (!tripPhotoSelectionState.active) { return; }
+
+    const items = getCurrentTripPhotoItems();
+    if (!Array.isArray(items) || items.length === 0) { return; }
+
+    const startNumeric = Number.isFinite(startIndex) ? Math.trunc(startIndex) : null;
+    const endNumeric = Number.isFinite(endIndex) ? Math.trunc(endIndex) : null;
+    if (startNumeric === null || endNumeric === null) { return; }
+
+    const clampedStart = Math.max(0, Math.min(items.length - 1, startNumeric));
+    const clampedEnd = Math.max(0, Math.min(items.length - 1, endNumeric));
+    const lower = Math.min(clampedStart, clampedEnd);
+    const upper = Math.max(clampedStart, clampedEnd);
+
+    const { additive = false } = options || {};
+    if (!additive) {
+        tripPhotoSelectionState.selectedKeys.clear();
+    }
+
+    for (let index = lower; index <= upper; index += 1) {
+        const item = items[index];
+        if (!item || typeof item !== 'object') { continue; }
+        let key = item.key;
+        if (typeof key !== 'string' || !key) {
+            key = computeTripPhotoKey(item, index);
+            item.key = key;
+        }
+        if (key) {
+            tripPhotoSelectionState.selectedKeys.add(key);
+        }
+    }
+
+    if (!Number.isInteger(tripPhotoSelectionState.anchorIndex)) {
+        tripPhotoSelectionState.anchorIndex = clampedStart;
+    }
+    tripPhotoSelectionState.focusIndex = clampedEnd;
+    updateTripPhotoSelectionUI();
+}
+
+function findFirstSelectedTripPhotoIndex(items) {
+    if (!Array.isArray(items) || items.length === 0) { return null; }
+    for (let index = 0; index < items.length; index += 1) {
+        const item = items[index];
+        if (!item || typeof item !== 'object') { continue; }
+        let key = item.key;
+        if (typeof key !== 'string' || !key) {
+            key = computeTripPhotoKey(item, index);
+            item.key = key;
+        }
+        if (key && tripPhotoSelectionState.selectedKeys.has(key)) {
+            return index;
+        }
+    }
+    return null;
+}
+
+async function handleTripPhotoDeleteSelectedClick(event) {
+    if (event) { event.preventDefault(); }
+    if (!tripPhotoSelectionState.active || tripPhotoDeleteInProgress) { return; }
+
+    const selectedKeys = Array.from(tripPhotoSelectionState.selectedKeys);
+    if (selectedKeys.length === 0) {
+        showTripDescriptionStatus('Select at least one photo to remove.', true);
+        return;
+    }
+
+    if (!window.confirm(`Remove ${selectedKeys.length} selected photo${selectedKeys.length === 1 ? '' : 's'} from this trip?`)) {
+        return;
+    }
+
+    const tripId = tripDescriptionState.tripId ? String(tripDescriptionState.tripId).trim() : '';
+    if (!tripId) {
+        showTripDescriptionStatus('Trip could not be determined.', true);
+        return;
+    }
+
+    const items = getCurrentTripPhotoItems();
+    const indexLookup = new Map();
+    const idLookup = new Map();
+    items.forEach((item, index) => {
+        if (!item || typeof item !== 'object') { return; }
+        const key = typeof item.key === 'string' ? item.key : computeTripPhotoKey(item, index);
+        item.key = key;
+        indexLookup.set(key, index);
+        if (item.id) {
+            idLookup.set(key, String(item.id).trim());
+        }
+    });
+
+    const payload = {};
+    const indices = [];
+    const photoIds = [];
+
+    selectedKeys.forEach((key) => {
+        if (idLookup.has(key)) {
+            photoIds.push(idLookup.get(key));
+        } else if (indexLookup.has(key)) {
+            indices.push(indexLookup.get(key));
+        }
+    });
+
+    if (!photoIds.length && !indices.length) {
+        showTripDescriptionStatus('Selected photos could not be matched.', true);
+        return;
+    }
+
+    if (photoIds.length) {
+        payload.photo_ids = photoIds;
+    }
+    if (indices.length) {
+        payload.indices = indices;
+    }
+
+    tripPhotoDeleteInProgress = true;
+    updateTripPhotoSelectionUI();
+
+    try {
+        const response = await fetch(`/api/trips/${encodeURIComponent(tripId)}/photos/bulk-delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(payload),
+        });
+
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || (result && result.status === 'error')) {
+            const message = result && result.message ? result.message : 'Failed to remove selected photos.';
+            throw new Error(message);
+        }
+
+        const updatedTrip = result && result.trip ? result.trip : null;
+        const responsePhotos = Array.isArray(result && result.photos) ? result.photos : [];
+        const responsePhotoItems = Array.isArray(result && result.photo_items) ? result.photo_items : [];
+
+        if (updatedTrip && typeof updatedTrip === 'object') {
+            populateTripProfilePanel(updatedTrip, {
+                preserveDirty: true,
+                photos: responsePhotos,
+                photoItems: responsePhotoItems,
+            });
+        } else {
+            updateTripPhotosSection({
+                photos: responsePhotos,
+                photoItems: responsePhotoItems,
+                url: tripDescriptionState.lastAppliedPhotosUrl,
+            });
+        }
+
+        clearTripPhotoSelection();
+        if (!responsePhotoItems.length) {
+            tripPhotoSelectionState.active = false;
+        }
+
+        const message = result && result.message ? result.message : 'Selected photos removed.';
+        showTripDescriptionStatus(message);
+    } catch (error) {
+        console.error('Failed to remove selected trip photos', error);
+        const message = error && error.message ? error.message : 'Failed to remove selected photos.';
+        showTripDescriptionStatus(message, true);
+    } finally {
+        tripPhotoDeleteInProgress = false;
+        syncTripPhotoSelectionWithItems(getCurrentTripPhotoItems());
+        updateTripPhotoSelectionUI();
+    }
+}
 function normaliseTripList(trips) {
     if (!Array.isArray(trips)) { return []; }
     return trips.map((trip) => normaliseTrip(trip)).filter(Boolean);
@@ -2927,9 +3296,16 @@ function renderTripPhotosGallery(photoItems) {
     }
 
     const pickString = (value) => (typeof value === 'string' ? value.trim() : '');
+    const selectionActive = Boolean(tripPhotoSelectionState.active);
 
     photoItems.forEach((details, index) => {
         if (!details || typeof details !== 'object') { return; }
+
+        const photoKey = typeof details.key === 'string' && details.key
+            ? details.key
+            : computeTripPhotoKey(details, index);
+        details.key = photoKey;
+        const isSelected = selectionActive && tripPhotoSelectionState.selectedKeys.has(photoKey);
 
         const proxyUrl = pickString(details.proxy_url || details.proxyUrl);
         const downloadUrl = pickString(details.download_url || details.downloadUrl);
@@ -2951,8 +3327,14 @@ function renderTripPhotosGallery(photoItems) {
         button.dataset.tripPhotoIndex = String(index);
         button.dataset.tripPhotoActive = 'false';
         button.dataset.tripPhotoCaption = captionText;
-        button.title = captionText;
-        button.setAttribute('aria-label', `Open photo preview: ${captionText}`);
+        button.dataset.tripPhotoKey = photoKey;
+        if (selectionActive) {
+            button.setAttribute('aria-pressed', String(isSelected));
+            button.setAttribute('aria-label', isSelected ? 'Deselect photo' : 'Select photo');
+        } else {
+            button.removeAttribute('aria-pressed');
+            button.setAttribute('aria-label', `Open photo preview: ${captionText}`);
+        }
         figure.appendChild(button);
 
         const image = document.createElement('img');
@@ -2962,6 +3344,14 @@ function renderTripPhotosGallery(photoItems) {
         image.loading = 'lazy';
         image.decoding = 'async';
         button.appendChild(image);
+
+        let indicator = document.createElement('span');
+        indicator.className = 'trip-photo-selection-indicator';
+        indicator.setAttribute('aria-hidden', 'true');
+        button.appendChild(indicator);
+
+        button.classList.toggle('trip-profile-photo-button-selection', selectionActive);
+        button.classList.toggle('trip-profile-photo-button-selected', selectionActive && isSelected);
 
         const metadata = {
             imageUrl,
@@ -2981,6 +3371,14 @@ function renderTripPhotosGallery(photoItems) {
 
 function updateTripPhotoActiveButton(photoIndex) {
     if (!tripPhotosGalleryElement) { return; }
+    if (tripPhotoSelectionState.active) {
+        tripPhotosGalleryElement
+            .querySelectorAll('.trip-profile-photo-button')
+            .forEach((button) => {
+                button.dataset.tripPhotoActive = 'false';
+            });
+        return;
+    }
     const buttons = tripPhotosGalleryElement.querySelectorAll('.trip-profile-photo-button');
     buttons.forEach((button) => {
         if (!button) { return; }
@@ -3008,6 +3406,25 @@ function buildTripPhotoCaption(photo, index) {
 }
 
 function updateTripPhotoModalControls() {
+    if (tripPhotoSelectionState.active) {
+        if (tripPhotoPrevButton) {
+            tripPhotoPrevButton.hidden = true;
+            tripPhotoPrevButton.disabled = true;
+            tripPhotoPrevButton.setAttribute('aria-hidden', 'true');
+        }
+        if (tripPhotoNextButton) {
+            tripPhotoNextButton.hidden = true;
+            tripPhotoNextButton.disabled = true;
+            tripPhotoNextButton.setAttribute('aria-hidden', 'true');
+        }
+        if (tripPhotoDeleteButton) {
+            tripPhotoDeleteButton.hidden = true;
+            tripPhotoDeleteButton.disabled = true;
+            tripPhotoDeleteButton.setAttribute('aria-hidden', 'true');
+        }
+        return;
+    }
+
     const items = Array.isArray(tripDetailState.photoItems) ? tripDetailState.photoItems : [];
     const count = items.length;
     const hasPrev = count > 1 && tripPhotoActiveIndex !== null && tripPhotoActiveIndex > 0;
@@ -3038,6 +3455,7 @@ function attachTripPhotoModalKeyHandler() {
     tripPhotoModalKeydownHandler = (event) => {
         const modalElement = document.getElementById('tripPhotoModal');
         if (!modalElement || !modalElement.classList.contains('open')) { return; }
+        if (tripPhotoSelectionState.active) { return; }
         if (event.key === 'ArrowLeft') {
             event.preventDefault();
             goToTripPhoto(-1);
@@ -3063,6 +3481,7 @@ function detachTripPhotoModalKeyHandler() {
 }
 
 function handleTripPhotoModalImageClick(event) {
+    if (tripPhotoSelectionState.active) { return; }
     if (!event || tripPhotoActiveIndex === null) { return; }
     const items = Array.isArray(tripDetailState.photoItems) ? tripDetailState.photoItems : [];
     if (items.length <= 1) { return; }
@@ -3076,6 +3495,7 @@ function handleTripPhotoModalImageClick(event) {
 }
 
 function goToTripPhoto(offset) {
+    if (tripPhotoSelectionState.active) { return; }
     const items = Array.isArray(tripDetailState.photoItems) ? tripDetailState.photoItems : [];
     if (!items.length) { return; }
     const current = Number.isFinite(tripPhotoActiveIndex) ? tripPhotoActiveIndex : 0;
@@ -3200,6 +3620,10 @@ async function deleteTripPhoto(photoIndex) {
     showTripDescriptionStatus(message);
 
     const remaining = photoItems.length;
+
+    syncTripPhotoSelectionWithItems(getCurrentTripPhotoItems());
+    updateTripPhotoSelectionUI();
+
     if (remaining === 0) {
         if (tripPhotoModalController) {
             tripPhotoModalController.close();
@@ -3212,6 +3636,7 @@ async function deleteTripPhoto(photoIndex) {
 }
 function openTripPhotoModal(photoIndex) {
     if (!tripPhotoModalController) { return; }
+    if (tripPhotoSelectionState.active) { return; }
     const items = Array.isArray(tripDetailState.photoItems) ? tripDetailState.photoItems : [];
     if (!items.length || photoIndex < 0 || photoIndex >= items.length) { return; }
 
@@ -3278,7 +3703,27 @@ function handleTripPhotoButtonClick(event) {
     if (event) { event.preventDefault(); }
     const button = event ? event.currentTarget : null;
     if (!button || button.disabled) { return; }
+    const key = button.dataset.tripPhotoKey || '';
     const indexValue = Number(button.dataset.tripPhotoIndex);
+    const hasIndex = Number.isFinite(indexValue);
+
+    if (tripPhotoSelectionState.active) {
+        if (event && event.shiftKey && hasIndex) {
+            const additive = Boolean(event.ctrlKey || event.metaKey);
+            const anchor = Number.isInteger(tripPhotoSelectionState.anchorIndex)
+                ? tripPhotoSelectionState.anchorIndex
+                : indexValue;
+            applyTripPhotoRangeSelection(anchor, indexValue, { additive });
+            return;
+        }
+
+        const fallbackKey = key || (hasIndex ? `index:${indexValue}` : '');
+        if (fallbackKey) {
+            toggleTripPhotoSelection(fallbackKey, { index: hasIndex ? indexValue : null });
+        }
+        return;
+    }
+
     if (!Number.isFinite(indexValue) || indexValue < 0) { return; }
     openTripPhotoModal(indexValue);
 }
@@ -3332,6 +3777,8 @@ function updateTripPhotosSection(options = {}) {
 
     renderTripPhotosGallery(photoList);
     updateTripPhotosLink(resolvedUrl);
+    syncTripPhotoSelectionWithItems(photoList);
+    updateTripPhotoSelectionUI();
 
     if (tripPhotosGalleryElement) {
         const buttons = Array.from(tripPhotosGalleryElement.querySelectorAll('.trip-profile-photo-button'));
@@ -4032,6 +4479,31 @@ function initTripProfilePanel() {
         }
     }
 
+    tripPhotoSelectToggleButton = document.querySelector('[data-trip-photo-select-toggle]');
+    if (tripPhotoSelectToggleButton && !tripPhotoSelectToggleButton.dataset.initialised) {
+        tripPhotoSelectToggleButton.addEventListener('click', () => {
+            enterTripPhotoSelectionMode();
+            updateTripPhotoSelectionUI();
+        });
+        tripPhotoSelectToggleButton.dataset.initialised = 'true';
+    }
+
+    tripPhotoDeleteSelectedButton = document.querySelector('[data-trip-photo-delete-selected]');
+    if (tripPhotoDeleteSelectedButton && !tripPhotoDeleteSelectedButton.dataset.initialised) {
+        tripPhotoDeleteSelectedButton.addEventListener('click', handleTripPhotoDeleteSelectedClick);
+        tripPhotoDeleteSelectedButton.dataset.initialised = 'true';
+    }
+
+    tripPhotoCancelSelectionButton = document.querySelector('[data-trip-photo-cancel-selection]');
+    if (tripPhotoCancelSelectionButton && !tripPhotoCancelSelectionButton.dataset.initialised) {
+        tripPhotoCancelSelectionButton.addEventListener('click', () => {
+            exitTripPhotoSelectionMode();
+            updateTripPhotoSelectionUI();
+            showTripDescriptionStatus('');
+        });
+        tripPhotoCancelSelectionButton.dataset.initialised = 'true';
+    }
+
     if (!tripDescriptionTitleElement) {
         if (!tripDetailState.initialised) { initTripDetailPanel(); }
         tripDescriptionTitleElement = tripDetailTitleElement || document.getElementById('tripDetailTitle');
@@ -4103,6 +4575,7 @@ function initTripProfilePanel() {
 
 function openTripProfile(tripId, options = {}) {
     initTripProfilePanel();
+    exitTripPhotoSelectionMode({ preserveSelection: false, silent: true });
 
     const cleanedTripId = typeof tripId === 'string'
         ? tripId.trim()
@@ -4162,6 +4635,7 @@ function openTripProfile(tripId, options = {}) {
 function closeTripProfileOverlay(options = {}) {
     const { restoreFocus = true } = options || {};
     initTripProfilePanel();
+    exitTripPhotoSelectionMode({ preserveSelection: false, silent: true });
 
     tripDescriptionState.requestId += 1;
     const trigger = tripDescriptionState.triggerElement;
@@ -4227,6 +4701,7 @@ function openTripDetail(tripId, triggerElement) {
     if (!tripId) { return; }
     if (!tripListState.initialised) { initTripsPanel(); }
     initTripDetailPanel();
+    exitTripPhotoSelectionMode({ preserveSelection: false, silent: true });
 
     const requestId = tripDetailState.requestId + 1;
     tripDetailState.requestId = requestId;
@@ -7444,6 +7919,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (aliasModalElement && aliasModalElement.classList.contains('open')) { return; }
         const archivedModalElement = document.getElementById('archivedPointsModal');
         if (archivedModalElement && archivedModalElement.classList.contains('open')) { return; }
+
+        if (tripPhotoSelectionState && tripPhotoSelectionState.active) {
+            event.preventDefault();
+            exitTripPhotoSelectionMode();
+            showTripDescriptionStatus('');
+            if (typeof event.stopImmediatePropagation === 'function') {
+                event.stopImmediatePropagation();
+            }
+            if (typeof event.stopPropagation === 'function') {
+                event.stopPropagation();
+            }
+            return;
+        }
 
         if (tripDetailState && tripDetailState.selectedTripId !== null) {
             event.preventDefault();

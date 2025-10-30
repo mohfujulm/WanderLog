@@ -669,3 +669,76 @@ def remove_trip_photo(trip_id: str, photo_index: int) -> Trip:
     save_trips()
 
     return trip
+
+
+def remove_trip_photos(trip_id: str, photo_indices: Iterable[int]) -> tuple[Trip, list[int]]:
+    """Remove the photos with the given indices from the specified trip."""
+
+    _ensure_cache()
+
+    identifier = (trip_id or "").strip()
+    if not identifier:
+        raise ValueError("A valid trip ID is required.")
+
+    trip = get_trip(identifier)
+    if trip is None:
+        raise KeyError("Trip not found.")
+
+    photos = getattr(trip, "photos", [])
+    if not isinstance(photos, list) or not photos:
+        raise IndexError("No photos found for this trip.")
+
+    if photo_indices is None:
+        raise ValueError("Provide at least one photo index.")
+
+    cleaned: list[int] = []
+    for entry in photo_indices:
+        try:
+            idx = int(entry)
+        except (TypeError, ValueError):
+            raise ValueError("Photo indices must be integers.") from None
+        if idx < 0 or idx >= len(photos):
+            raise IndexError(f"Photo index {idx} is out of range.")
+        cleaned.append(idx)
+
+    unique_sorted = sorted(set(cleaned), reverse=True)
+    for idx in unique_sorted:
+        del photos[idx]
+
+    trip.photos = photos
+    trip.updated_at = _utcnow_iso()
+    save_trips()
+
+    return trip, list(reversed(unique_sorted))
+
+
+def update_trip_photo_entry(trip_id: str, photo_index: int, photo_entry: Any) -> Trip:
+    """Replace the stored photo entry for the given trip and index."""
+
+    _ensure_cache()
+
+    identifier = (trip_id or "").strip()
+    if not identifier:
+        raise ValueError("A valid trip ID is required.")
+
+    trip = get_trip(identifier)
+    if trip is None:
+        raise KeyError("Trip not found.")
+
+    photos = getattr(trip, "photos", [])
+    if not isinstance(photos, list) or not photos:
+        raise IndexError("Photo not found.")
+
+    if photo_index < 0 or photo_index >= len(photos):
+        raise IndexError("Photo not found.")
+
+    normalised = _normalise_trip_photo_entry(photo_entry)
+    if normalised is None:
+        raise ValueError("Invalid photo entry.")
+
+    photos[photo_index] = normalised
+    trip.photos = photos
+    trip.updated_at = _utcnow_iso()
+    save_trips()
+
+    return trip

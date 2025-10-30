@@ -594,6 +594,55 @@ button, input, select { font-family: inherit; }
     transform: none;
 }
 
+.trip-profile-photos-action-button {
+    border: none;
+    border-radius: 999px;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    background: rgba(17, 24, 39, 0.08);
+    color: #111827;
+    cursor: pointer;
+    transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.trip-profile-photos-action-button.secondary {
+    background: rgba(17, 24, 39, 0.06);
+    color: #1f2937;
+}
+
+.trip-profile-photos-action-button.destructive {
+    background: rgba(220, 38, 38, 0.12);
+    color: #7f1d1d;
+}
+
+.trip-profile-photos-action-button:hover:not(:disabled),
+.trip-profile-photos-action-button:focus-visible {
+    background: rgba(17, 24, 39, 0.16);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(17, 24, 39, 0.15);
+    outline: none;
+}
+
+.trip-profile-photos-action-button.destructive:hover:not(:disabled),
+.trip-profile-photos-action-button.destructive:focus-visible {
+    background: rgba(220, 38, 38, 0.2);
+    box-shadow: 0 4px 12px rgba(185, 28, 28, 0.18);
+}
+
+.trip-profile-photos-action-button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.trip-profile-photos-action-button[hidden] {
+    display: none;
+}
+
 .trip-profile-photos-empty {
     font-size: 14px;
     color: #6b7280;
@@ -2072,6 +2121,7 @@ button, input, select { font-family: inherit; }
 
 .trip-profile-photo-button {
     display: block;
+    position: relative;
     padding: 0;
     margin: 0;
     width: 100%;
@@ -2079,6 +2129,7 @@ button, input, select { font-family: inherit; }
     background: transparent;
     cursor: zoom-in;
     border-radius: 12px;
+    overflow: hidden;
 }
 
 .trip-profile-photo-button img {
@@ -2092,5 +2143,53 @@ button, input, select { font-family: inherit; }
 .trip-profile-photo-button[data-trip-photo-active="true"] {
     outline: 3px solid #1a73e8;
     outline-offset: 4px;
+}
+
+.trip-profile-photo-button-selection {
+    cursor: pointer;
+}
+
+.trip-profile-photo-button-selected {
+    outline: 3px solid #1a73e8;
+    outline-offset: 4px;
+    box-shadow: 0 0 0 1px rgba(17, 24, 39, 0.1);
+}
+
+.trip-profile-photo-button-selection .trip-photo-selection-indicator {
+    opacity: 1;
+}
+
+.trip-profile-photo-button-selected .trip-photo-selection-indicator {
+    background: #1a73e8;
+    border-color: #1a73e8;
+}
+
+.trip-photo-selection-indicator {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.85);
+    background: rgba(0,0,0,0.35);
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.trip-photo-selection-indicator::after {
+    content: '\2713';
+    transform: scale(0.9);
+}
+
+.trip-profile-photo-button-selection:hover .trip-photo-selection-indicator {
+    opacity: 1;
+    transform: translateY(-1px);
 }
 
