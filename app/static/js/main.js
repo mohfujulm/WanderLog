@@ -1014,6 +1014,7 @@ function applyGoogleAuthState(state) {
     }
 
     if (avatarElement) {
+        setElementHidden(avatarElement, !isAuthenticated);
         const userInitial = isAuthenticated ? deriveGoogleUserInitial(normalisedUser) : '';
         if (avatarImageElement) {
             if (isAuthenticated && normalisedUser.picture) {

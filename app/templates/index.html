@@ -30,9 +30,9 @@
                 card.  The JavaScript initialises behaviour by querying these
                 ``data-`` attributes once the page loads.
             #}
-            <section class="auth-card" aria-label="Account" data-google-auth-card>
+            <section class="auth-card" aria-label="Account" data-google-auth-card data-auth-state="{{ 'authenticated' if google_user else 'anonymous' }}">
                 <div class="auth-card-status" data-auth-status {% if not google_user %}hidden{% endif %}>
-                    <span class="auth-card-avatar" data-auth-avatar aria-hidden="true">
+                    <span class="auth-card-avatar" data-auth-avatar aria-hidden="true" {% if not google_user %}hidden{% endif %}>
                         <img
                             data-auth-avatar-image
                             src="{{ google_user.picture if google_user and google_user.picture else '' }}"
