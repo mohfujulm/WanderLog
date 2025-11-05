@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from typing import Optional
 from flask import Flask
 from dotenv import load_dotenv
@@ -28,6 +29,15 @@ def create_app():
         os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "0"
     app.config["OAUTHLIB_INSECURE_TRANSPORT"] = is_insecure_transport_enabled
 
+    session_lifetime_days = os.getenv("SESSION_LIFETIME_DAYS")
+    try:
+        lifetime_days = int(session_lifetime_days) if session_lifetime_days is not None else 30
+        if lifetime_days <= 0:
+            lifetime_days = 30
+    except (TypeError, ValueError):
+        lifetime_days = 30
+    app.permanent_session_lifetime = timedelta(days=lifetime_days)
+
     app.config["GOOGLE_CLIENT_ID"] = os.getenv("GOOGLE_CLIENT_ID", "")
     app.config["GOOGLE_CLIENT_SECRET"] = os.getenv("GOOGLE_CLIENT_SECRET", "")
     app.config["GOOGLE_PHOTOS_PICKER_API_KEY"] = os.getenv("GOOGLE_PHOTOS_PICKER_API_KEY", "")
@@ -40,3 +50,4 @@ def create_app():
     app.register_blueprint(main)
 
     return app
+

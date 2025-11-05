@@ -13,7 +13,7 @@ import json
 import os
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
-from typing import Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 from uuid import uuid4
 
 TRIPS_PATH = os.path.join("data", "trips.json")
@@ -25,6 +25,233 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _clean_string(value: Any) -> str:
+    """Return ``value`` coerced to a stripped string."""
+
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    try:
+        result = str(value).strip()
+    except Exception:  # pragma: no cover - defensive fallback
+        return ""
+    return result
+
+
+def _normalise_trip_photo_entry(raw: Any) -> Optional[Dict[str, Any]]:
+    """Return a standardised photo entry extracted from ``raw``."""
+
+    if raw is None:
+        return None
+
+    if isinstance(raw, str):
+        base_url = _clean_string(raw)
+        if not base_url:
+            return None
+        return {
+            "id": "",
+            "base_url": base_url,
+            "product_url": "",
+            "filename": "",
+            "mime_type": "",
+        }
+
+    if not isinstance(raw, dict):
+        return None
+
+    media_item = raw.get("mediaItem")
+    if not isinstance(media_item, dict):
+        media_item = None
+
+    google_media_item = None
+    if media_item:
+        google_media_item = media_item.get("googleMediaItem")
+        if not isinstance(google_media_item, dict):
+            google_media_item = None
+
+    google_media = raw.get("googleMediaItem")
+    if not isinstance(google_media, dict):
+        google_media = None
+
+    media_file = raw.get("mediaFile")
+    if not isinstance(media_file, dict):
+        media_file = None
+
+    base_url_sources = [
+        raw.get("base_url"),
+        raw.get("baseUrl"),
+        raw.get("url"),
+        media_item.get("baseUrl") if media_item else None,
+        media_item.get("mediaItemUri") if media_item else None,
+        media_item.get("url") if media_item else None,
+        media_item.get("downloadUrl") if media_item else None,
+        google_media_item.get("baseUrl") if google_media_item else None,
+        google_media_item.get("mediaItemUri") if google_media_item else None,
+        google_media_item.get("downloadUrl") if google_media_item else None,
+        google_media_item.get("thumbnailUrl") if google_media_item else None,
+        google_media_item.get("directMediaItemUri") if google_media_item else None,
+        google_media.get("baseUrl") if google_media else None,
+        google_media.get("mediaItemUri") if google_media else None,
+        google_media.get("downloadUrl") if google_media else None,
+        google_media.get("thumbnailUrl") if google_media else None,
+        google_media.get("directMediaItemUri") if google_media else None,
+        media_file.get("baseUrl") if media_file else None,
+        media_file.get("downloadUrl") if media_file else None,
+        media_file.get("signedUrl") if media_file else None,
+        raw.get("contentUrl"),
+    ]
+    base_url = ""
+    for candidate in base_url_sources:
+        candidate_clean = _clean_string(candidate)
+        if candidate_clean:
+            base_url = candidate_clean
+            break
+
+    allowed_prefixes = ("http://", "https://", "data:")
+    if not base_url or not base_url.lower().startswith(allowed_prefixes):
+        return None
+
+    def _extract_media_metadata(key: str) -> str:
+        if google_media_item and isinstance(google_media_item.get("mediaMetadata"), dict):
+            return _clean_string(google_media_item["mediaMetadata"].get(key))
+        if media_item and isinstance(media_item.get("mediaMetadata"), dict):
+            return _clean_string(media_item["mediaMetadata"].get(key))
+        return ""
+
+    photo_id_sources = [
+        raw.get("id"),
+        media_item.get("id") if media_item else None,
+        google_media_item.get("id") if google_media_item else None,
+        google_media_item.get("mediaId") if google_media_item else None,
+        google_media_item.get("mediaItemId") if google_media_item else None,
+        google_media_item.get("resourceName") if google_media_item else None,
+        google_media.get("id") if google_media else None,
+        google_media.get("mediaId") if google_media else None,
+        google_media.get("mediaItemId") if google_media else None,
+        google_media.get("resourceName") if google_media else None,
+    ]
+    photo_id = ""
+    for candidate in photo_id_sources:
+        candidate_clean = _clean_string(candidate)
+        if candidate_clean:
+            photo_id = candidate_clean
+            break
+
+    product_url_sources = [
+        raw.get("product_url"),
+        raw.get("productUrl"),
+        media_item.get("productUrl") if media_item else None,
+        google_media_item.get("productUrl") if google_media_item else None,
+        google_media.get("productUrl") if google_media else None,
+        _extract_media_metadata("productUrl"),
+    ]
+    product_url = ""
+    for candidate in product_url_sources:
+        candidate_clean = _clean_string(candidate)
+        if candidate_clean:
+            product_url = candidate_clean
+            break
+
+    filename_sources = [
+        raw.get("filename"),
+        media_file.get("filename") if media_file else None,
+        raw.get("mediaItemFilename"),
+        media_item.get("filename") if media_item else None,
+        google_media_item.get("filename") if google_media_item else None,
+        google_media.get("filename") if google_media else None,
+    ]
+    filename = ""
+    for candidate in filename_sources:
+        candidate_clean = _clean_string(candidate)
+        if candidate_clean:
+            filename = candidate_clean
+            break
+
+    mime_type_sources = [
+        raw.get("mime_type"),
+        raw.get("mimeType"),
+        media_file.get("mimeType") if media_file else None,
+        media_item.get("mimeType") if media_item else None,
+        google_media_item.get("mimeType") if google_media_item else None,
+        google_media.get("mimeType") if google_media else None,
+    ]
+    mime_type = ""
+    for candidate in mime_type_sources:
+        candidate_clean = _clean_string(candidate)
+        if candidate_clean:
+            mime_type = candidate_clean
+            break
+
+    width = _extract_media_metadata("width")
+    height = _extract_media_metadata("height")
+    if not width and media_item:
+        width = _clean_string(media_item.get("width"))
+    if not height and media_item:
+        height = _clean_string(media_item.get("height"))
+    if not width and google_media_item:
+        width = _clean_string(google_media_item.get("width"))
+    if not height and google_media_item:
+        height = _clean_string(google_media_item.get("height"))
+    if not width and google_media:
+        width = _clean_string(google_media.get("width"))
+    if not height and google_media:
+        height = _clean_string(google_media.get("height"))
+
+    download_url_sources = [
+        raw.get("download_url"),
+        raw.get("downloadUrl"),
+        media_item.get("downloadUrl") if media_item else None,
+        google_media_item.get("downloadUrl") if google_media_item else None,
+        google_media.get("downloadUrl") if google_media else None,
+    ]
+    download_url = ""
+    for candidate in download_url_sources:
+        candidate_clean = _clean_string(candidate)
+        if candidate_clean:
+            download_url = candidate_clean
+            break
+
+    entry: Dict[str, Any] = {
+        "id": photo_id,
+        "base_url": base_url,
+        "product_url": product_url,
+        "filename": filename,
+        "mime_type": mime_type,
+        "download_url": download_url,
+    }
+
+    if width:
+        entry["width"] = width
+    if height:
+        entry["height"] = height
+
+    return entry
+
+
+def _normalise_trip_photos(raw_photos: Any) -> List[Dict[str, Any]]:
+    """Return a list of normalised photo entries extracted from ``raw_photos``."""
+
+    if not isinstance(raw_photos, list):
+        return []
+
+    normalised: List[Dict[str, Any]] = []
+    seen_keys: set[str] = set()
+
+    for raw in raw_photos:
+        entry = _normalise_trip_photo_entry(raw)
+        if entry is None:
+            continue
+        dedupe_key = entry.get("id") or entry.get("base_url")
+        if dedupe_key and dedupe_key in seen_keys:
+            continue
+        if dedupe_key:
+            seen_keys.add(dedupe_key)
+        normalised.append(entry)
+
+    return normalised
+
+
 @dataclass
 class Trip:
     """Dataclass representing a stored trip."""
@@ -33,6 +260,8 @@ class Trip:
     name: str
     place_ids: List[str] = field(default_factory=list)
     description: str = ""
+    google_photos_url: str = ""
+    photos: List[Dict[str, Any]] = field(default_factory=list)
     created_at: str = field(default_factory=_utcnow_iso)
     updated_at: str = field(default_factory=_utcnow_iso)
 
@@ -74,6 +303,12 @@ def _normalise_trip_data(raw: dict) -> Optional[Trip]:
         description_candidate = str(description_raw)
         description = description_candidate if description_candidate.strip() else ""
 
+    google_photos_url_raw = raw.get("google_photos_url") or raw.get("photos_url") or ""
+    google_photos_url = _clean_string(google_photos_url_raw)
+
+    raw_photos = raw.get("photos") or []
+    photos = _normalise_trip_photos(raw_photos)
+
     created_at = str(raw.get("created_at") or raw.get("created") or "").strip()
     if not created_at:
         created_at = _utcnow_iso()
@@ -89,6 +324,8 @@ def _normalise_trip_data(raw: dict) -> Optional[Trip]:
         created_at=created_at,
         updated_at=updated_at,
         description=description,
+        google_photos_url=google_photos_url,
+        photos=photos,
     )
 
 
@@ -178,6 +415,8 @@ def create_trip(
         id=uuid4().hex,
         name=cleaned_name,
         description=cleaned_description,
+        google_photos_url="",
+        photos=[],
     )
     _trips_cache.append(trip)
     save_trips()
@@ -335,6 +574,7 @@ def update_trip_metadata(
     *,
     name: Optional[str] = None,
     description: Optional[str] = None,
+    google_photos_url: Optional[str] = None,
 ) -> Trip:
     """Update metadata for the trip identified by ``trip_id``."""
 
@@ -359,8 +599,146 @@ def update_trip_metadata(
             trip.description = final_description
             updated = True
 
+    if google_photos_url is not None:
+        cleaned_url = _clean_string(google_photos_url)
+        if cleaned_url != trip.google_photos_url:
+            trip.google_photos_url = cleaned_url
+            updated = True
+
     if updated:
         trip.updated_at = _utcnow_iso()
         save_trips()
+
+    return trip
+
+
+def update_trip_photos(trip_id: str, photos: Any) -> Trip:
+    """Replace the stored photos for ``trip_id`` with ``photos``."""
+
+    _ensure_cache()
+
+    trip = get_trip((trip_id or "").strip())
+    if trip is None:
+        raise KeyError("Trip not found.")
+
+    normalised_photos = _normalise_trip_photos(photos)
+    provided_count = len(photos) if isinstance(photos, list) else 0
+    if provided_count > 0 and not normalised_photos:
+        try:
+            import json
+
+            sample = photos[0] if isinstance(photos, list) and photos else None
+            snippet = json.dumps(sample, ensure_ascii=False)[:1000] if sample else ""
+            print(f"[trip_store.update_trip_photos] Failed to normalise picker items; first sample={snippet}")
+        except Exception:
+            pass
+        raise ValueError("Unable to import the selected Google Photos items.")
+    trip.photos = normalised_photos
+    trip.updated_at = _utcnow_iso()
+    save_trips()
+
+    return trip
+
+
+def remove_trip_photo(trip_id: str, photo_index: int) -> Trip:
+    """Remove the photo at ``photo_index`` from the trip identified by ``trip_id``."""
+
+    _ensure_cache()
+
+    identifier = (trip_id or "").strip()
+    if not identifier:
+        raise ValueError("A valid trip ID is required.")
+
+    if not isinstance(photo_index, int):
+        raise ValueError("A valid photo index is required.")
+
+    trip = get_trip(identifier)
+    if trip is None:
+        raise KeyError("Trip not found.")
+
+    photos = getattr(trip, "photos", [])
+    if not isinstance(photos, list) or not photos:
+        raise IndexError("Photo not found.")
+
+    if photo_index < 0 or photo_index >= len(photos):
+        raise IndexError("Photo not found.")
+
+    photos.pop(photo_index)
+    trip.photos = photos
+    trip.updated_at = _utcnow_iso()
+    save_trips()
+
+    return trip
+
+
+def remove_trip_photos(trip_id: str, photo_indices: Iterable[int]) -> tuple[Trip, list[int]]:
+    """Remove the photos with the given indices from the specified trip."""
+
+    _ensure_cache()
+
+    identifier = (trip_id or "").strip()
+    if not identifier:
+        raise ValueError("A valid trip ID is required.")
+
+    trip = get_trip(identifier)
+    if trip is None:
+        raise KeyError("Trip not found.")
+
+    photos = getattr(trip, "photos", [])
+    if not isinstance(photos, list) or not photos:
+        raise IndexError("No photos found for this trip.")
+
+    if photo_indices is None:
+        raise ValueError("Provide at least one photo index.")
+
+    cleaned: list[int] = []
+    for entry in photo_indices:
+        try:
+            idx = int(entry)
+        except (TypeError, ValueError):
+            raise ValueError("Photo indices must be integers.") from None
+        if idx < 0 or idx >= len(photos):
+            raise IndexError(f"Photo index {idx} is out of range.")
+        cleaned.append(idx)
+
+    unique_sorted = sorted(set(cleaned), reverse=True)
+    for idx in unique_sorted:
+        del photos[idx]
+
+    trip.photos = photos
+    trip.updated_at = _utcnow_iso()
+    save_trips()
+
+    return trip, list(reversed(unique_sorted))
+
+
+def update_trip_photo_entry(trip_id: str, photo_index: int, photo_entry: Any) -> Trip:
+    """Replace the stored photo entry for the given trip and index."""
+
+    _ensure_cache()
+
+    identifier = (trip_id or "").strip()
+    if not identifier:
+        raise ValueError("A valid trip ID is required.")
+
+    trip = get_trip(identifier)
+    if trip is None:
+        raise KeyError("Trip not found.")
+
+    photos = getattr(trip, "photos", [])
+    if not isinstance(photos, list) or not photos:
+        raise IndexError("Photo not found.")
+
+    if photo_index < 0 or photo_index >= len(photos):
+        raise IndexError("Photo not found.")
+
+    normalised = _normalise_trip_photo_entry(photo_entry)
+    if normalised is None:
+        raise ValueError("Invalid photo entry.")
+
+    photos[photo_index] = normalised
+    trip.photos = photos
+    trip.updated_at = _utcnow_iso()
+    save_trips()
 
     return trip

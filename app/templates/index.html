@@ -30,9 +30,9 @@
                 card.  The JavaScript initialises behaviour by querying these
                 ``data-`` attributes once the page loads.
             #}
-            <section class="auth-card" aria-label="Account" data-google-auth-card>
+            <section class="auth-card" aria-label="Account" data-google-auth-card data-auth-state="{{ 'authenticated' if google_user else 'anonymous' }}">
                 <div class="auth-card-status" data-auth-status {% if not google_user %}hidden{% endif %}>
-                    <span class="auth-card-avatar" data-auth-avatar aria-hidden="true">
+                    <span class="auth-card-avatar" data-auth-avatar aria-hidden="true" {% if not google_user %}hidden{% endif %}>
                         <img
                             data-auth-avatar-image
                             src="{{ google_user.picture if google_user and google_user.picture else '' }}"
@@ -340,6 +340,31 @@
                             >
                                 Import from Google Photos
                             </button>
+                            <button
+                                type="button"
+                                class="trip-profile-photos-action-button"
+                                data-trip-photo-select-toggle
+                                hidden
+                            >
+                                Select photos
+                            </button>
+                            <button
+                                type="button"
+                                class="trip-profile-photos-action-button destructive"
+                                data-trip-photo-delete-selected
+                                hidden
+                                disabled
+                            >
+                                Remove selected
+                            </button>
+                            <button
+                                type="button"
+                                class="trip-profile-photos-action-button secondary"
+                                data-trip-photo-cancel-selection
+                                hidden
+                            >
+                                Cancel selection
+                            </button>
                         </div>
                     </div>
                     <p id="tripPhotosEmpty" class="trip-profile-photos-empty">No photos yet. Use the Google Photos import button to add images to this trip.</p>
@@ -388,6 +413,28 @@
                 </div>
             </div>
         </article>
+    </div>
+</div>
+<div id="tripPhotoModal" class="modal-overlay" hidden aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="modal-content trip-photo-modal" tabindex="-1">
+        <button type="button" class="modal-close" data-trip-photo-modal-close aria-label="Close photo preview">
+            <span aria-hidden="true">&times;</span>
+        </button>
+        <button type="button" class="trip-photo-modal-nav trip-photo-modal-nav-prev" data-trip-photo-prev aria-label="Previous photo" hidden>
+            <span aria-hidden="true">&#10094;</span>
+        </button>
+        <button type="button" class="trip-photo-modal-nav trip-photo-modal-nav-next" data-trip-photo-next aria-label="Next photo" hidden>
+            <span aria-hidden="true">&#10095;</span>
+        </button>
+        <figure class="trip-photo-modal-figure">
+            <img id="tripPhotoModalImage" src="" alt="">
+            <figcaption id="tripPhotoModalCaption"></figcaption>
+        </figure>
+        <div class="trip-photo-modal-actions">
+            <button type="button" class="trip-photo-modal-delete" data-trip-photo-delete hidden>
+                Remove from trip
+            </button>
+        </div>
     </div>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
