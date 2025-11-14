@@ -3,6 +3,9 @@ const ASSET_CONFIG = APP_CONFIG.assets || {};
 const MAPBOX_TOKEN = APP_CONFIG.mapboxToken || '';
 const MAPBOX_STYLE_ID = 'mohfujulm/cmhmdzk0z001z01rvf9hh91th';
 const MAPBOX_STYLE_URL = `mapbox://styles/${MAPBOX_STYLE_ID}?fresh=true`;
+const MAP_STYLES_CONFIG = APP_CONFIG.mapStyles || {};
+const MAPBOX_DAY_STYLE_URL = MAP_STYLES_CONFIG.day || MAPBOX_STYLE_URL;
+const MAPBOX_NIGHT_STYLE_URL = MAP_STYLES_CONFIG.night || 'mapbox://styles/mohfujulm/cmhz2n9b1005l01s01juv7lry?fresh=true';
 const MAPBOX_TERRAIN_SOURCE_ID = 'wanderlog-mapbox-terrain';
 const MAPBOX_TERRAIN_SOURCE_URL = 'mapbox://mapbox.mapbox-terrain-dem-v1';
 const MAPBOX_DEFAULT_PITCH = 0;
@@ -25,6 +28,9 @@ const MAPBOX_UNCLUSTERED_LAYER_ID = 'wanderlog-marker-points-layer';
 const MAPBOX_TRIP_SOURCE_ID = 'wanderlog-trip-source';
 const MAPBOX_TRIP_LAYER_ID = 'wanderlog-trip-layer';
 const MAPBOX_CLUSTER_RADIUS = 70;
+const MAP_STYLE_MODE_DAY = 'day';
+const MAP_STYLE_MODE_NIGHT = 'night';
+const MAP_STYLE_STORAGE_KEY = 'wanderlog.map.style';
 const SOURCE_TYPE_COLORS = {
     google_timeline: '#b91c1c',
     manual: '#dc2626',
@@ -36,6 +42,9 @@ const AUTH_CONFIG = APP_CONFIG.auth || {};
 const GOOGLE_AUTH_CONFIG = AUTH_CONFIG.google || null;
 const MENU_ICON_PATH = ASSET_CONFIG.menuIcon || '';
 const CLOSE_ICON_PATH = ASSET_CONFIG.closeIcon || '';
+const GOOGLE_MAPS_LOGO_PATH = ASSET_CONFIG.googleMapsLogo
+    || ASSET_CONFIG.googleLogo
+    || '/static/assets/google-maps-logo.svg';
 const MAP_DEFAULT_CENTER = [40.65997395108914, -73.71300111746832];
 const MAP_DEFAULT_ZOOM = 5;
 const MAP_MIN_ZOOM = 2;
@@ -44,9 +53,12 @@ const MAP_TILE_MAX_ZOOM = 22;
 const TRIP_SINGLE_MARKER_ZOOM = 11;
 const TRIP_BOUNDS_PADDING = [80, 80];
 let map;
+let mapStyleMode = MAP_STYLE_MODE_DAY;
+let mapStyleLoadCount = 0;
 const tripMarkerLookup = new Map();
 const mapMarkerLookup = new Map();
 const mapMarkerData = new Map();
+let markerSourceFeaturesAll = [];
 const markerFeatureIdLookup = new Map();
 const mapboxIconPromises = new Map();
 let markerFeatureIdCounter = 1;
@@ -119,6 +131,7 @@ let tripSearchInput = null;
 let tripSortFieldSelect = null;
 let tripSortDirectionButton = null;
 let tripListView = null;
+let mapThemeToggle = null;
 let tripDetailContainer = null;
 let tripDetailBackButton = null;
 let tripDetailTitleElement = null;
@@ -171,6 +184,8 @@ const tripListState = {
     sortField: TRIP_SORT_FIELD_DATE,
     sortDirection: TRIP_SORT_DIRECTION_DESC,
     initialised: false,
+    scrollTop: 0,
+    preserveScroll: false,
 };
 
 const tripDetailState = {
@@ -1136,6 +1151,54 @@ function debounce(fn, wait = 0) {
     };
 }
 
+function loadStoredMapStyleMode() {
+    if (typeof window === 'undefined' || !window.localStorage) { return null; }
+    try {
+        const stored = window.localStorage.getItem(MAP_STYLE_STORAGE_KEY);
+        if (stored === MAP_STYLE_MODE_NIGHT) { return MAP_STYLE_MODE_NIGHT; }
+        if (stored === MAP_STYLE_MODE_DAY) { return MAP_STYLE_MODE_DAY; }
+    } catch (error) {
+        console.warn('Unable to read stored map style preference', error);
+    }
+    return null;
+}
+
+function persistMapStyleMode(mode) {
+    if (typeof window === 'undefined' || !window.localStorage) { return; }
+    try {
+        window.localStorage.setItem(MAP_STYLE_STORAGE_KEY, mode);
+    } catch (error) {
+        console.warn('Unable to store map style preference', error);
+    }
+}
+
+function getMapStyleUrl(mode) {
+    return mode === MAP_STYLE_MODE_NIGHT ? MAPBOX_NIGHT_STYLE_URL : MAPBOX_DAY_STYLE_URL;
+}
+
+function syncMapThemeToggleControl(mode = mapStyleMode) {
+    if (!mapThemeToggle) { return; }
+    mapThemeToggle.checked = mode === MAP_STYLE_MODE_NIGHT;
+}
+
+function setMapStyleMode(mode) {
+    const nextMode = mode === MAP_STYLE_MODE_NIGHT ? MAP_STYLE_MODE_NIGHT : MAP_STYLE_MODE_DAY;
+    if (mapStyleMode === nextMode) {
+        syncMapThemeToggleControl(nextMode);
+        return;
+    }
+    mapStyleMode = nextMode;
+    persistMapStyleMode(mapStyleMode);
+    syncMapThemeToggleControl(mapStyleMode);
+    if (!map) { return; }
+    const styleUrl = getMapStyleUrl(mapStyleMode);
+    try {
+        map.setStyle(styleUrl);
+    } catch (error) {
+        console.error('Failed to switch map style', error);
+    }
+}
+
 function createValidatedDateParts(year, month, day) {
     const y = Number(year);
     const m = Number(month);
@@ -1308,6 +1371,9 @@ function createPopupContent(markerData) {
     const date = escapeHtml(markerData.date || 'Unknown');
     const latNumber = Number(markerData.lat);
     const lngNumber = Number(markerData.lng);
+    const coordinatesQuery = Number.isFinite(latNumber) && Number.isFinite(lngNumber)
+        ? `${latNumber},${lngNumber}`
+        : '';
     const latText = Number.isFinite(latNumber) ? latNumber.toFixed(4) : String(markerData.lat ?? '');
     const lngText = Number.isFinite(lngNumber) ? lngNumber.toFixed(4) : String(markerData.lng ?? '');
     const coordinates = `${escapeHtml(latText)}, ${escapeHtml(lngText)}`;
@@ -1327,6 +1393,16 @@ function createPopupContent(markerData) {
         : '';
     const manageTripLabel = membershipEntries.length ? 'Manage Trips' : 'Add to Trip';
     const descriptionButtonLabel = descriptionHasContent ? 'Edit Description' : 'Add Description';
+    const locationQuery = displayClean || aliasClean || placeClean;
+    const googleMapsQuery = coordinatesQuery || locationQuery;
+    const googleMapsUrl = googleMapsQuery
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(googleMapsQuery)}`
+        : '';
+    const googleMapsLink = googleMapsUrl
+        ? `<button type="button" class="marker-popup-google-link" data-maps-url="${escapeHtmlAttribute(googleMapsUrl)}" title="Open in Google Maps" aria-label="Open in Google Maps"><img src="${escapeHtmlAttribute(GOOGLE_MAPS_LOGO_PATH)}" alt="" aria-hidden="true"></button>`
+        : '';
+
+    const headerRow = `<div class="marker-popup-header"><div class="marker-popup-header-text"><span class="marker-popup-label">${nameLabel}</span><span class="marker-popup-value">${displayName}</span></div>${googleMapsLink || ''}</div>`;
 
     const actions = hasId
         ? `<div class="marker-actions"><button type="button" class="marker-action marker-action-trip">${escapeHtml(manageTripLabel)}</button><button type="button" class="marker-action marker-action-description">${escapeHtml(descriptionButtonLabel)}</button><button type="button" class="marker-action marker-action-alias">Rename</button><button type="button" class="marker-action marker-action-archive">Archive</button><button type="button" class="marker-action marker-action-delete">Delete</button></div>`
@@ -1334,7 +1410,7 @@ function createPopupContent(markerData) {
 
     return [
         `<div class="marker-popup"${hasId ? ` data-marker-id="${safeId}"` : ''}>`,
-        `<div class="marker-popup-row"><span class="marker-popup-label">${nameLabel}</span><span class="marker-popup-value">${displayName}</span></div>`,
+        headerRow,
         aliasRow,
         descriptionRow,
         tripRow,
@@ -1395,6 +1471,20 @@ function attachMarkerPopupActions(popup, markerData, marker) {
         deleteButton.onclick = (event) => {
             event.preventDefault();
             deleteMarker(markerId, marker, deleteButton);
+        };
+    }
+
+    const googleMapsButton = popupElement.querySelector('.marker-popup-google-link');
+    if (googleMapsButton) {
+        const mapsUrl = googleMapsButton.dataset ? googleMapsButton.dataset.mapsUrl : '';
+        googleMapsButton.onclick = (event) => {
+            event.preventDefault();
+            if (!mapsUrl) { return; }
+            try {
+                window.open(mapsUrl, '_blank', 'noopener');
+            } catch (error) {
+                window.open(mapsUrl, '_blank');
+            }
         };
     }
 }
@@ -1524,6 +1614,15 @@ async function ensureMarkerIconsFor(markerRecords) {
         }
     });
     await Promise.all([...types].map((type) => ensureMapboxIconRegistered(type)));
+}
+
+async function ensureExistingMarkerIcons() {
+    if (!mapMarkerData || mapMarkerData.size === 0) { return; }
+    try {
+        await ensureMarkerIconsFor(Array.from(mapMarkerData.values()));
+    } catch (error) {
+        console.warn('Failed to ensure marker icons for existing markers', error);
+    }
 }
 
 function initialiseMapboxMarkerLayers() {
@@ -1836,6 +1935,61 @@ function setMarkerSourceData(features) {
     }
 }
 
+function getActiveTripMarkerIds() {
+    const selectedTripId = tripDetailState && tripDetailState.selectedTripId
+        ? String(tripDetailState.selectedTripId).trim()
+        : '';
+    if (!selectedTripId) { return null; }
+    const ids = new Set();
+
+    mapMarkerData.forEach((record, markerId) => {
+        const memberships = Array.isArray(record && record.trips) ? record.trips : [];
+        const hasTrip = memberships.some((entry) => {
+            const membership = normaliseTripMembership(entry);
+            return membership && membership.id === selectedTripId;
+        });
+        if (hasTrip && markerId) {
+            ids.add(markerId);
+        }
+    });
+
+    const locations = Array.isArray(tripDetailState && tripDetailState.locations)
+        ? tripDetailState.locations
+        : [];
+    locations.forEach((location) => {
+        if (!location || typeof location !== 'object') { return; }
+        const rawId = location.place_id ?? location.id ?? location.key ?? '';
+        const value = typeof rawId === 'string' ? rawId.trim() : String(rawId || '').trim();
+        if (value) { ids.add(value); }
+    });
+
+    return ids;
+}
+
+function applyActiveMarkerFilter() {
+    const baseFeatures = Array.isArray(markerSourceFeaturesAll) ? markerSourceFeaturesAll : [];
+    const selectedTripId = tripDetailState && tripDetailState.selectedTripId
+        ? String(tripDetailState.selectedTripId).trim()
+        : '';
+
+    if (!selectedTripId) {
+        setMarkerSourceData(baseFeatures);
+        return;
+    }
+
+    const markerIds = getActiveTripMarkerIds();
+    if (!markerIds || markerIds.size === 0) {
+        setMarkerSourceData([]);
+        return;
+    }
+
+    const filteredFeatures = baseFeatures.filter((feature) => {
+        const markerId = feature && feature.properties ? feature.properties.markerId : '';
+        return markerId && markerIds.has(markerId);
+    });
+    setMarkerSourceData(filteredFeatures);
+}
+
 function fetchAllClusterLeaves(source, clusterId, pointCount) {
     const leaves = [];
     const pageSize = 100;
@@ -1937,17 +2091,18 @@ function setLayerVisibility(layerId, visible) {
 
 function applyClusterLayerVisibility() {
     if (!map) { return; }
-    const showClusters = isClusteringEnabled;
+    const showClusters = isClusteringEnabled && !isTripMapModeActive;
+    const showUnclustered = !isClusteringEnabled || isTripMapModeActive;
     setLayerVisibility(MAPBOX_CLUSTER_LAYER_ID, showClusters);
     setLayerVisibility(MAPBOX_CLUSTER_COUNT_LAYER_ID, showClusters);
     setLayerVisibility(MAPBOX_CLUSTER_SYMBOL_LAYER_ID, showClusters);
-    setLayerVisibility(MAPBOX_UNCLUSTERED_LAYER_ID, !showClusters);
+    setLayerVisibility(MAPBOX_UNCLUSTERED_LAYER_ID, showUnclustered);
 }
 
 function setClusteringEnabled(enabled) {
     pendingClusterToggleState = enabled;
     isClusteringEnabled = enabled;
-    if (!map || isTripMapModeActive) { return; }
+    if (!map) { return; }
     applyClusterLayerVisibility();
 }
 
@@ -2788,6 +2943,7 @@ function initTripsPanel() {
     if (tripSearchInput) {
         tripSearchInput.addEventListener('input', () => {
             tripListState.searchTerm = tripSearchInput.value.trim().toLowerCase();
+            resetTripListScrollPosition();
             renderTripList();
         });
     }
@@ -2799,6 +2955,7 @@ function initTripsPanel() {
                 ? TRIP_SORT_FIELD_DATE
                 : TRIP_SORT_FIELD_NAME;
             tripListState.sortField = value;
+            resetTripListScrollPosition();
             renderTripList();
         });
     }
@@ -2809,6 +2966,7 @@ function initTripsPanel() {
                 ? TRIP_SORT_DIRECTION_DESC
                 : TRIP_SORT_DIRECTION_ASC;
             updateTripSortDirectionButton();
+            resetTripListScrollPosition();
             renderTripList();
         });
         updateTripSortDirectionButton();
@@ -2817,6 +2975,11 @@ function initTripsPanel() {
     if (tripListContainer) {
         tripListContainer.addEventListener('click', handleTripListClick);
         tripListContainer.addEventListener('keydown', handleTripListKeydown);
+        tripListContainer.addEventListener('scroll', () => {
+            tripListState.scrollTop = tripListContainer.scrollTop;
+            tripListState.preserveScroll = true;
+        });
+        tripListState.scrollTop = tripListContainer.scrollTop || 0;
     }
 
     tripListState.initialised = true;
@@ -3447,9 +3610,32 @@ function updateTripsPanel(trips) {
     renderTripList();
 }
 
-function renderTripList() {
+function requestTripListScrollPreservation() {
     if (!tripListState.initialised) { initTripsPanel(); }
     if (!tripListContainer) { return; }
+    tripListState.scrollTop = typeof tripListContainer.scrollTop === 'number'
+        ? tripListContainer.scrollTop
+        : 0;
+    tripListState.preserveScroll = true;
+}
+
+function resetTripListScrollPosition() {
+    if (!tripListState.initialised) { initTripsPanel(); }
+    if (tripListContainer) {
+        tripListContainer.scrollTop = 0;
+    }
+    tripListState.scrollTop = 0;
+    tripListState.preserveScroll = false;
+}
+
+function renderTripList(options = {}) {
+    if (!tripListState.initialised) { initTripsPanel(); }
+    if (!tripListContainer) { return; }
+
+    const shouldPreserveScroll = Boolean(options.preserveScroll || tripListState.preserveScroll);
+    const previousScrollTop = shouldPreserveScroll
+        ? (typeof tripListState.scrollTop === 'number' ? tripListState.scrollTop : tripListContainer.scrollTop)
+        : 0;
 
     const trips = Array.isArray(tripListState.trips) ? tripListState.trips : [];
     const hasTrips = trips.length > 0;
@@ -3484,7 +3670,15 @@ function renderTripList() {
 
     tripListContainer.appendChild(fragment);
     tripListContainer.hidden = false;
-    tripListContainer.scrollTop = 0;
+    if (shouldPreserveScroll) {
+        const maxScrollTop = Math.max(0, tripListContainer.scrollHeight - tripListContainer.clientHeight);
+        const nextScrollTop = Math.min(previousScrollTop, maxScrollTop);
+        tripListContainer.scrollTop = nextScrollTop;
+        tripListState.scrollTop = nextScrollTop;
+    } else {
+        tripListContainer.scrollTop = 0;
+        tripListState.scrollTop = 0;
+    }
 }
 
 function compareTrips(a, b) {
@@ -5338,6 +5532,7 @@ function openTripDetail(tripId, triggerElement) {
     tripDetailState.photoItems = [];
     tripDetailState.photos = [];
     tripDetailState.activeLocationId = null;
+    applyActiveMarkerFilter();
 
     activateTripMapMode();
 
@@ -5360,8 +5555,9 @@ function openTripDetail(tripId, triggerElement) {
     }
     updateTripDetailHeader();
 
+    requestTripListScrollPreservation();
     showTripDetailView();
-    renderTripList();
+    renderTripList({ preserveScroll: true });
     setTripDetailLoading(true);
 
     const cached = tripLocationCache.get(tripId);
@@ -5372,6 +5568,7 @@ function openTripDetail(tripId, triggerElement) {
         const photoItems = Array.isArray(cached.photo_items) ? cached.photo_items : [];
         tripDetailState.trip = { ...normalisedTrip, location_count: locations.length };
         tripDetailState.locations = locations;
+        applyActiveMarkerFilter();
         updateTripPhotosSection({
             photoItems,
             photos,
@@ -5413,6 +5610,7 @@ function closeTripDetail(options = {}) {
     tripDetailState.requestId += 1;
     tripDetailState.triggerElement = null;
     tripDetailState.activeLocationId = null;
+    applyActiveMarkerFilter();
 
     if (tripLocationSearchInput) { tripLocationSearchInput.value = ''; }
     if (tripLocationSortFieldSelect) { tripLocationSortFieldSelect.value = TRIP_LOCATION_SORT_FIELD_DATE; }
@@ -6144,6 +6342,7 @@ async function loadTripDetailData(tripId, requestId) {
 
         tripDetailState.trip = { ...normalisedTrip, location_count: locations.length };
         tripDetailState.locations = locations;
+        applyActiveMarkerFilter();
         updateTripPhotosSection({
             photoItems: Array.isArray(photoItemsRaw) ? photoItemsRaw : undefined,
             photos: Array.isArray(photosRaw) ? photosRaw : undefined,
@@ -6456,6 +6655,7 @@ function applyTripLocationRemoval(tripId, placeId, options = {}) {
 
         if (filtered.length !== currentLocations.length) {
             tripDetailState.locations = filtered;
+            applyActiveMarkerFilter();
             const detailTrip = tripDetailState.trip ? { ...tripDetailState.trip } : null;
             if (detailTrip) {
                 detailTrip.location_count = filtered.length;
@@ -6648,11 +6848,8 @@ function activateTripMapMode() {
     closeActivePopup();
     tripMarkerLookup.clear();
 
-    setLayerVisibility(MAPBOX_CLUSTER_LAYER_ID, false);
-    setLayerVisibility(MAPBOX_CLUSTER_COUNT_LAYER_ID, false);
-    setLayerVisibility(MAPBOX_CLUSTER_SYMBOL_LAYER_ID, false);
-    setLayerVisibility(MAPBOX_UNCLUSTERED_LAYER_ID, false);
     setLayerVisibility(MAPBOX_TRIP_LAYER_ID, true);
+    applyClusterLayerVisibility();
 
     return true;
 }
@@ -6901,7 +7098,7 @@ async function initMap() {
     mapboxgl.accessToken = MAPBOX_TOKEN;
     map = new mapboxgl.Map({
         container: 'map',
-        style: MAPBOX_STYLE_URL,
+        style: getMapStyleUrl(mapStyleMode),
         center: lngLat,
         zoom: initialZoom,
         minZoom: MAP_MIN_ZOOM,
@@ -6914,7 +7111,9 @@ async function initMap() {
     map.addControl(new mapboxgl.NavigationControl({ showCompass: true, showZoom: true, visualizePitch: true }), 'top-left');
     map.addControl(new mapboxgl.FullscreenControl(), 'top-left');
 
-    map.on('load', async () => {
+    map.on('style.load', async () => {
+        const isStyleReload = mapStyleLoadCount > 0;
+        mapStyleLoadCount += 1;
         try {
             if (!map.getSource(MAPBOX_TERRAIN_SOURCE_ID)) {
                 map.addSource(MAPBOX_TERRAIN_SOURCE_ID, {
@@ -6936,14 +7135,18 @@ async function initMap() {
 
         try {
             await ensureMapboxIconRegistered('default');
+            await ensureExistingMarkerIcons();
         } catch (iconError) {
-            console.warn('Failed to register default marker icon', iconError);
+            console.warn('Failed to register marker icons', iconError);
         }
         initialiseMapboxMarkerLayers();
         setClusteringEnabled(pendingClusterToggleState);
-
-        persistMapViewState();
-        loadMarkers();
+        if (isStyleReload) {
+            applyActiveMarkerFilter();
+        } else {
+            persistMapViewState();
+            loadMarkers();
+        }
     });
 
     map.on('moveend', persistMapViewState);
@@ -7031,7 +7234,8 @@ async function loadMarkers() {
         mapMarkerLookup.clear();
 
         const features = buildMarkerFeatures(markerList);
-        setMarkerSourceData(features);
+        markerSourceFeaturesAll = Array.isArray(features) ? features : [];
+        applyActiveMarkerFilter();
         refreshSelectionAfterDataLoad();
     } catch (err) {
         if (err && err.name === 'AbortError') {
@@ -8255,6 +8459,10 @@ async function deleteMarker(markerId, markerInstance, triggerButton) {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+    const storedStyleMode = loadStoredMapStyleMode();
+    if (storedStyleMode) {
+        mapStyleMode = storedStyleMode;
+    }
     setupGoogleAuthCard();
     setupGooglePhotosPickerTestButton();
     ensureManualPointModal();
@@ -8444,6 +8652,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         clusterToggleInput.addEventListener('change', (event) => {
             const enabled = Boolean(event.currentTarget.checked);
             setClusteringEnabled(enabled);
+        });
+    }
+    mapThemeToggle = document.getElementById('mapThemeToggle');
+    syncMapThemeToggleControl();
+    if (mapThemeToggle) {
+        mapThemeToggle.addEventListener('change', (event) => {
+            const nextMode = event.currentTarget.checked ? MAP_STYLE_MODE_NIGHT : MAP_STYLE_MODE_DAY;
+            setMapStyleMode(nextMode);
         });
     }
     const clearDateButton = document.getElementById('clearDateFilters');
