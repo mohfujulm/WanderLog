@@ -7,9 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Raleway:ital,wght@0,100..900;1,100..900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <link rel="stylesheet" href="https://api.mapbox.com/mapbox-gl-js/v3.1.0/mapbox-gl.css" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}" />
 </head>
 <body>
@@ -102,6 +100,10 @@
                 <button class="overlay-button" type="button" id="manageModeToggle" data-manage-mode-toggle data-manage-mode-active-class="overlay-button-active" data-manage-mode-label-default="Enter Manage Mode" data-manage-mode-label-active="Exit Manage Mode">Enter Manage Mode</button>
                 <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
                 <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
+                <label class="toggle-control" for="clusterToggle">
+                    <span class="toggle-label">Cluster markers</span>
+                    <input type="checkbox" id="clusterToggle" name="clusterToggle" checked>
+                </label>
                 <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
                 <div class="date-filter-group" id="dateFilters" role="group" aria-labelledby="dateFiltersTitle">
                     <label for="filterStartDate">
@@ -437,8 +439,7 @@
         </div>
     </div>
 </div>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
-<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" defer></script>
+<script id="mapbox-gl-js-script" src="https://api.mapbox.com/mapbox-gl-js/v3.1.0/mapbox-gl.js" defer></script>
 <script>
     window.wanderLogConfig = {
         mapboxToken: "{{ mapbox_token }}",

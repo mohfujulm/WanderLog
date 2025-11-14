@@ -13,6 +13,13 @@ from flask import Flask, render_template_string, jsonify  # Web framework
 # ============================================================================
 load_dotenv()  # Load environment variables from .env file
 MAPBOX_ACCESS_TOKEN = os.getenv("MAPBOX_ACCESS_TOKEN")  # Get Mapbox token
+MAPBOX_STYLE_ID = "mapbox/outdoors-v12"
+MAPBOX_TILESET_URL = (
+    "https://api.mapbox.com/styles/v1/"
+    f"{MAPBOX_STYLE_ID}"
+    "/tiles/{z}/{x}/{y}?access_token="
+    f"{MAPBOX_ACCESS_TOKEN}"
+)
 
 # Create Flask web application instance
 app = Flask(__name__)
@@ -26,7 +33,7 @@ m = folium.Map(
     zoom_start=5,        # Initial zoom level
     min_zoom=3,          # Minimum zoom allowed
     # Use Mapbox tiles for better styling
-    tiles=f"https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{{z}}/{{x}}/{{y}}?access_token={MAPBOX_ACCESS_TOKEN}",
+    tiles=MAPBOX_TILESET_URL,
     attr='Mapbox'        # Attribution text
 )
 
@@ -608,7 +615,7 @@ def api_clear():
             location=[40.65997395108914, -73.71300111746832],
             zoom_start=5,
             min_zoom=3,
-            tiles=f"https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{{z}}/{{x}}/{{y}}?access_token={MAPBOX_ACCESS_TOKEN}",
+            tiles=MAPBOX_TILESET_URL,
             attr='Mapbox'
         )
         
