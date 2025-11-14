@@ -104,6 +104,10 @@
                     <span class="toggle-label">Cluster markers</span>
                     <input type="checkbox" id="clusterToggle" name="clusterToggle" checked>
                 </label>
+                <label class="toggle-control" for="mapThemeToggle">
+                    <span class="toggle-label">Night mode</span>
+                    <input type="checkbox" id="mapThemeToggle" name="mapThemeToggle">
+                </label>
                 <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
                 <div class="date-filter-group" id="dateFilters" role="group" aria-labelledby="dateFiltersTitle">
                     <label for="filterStartDate">
@@ -443,9 +447,14 @@
 <script>
     window.wanderLogConfig = {
         mapboxToken: "{{ mapbox_token }}",
+        mapStyles: {
+            day: "mapbox://styles/mohfujulm/cmhmdzk0z001z01rvf9hh91th?fresh=true",
+            night: "mapbox://styles/mohfujulm/cmhz2n9b1005l01s01juv7lry?fresh=true",
+        },
         assets: {
             menuIcon: "{{ url_for('static', filename='assets/menu-icon.svg') }}",
             closeIcon: "{{ url_for('static', filename='assets/close-icon.svg') }}",
+            googleMapsLogo: "{{ url_for('static', filename='assets/google-maps-logo.svg') }}",
         },
         markerIcons: {
             google_timeline: "{{ url_for('static', filename='assets/marker-pin-blue.svg') }}",
