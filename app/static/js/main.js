@@ -1190,6 +1190,10 @@ function setMapStyleMode(mode) {
     mapStyleMode = nextMode;
     persistMapStyleMode(mapStyleMode);
     syncMapThemeToggleControl(mapStyleMode);
+    const rootElement = document.documentElement;
+    if (rootElement) {
+        rootElement.classList.toggle('night-mode', mapStyleMode === MAP_STYLE_MODE_NIGHT);
+    }
     if (!map) { return; }
     const styleUrl = getMapStyleUrl(mapStyleMode);
     try {
@@ -8462,6 +8466,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const storedStyleMode = loadStoredMapStyleMode();
     if (storedStyleMode) {
         mapStyleMode = storedStyleMode;
+    }
+    const rootElement = document.documentElement;
+    if (rootElement) {
+        rootElement.classList.toggle('night-mode', mapStyleMode === MAP_STYLE_MODE_NIGHT);
     }
     setupGoogleAuthCard();
     setupGooglePhotosPickerTestButton();

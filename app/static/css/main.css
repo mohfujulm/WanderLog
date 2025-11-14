@@ -96,7 +96,7 @@ button, input, select { font-family: inherit; }
                 cursor: pointer;
                 user-select: none;
                 padding: 18px 12px;
-                background: rgba(255,255,255,0.95);
+                background: var(--color-bg-muted);
                 border-radius: 18px;
                 box-shadow: 0 6px 18px rgba(0,0,0,0.12);
                 transition: background 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease;
@@ -108,7 +108,7 @@ button, input, select { font-family: inherit; }
                 gap: 8px;
                 text-transform: uppercase;
                 letter-spacing: 0.12em;
-                color: #333;
+                color: var(--color-text);
                 writing-mode: vertical-rl;
                 text-orientation: mixed;
                 font-weight: 500; }
@@ -155,10 +155,10 @@ button, input, select { font-family: inherit; }
                     transform-origin: top right;
                     transition: opacity 0.25s ease, transform 0.25s ease;
                     pointer-events: none;
-                    background: rgba(255,255,255,0.96);
+                    background: var(--color-bg-muted);
                     border-radius: 20px;
                     padding: 24px 24px 20px;
-                    box-shadow: 0 12px 32px rgba(0,0,0,0.22);
+                    box-shadow: var(--card-shadow);
                     backdrop-filter: blur(14px);
                     width: min(360px, calc(100vw - 64px));
                     max-height: min(calc(100vh - 120px), 768px);
@@ -173,11 +173,16 @@ button, input, select { font-family: inherit; }
 .overlay-tabs-wrapper {  display: flex;
                         align-items: center;
                         gap: 6px;
-                        background: rgba(243, 244, 246, 0.7);
+                        background: rgba(243, 244, 246, 0.85);
                         padding: 6px;
                         border-radius: 18px;
                         flex-wrap: wrap;
                         width: 100%; }
+
+:root.night-mode .overlay-tabs-wrapper {
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+}
 
 .overlay-tabs {    display: flex;
                     align-items: center;
@@ -185,8 +190,32 @@ button, input, select { font-family: inherit; }
                     gap: 6px;
                     flex: 1 1 auto; }
 
+.overlay-tab {
+    border-radius: 14px;
+    border: 1px solid rgba(0,0,0,0.08);
+    padding: 10px 14px;
+    background: rgba(255,255,255,0.9);
+    color: #1f2937;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.overlay-tab[aria-selected="true"] {
+    background: #0f172a;
+    color: #fff;
+    box-shadow: 0 8px 16px rgba(15, 23, 42, 0.2);
+}
+
+.overlay-tab:not([aria-selected="true"]):hover {
+    background: rgba(255,255,255,1);
+    color: #111827;
+}
+
 .overlay-manage-toggle {  border: none;
-                            background: transparent;
+                            background: rgba(255,255,255,0.65);
                             border-radius: 12px;
                             padding: 10px 16px;
                             font-size: 12px;
@@ -909,7 +938,11 @@ button, input, select { font-family: inherit; }
 .trip-panel-heading {   font-size: 18px;
                         letter-spacing: 0.08em;
                         text-transform: uppercase;
-                        color: #111827; }
+                        color: #111827;
+                        background: rgba(17,24,39,0.08);
+                        padding: 6px 10px;
+                        border-radius: 10px;
+                        display: inline-block; }
 
 .trip-panel-subtitle {  font-size: 13px;
                         color: #6b7280;
@@ -1208,6 +1241,12 @@ button, input, select { font-family: inherit; }
                         cursor: pointer;
                         transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease; }
 
+:root.night-mode .trip-item {
+    background: rgba(15,23,42,0.9);
+    border: 1px solid rgba(99,102,241,0.35);
+    box-shadow: 0 8px 18px rgba(2, 6, 23, 0.55);
+}
+
 .trip-item:hover {      transform: translateY(-1px);
                         box-shadow: 0 6px 16px rgba(15,23,42,0.12); }
 
@@ -1217,6 +1256,12 @@ button, input, select { font-family: inherit; }
 .trip-item-active {     border-color: rgba(17,24,39,0.6);
                         box-shadow: 0 8px 20px rgba(17,24,39,0.18);
                         background: rgba(17,24,39,0.05); }
+
+:root.night-mode .trip-item-active {
+    border-color: rgba(248,250,252,0.65);
+    background: rgba(248,250,252,0.08);
+    box-shadow: 0 12px 24px rgba(2,6,23,0.65);
+}
 
 .trip-item-active .trip-item-name {
     color: #0f172a;
@@ -1266,27 +1311,27 @@ button, input, select { font-family: inherit; }
     align-items: center;
     justify-content: center;
     gap: 10px;
-    background: #fff;
-    color: #3c4043;
-    border: 1px solid #dadce0;
-    box-shadow: none;
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    color: #f8fafc;
+    border: 1px solid rgba(255,255,255,0.15);
+    box-shadow: 0 8px 18px rgba(2, 6, 23, 0.5);
     font-weight: 600;
 }
 
 .overlay-button-google:hover {
-    background: #f8f9fa;
-    box-shadow: none;
+    background: linear-gradient(135deg, #1c2741, #1f2f47);
+    box-shadow: 0 10px 22px rgba(2, 6, 23, 0.55);
     transform: none;
 }
 
 .overlay-button-google:focus-visible {
-    outline: 2px solid rgba(66, 133, 244, 0.6);
+    outline: 2px solid rgba(248, 250, 252, 0.65);
     outline-offset: 2px;
 }
 
 .overlay-button-google:active {
     transform: none;
-    box-shadow: none;
+    box-shadow: 0 6px 16px rgba(2, 6, 23, 0.45);
 }
 
 .overlay-button-google-icon {
@@ -1350,6 +1395,20 @@ button, input, select { font-family: inherit; }
     border-radius: 18px;
     border: 1px solid rgba(229, 231, 235, 0.8);
     margin-bottom: 16px;
+}
+
+:root.night-mode .auth-card {
+    background: rgba(15, 23, 42, 0.88);
+    border: 1px solid rgba(148, 163, 184, 0.3);
+    box-shadow: 0 12px 28px rgba(2, 6, 23, 0.6);
+}
+
+:root.night-mode .auth-card-title {
+    color: rgba(248, 250, 252, 0.8);
+}
+
+:root.night-mode .auth-card-subtitle {
+    color: #f8fafc;
 }
 
 [data-google-auth-card][data-auth-state="anonymous"] [data-auth-avatar],
@@ -2300,3 +2359,75 @@ button, input, select { font-family: inherit; }
     transform: translateY(-1px);
 }
 
+:root {
+    --color-bg: #ffffff;
+    --color-bg-muted: rgba(255,255,255,0.96);
+    --color-text: #1f2937;
+    --color-accent: #dc2626;
+    --color-muted: #6b7280;
+    --card-shadow: 0 12px 32px rgba(0,0,0,0.22);
+}
+
+:root.night-mode {
+    --color-bg: #0f172a;
+    --color-bg-muted: rgba(15,23,42,0.9);
+    --color-text: #f8fafc;
+    --color-accent: #f97316;
+    --color-muted: #94a3b8;
+    --card-shadow: 0 15px 40px rgba(2,6,23,0.65);
+}
+
+body.night-mode,
+:root.night-mode body {
+    background: #020617;
+    color: var(--color-text);
+}
+
+:root.night-mode .overlay-controls,
+:root.night-mode .trip-panel,
+:root.night-mode .trip-panel *:not(button):not(.trip-panel-heading),
+:root.night-mode .toggle-control,
+:root.night-mode .trip-panel-heading,
+:root.night-mode .trip-panel-subtitle {
+    color: var(--color-text);
+}
+
+:root.night-mode .overlay-section-title,
+:root.night-mode .toggle-label,
+:root.night-mode .trip-search-label,
+:root.night-mode .trip-sort-label {
+    color: var(--color-muted);
+}
+
+:root.night-mode .overlay-button,
+:root.night-mode .overlay-manage-toggle,
+:root.night-mode .date-filter-clear {
+    background: rgba(30,41,59,0.9);
+    color: var(--color-text);
+    border: 1px solid rgba(148,163,184,0.35);
+    box-shadow: 0 6px 16px rgba(2,6,23,0.55);
+}
+
+:root.night-mode .overlay-button:hover,
+:root.night-mode .overlay-manage-toggle:hover,
+:root.night-mode .date-filter-clear:hover {
+    background: rgba(51,65,85,0.95);
+}
+
+:root.night-mode .overlay-tab {
+    color: var(--color-muted);
+    border-color: rgba(148,163,184,0.35);
+}
+
+:root.night-mode .overlay-tab[aria-selected="true"] {
+    color: var(--color-text);
+    background: rgba(30,41,59,0.9);
+}
+
+:root.night-mode .trip-search input,
+:root.night-mode .trip-sort select,
+:root.night-mode .date-filter-group input {
+    background: rgba(15,23,42,0.65);
+    border-color: rgba(148,163,184,0.35);
+    color: var(--color-text);
+}
