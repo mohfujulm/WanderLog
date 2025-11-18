@@ -233,24 +233,137 @@ const manageModeState = {
     active: false,
     selectedIds: new Set(),
     isDragging: false,
-    isMiddlePanning: false,
     dragStartLatLng: null,
     dragStartPoint: null,
     dragCurrentLatLng: null,
     dragCurrentPoint: null,
     dragMode: 'add',
-    selectionRectangle: null,
-    middlePanLastPoint: null,
+    selectionOverlayElement: null,
     mapHandlersAttached: false,
     keyHandlerAttached: false,
     interactionState: {
-        dragging: true,
+        dragPan: true,
         doubleClickZoom: true,
         boxZoom: true,
     },
 };
 
 const MANAGE_MODE_DRAG_THRESHOLD = 5;
+
+function toLatLng(lngLat) {
+    if (!lngLat) { return null; }
+    if (typeof lngLat.lat === 'number' && typeof lngLat.lng === 'number') {
+        return { lat: lngLat.lat, lng: lngLat.lng };
+    }
+    if (Array.isArray(lngLat) && lngLat.length >= 2) {
+        return { lat: Number(lngLat[1]), lng: Number(lngLat[0]) };
+    }
+    return null;
+}
+
+function toPoint(pointLike) {
+    if (!pointLike) { return null; }
+    if (typeof pointLike.x === 'number' && typeof pointLike.y === 'number') {
+        return { x: pointLike.x, y: pointLike.y };
+    }
+    if (Array.isArray(pointLike) && pointLike.length >= 2) {
+        return { x: Number(pointLike[0]), y: Number(pointLike[1]) };
+    }
+    return null;
+}
+
+function createSelectionBounds(startLatLng, endLatLng) {
+    if (!startLatLng || !endLatLng) { return null; }
+    const north = Math.max(startLatLng.lat, endLatLng.lat);
+    const south = Math.min(startLatLng.lat, endLatLng.lat);
+    const east = Math.max(startLatLng.lng, endLatLng.lng);
+    const west = Math.min(startLatLng.lng, endLatLng.lng);
+    if (!Number.isFinite(north) || !Number.isFinite(south) || !Number.isFinite(east) || !Number.isFinite(west)) {
+        return null;
+    }
+    return { north, south, east, west };
+}
+
+function boundsContainsLatLng(bounds, lat, lng) {
+    if (!bounds) { return false; }
+    return lat <= bounds.north && lat >= bounds.south && lng <= bounds.east && lng >= bounds.west;
+}
+
+function getCanvasRelativePointFromEvent(originalEvent) {
+    if (!originalEvent || !map || typeof map.getCanvas !== 'function') { return null; }
+    const canvas = map.getCanvas();
+    if (!canvas || typeof canvas.getBoundingClientRect !== 'function') { return null; }
+    const rect = canvas.getBoundingClientRect();
+    const x = originalEvent.clientX - rect.left;
+    const y = originalEvent.clientY - rect.top;
+    return { x, y };
+}
+
+function getEventPoint(event) {
+    if (event && event.point) {
+        return toPoint(event.point);
+    }
+    const originalEvent = event && event.originalEvent ? event.originalEvent : null;
+    if (originalEvent) {
+        return getCanvasRelativePointFromEvent(originalEvent);
+    }
+    return null;
+}
+
+function getEventLngLat(event) {
+    if (event && event.lngLat) {
+        return toLatLng(event.lngLat);
+    }
+    const originalEvent = event && event.originalEvent ? event.originalEvent : null;
+    if (originalEvent && map && typeof map.unproject === 'function') {
+        const point = getCanvasRelativePointFromEvent(originalEvent);
+        if (point) {
+            try {
+                const lngLat = map.unproject([point.x, point.y]);
+                return toLatLng(lngLat);
+            } catch (error) {
+                return null;
+            }
+        }
+    }
+    return null;
+}
+
+function ensureSelectionOverlay() {
+    if (manageModeState.selectionOverlayElement && manageModeState.selectionOverlayElement.parentNode) {
+        return manageModeState.selectionOverlayElement;
+    }
+    if (!map || typeof map.getContainer !== 'function') { return null; }
+    const container = map.getContainer();
+    if (!container) { return null; }
+    const overlay = document.createElement('div');
+    overlay.className = 'manage-selection-box';
+    container.appendChild(overlay);
+    manageModeState.selectionOverlayElement = overlay;
+    return overlay;
+}
+
+function updateSelectionOverlay(startPoint, currentPoint) {
+    if (!startPoint || !currentPoint) { return; }
+    const overlay = ensureSelectionOverlay();
+    if (!overlay) { return; }
+    const minX = Math.min(startPoint.x, currentPoint.x);
+    const minY = Math.min(startPoint.y, currentPoint.y);
+    const width = Math.abs(currentPoint.x - startPoint.x);
+    const height = Math.abs(currentPoint.y - startPoint.y);
+    overlay.style.display = 'block';
+    overlay.style.left = `${minX}px`;
+    overlay.style.top = `${minY}px`;
+    overlay.style.width = `${width}px`;
+    overlay.style.height = `${height}px`;
+}
+
+function removeSelectionOverlay() {
+    if (manageModeState.selectionOverlayElement) {
+        manageModeState.selectionOverlayElement.remove();
+        manageModeState.selectionOverlayElement = null;
+    }
+}
 
 const tripDateFormatter = (() => {
     try {
@@ -2357,19 +2470,23 @@ function enterManageMode() {
     manageModeState.active = true;
     manageModeState.dragCurrentLatLng = null;
     manageModeState.dragCurrentPoint = null;
-    manageModeState.isMiddlePanning = false;
-    manageModeState.middlePanLastPoint = null;
-    if (map.dragging && typeof map.dragging.enabled === 'function') {
-        manageModeState.interactionState.dragging = map.dragging.enabled();
-        map.dragging.disable();
+    if (map.dragPan && typeof map.dragPan.isEnabled === 'function') {
+        manageModeState.interactionState.dragPan = map.dragPan.isEnabled();
+        if (manageModeState.interactionState.dragPan && typeof map.dragPan.disable === 'function') {
+            map.dragPan.disable();
+        }
     }
-    if (map.boxZoom && typeof map.boxZoom.enabled === 'function') {
-        manageModeState.interactionState.boxZoom = map.boxZoom.enabled();
-        map.boxZoom.disable();
+    if (map.boxZoom && typeof map.boxZoom.isEnabled === 'function') {
+        manageModeState.interactionState.boxZoom = map.boxZoom.isEnabled();
+        if (manageModeState.interactionState.boxZoom && typeof map.boxZoom.disable === 'function') {
+            map.boxZoom.disable();
+        }
     }
-    if (map.doubleClickZoom && typeof map.doubleClickZoom.enabled === 'function') {
-        manageModeState.interactionState.doubleClickZoom = map.doubleClickZoom.enabled();
-        map.doubleClickZoom.disable();
+    if (map.doubleClickZoom && typeof map.doubleClickZoom.isEnabled === 'function') {
+        manageModeState.interactionState.doubleClickZoom = map.doubleClickZoom.isEnabled();
+        if (manageModeState.interactionState.doubleClickZoom && typeof map.doubleClickZoom.disable === 'function') {
+            map.doubleClickZoom.disable();
+        }
     }
 
     const container = map.getContainer();
@@ -2391,17 +2508,15 @@ function exitManageMode() {
 
     manageModeState.active = false;
     manageModeState.isDragging = false;
-    manageModeState.isMiddlePanning = false;
     manageModeState.dragCurrentLatLng = null;
     manageModeState.dragCurrentPoint = null;
-    manageModeState.middlePanLastPoint = null;
 
     if (map) {
-        if (map.dragging && typeof map.dragging.enable === 'function') {
-            if (manageModeState.interactionState.dragging) {
-                map.dragging.enable();
+        if (map.dragPan && typeof map.dragPan.enable === 'function') {
+            if (manageModeState.interactionState.dragPan) {
+                map.dragPan.enable();
             } else {
-                map.dragging.disable();
+                map.dragPan.disable();
             }
         }
         if (map.boxZoom && typeof map.boxZoom.enable === 'function') {
@@ -2419,10 +2534,7 @@ function exitManageMode() {
             }
         }
 
-        if (manageModeState.selectionRectangle) {
-            map.removeLayer(manageModeState.selectionRectangle);
-            manageModeState.selectionRectangle = null;
-        }
+        removeSelectionOverlay();
 
         const container = map.getContainer();
         if (container) {
@@ -2560,7 +2672,7 @@ function refreshSelectionAfterDataLoad() {
 }
 
 function applySelectionBounds(bounds, mode = 'add') {
-    if (!bounds || typeof bounds.contains !== 'function') { return; }
+    if (!bounds) { return; }
 
     const ids = [];
     mapMarkerData.forEach((data, id) => {
@@ -2568,8 +2680,7 @@ function applySelectionBounds(bounds, mode = 'add') {
         const latitude = Number(data.lat ?? data.latitude);
         const longitude = Number(data.lng ?? data.longitude);
         if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) { return; }
-        const latLng = L.latLng(latitude, longitude);
-        if (bounds.contains(latLng)) {
+        if (boundsContainsLatLng(bounds, latitude, longitude)) {
             ids.push(id);
         }
     });
@@ -2577,9 +2688,9 @@ function applySelectionBounds(bounds, mode = 'add') {
     if (!ids.length) { return; }
 
     if (mode === 'remove') {
-        ids.forEach((id) => deselectMarkerById(id));
+        ids.forEach((markerId) => deselectMarkerById(markerId));
     } else {
-        ids.forEach((id) => selectMarkerById(id));
+        ids.forEach((markerId) => selectMarkerById(markerId));
     }
 
     updateSelectionSummary();
@@ -2595,10 +2706,7 @@ function finalizeManageModeDrag(endLatLng, endPoint) {
     manageModeState.dragCurrentLatLng = null;
     manageModeState.dragCurrentPoint = null;
 
-    if (map && manageModeState.selectionRectangle) {
-        map.removeLayer(manageModeState.selectionRectangle);
-        manageModeState.selectionRectangle = null;
-    }
+    removeSelectionOverlay();
 
     if (!startLatLng || !endLatLng) { return; }
 
@@ -2610,173 +2718,74 @@ function finalizeManageModeDrag(endLatLng, endPoint) {
         }
     }
 
-    const bounds = L.latLngBounds(startLatLng, endLatLng);
-    if (!bounds.isValid()) { return; }
+    const bounds = createSelectionBounds(startLatLng, endLatLng);
+    if (!bounds) { return; }
 
     applySelectionBounds(bounds, manageModeState.dragMode);
 }
 
-function startManageModeMiddlePan(event) {
-    if (!map || manageModeState.isMiddlePanning) { return; }
-
-    manageModeState.isMiddlePanning = true;
-    manageModeState.middlePanLastPoint = event && event.containerPoint
-        ? { x: event.containerPoint.x, y: event.containerPoint.y }
-        : null;
-
-    if (event && event.originalEvent) {
-        if (typeof event.originalEvent.preventDefault === 'function') {
-            event.originalEvent.preventDefault();
-        }
-        if (typeof event.originalEvent.stopPropagation === 'function') {
-            event.originalEvent.stopPropagation();
-        }
-    }
-}
-
-function handleManageModeMiddlePanMove(event) {
-    if (!map || !manageModeState.isMiddlePanning || !event) { return; }
-
-    const currentPoint = event.containerPoint
-        ? { x: event.containerPoint.x, y: event.containerPoint.y }
-        : null;
-    if (!currentPoint) {
-        manageModeState.middlePanLastPoint = null;
-        return;
-    }
-
-    const previousPoint = manageModeState.middlePanLastPoint;
-    manageModeState.middlePanLastPoint = currentPoint;
-
-    if (!previousPoint) { return; }
-
-    const dx = previousPoint.x - currentPoint.x;
-    const dy = previousPoint.y - currentPoint.y;
-    if (dx === 0 && dy === 0) { return; }
-
-    map.panBy([dx, dy], { animate: false });
-
-    if (event.originalEvent && typeof event.originalEvent.preventDefault === 'function') {
-        event.originalEvent.preventDefault();
-    }
-}
-
-function endManageModeMiddlePan() {
-    if (!manageModeState.isMiddlePanning) { return; }
-    manageModeState.isMiddlePanning = false;
-    manageModeState.middlePanLastPoint = null;
-}
-
 function handleManageModeMouseDown(event) {
-    if (!isManageModeActive() || !event || !event.originalEvent) { return; }
+    if (!isManageModeActive() || !map || !event) { return; }
+    const originalEvent = event.originalEvent || null;
+    if (originalEvent && originalEvent.button !== 0) { return; }
 
-    if (event.originalEvent.button === 1) {
-        startManageModeMiddlePan(event);
-        return;
-    }
-
-    if (event.originalEvent.button !== 0) { return; }
+    const startLatLng = getEventLngLat(event);
+    const startPoint = getEventPoint(event);
+    if (!startLatLng || !startPoint) { return; }
 
     manageModeState.isDragging = true;
-    manageModeState.dragStartLatLng = event.latlng || null;
-    manageModeState.dragStartPoint = event.containerPoint
-        ? { x: event.containerPoint.x, y: event.containerPoint.y }
-        : null;
-    manageModeState.dragMode = event.originalEvent.altKey ? 'remove' : 'add';
-    manageModeState.dragCurrentLatLng = manageModeState.dragStartLatLng;
-    manageModeState.dragCurrentPoint = manageModeState.dragStartPoint
-        ? { ...manageModeState.dragStartPoint }
-        : null;
+    manageModeState.dragStartLatLng = startLatLng;
+    manageModeState.dragCurrentLatLng = startLatLng;
+    manageModeState.dragStartPoint = startPoint;
+    manageModeState.dragCurrentPoint = { ...startPoint };
+    manageModeState.dragMode = originalEvent && originalEvent.altKey ? 'remove' : 'add';
 
-    if (manageModeState.selectionRectangle && map) {
-        map.removeLayer(manageModeState.selectionRectangle);
-        manageModeState.selectionRectangle = null;
-    }
+    removeSelectionOverlay();
+    updateSelectionOverlay(startPoint, startPoint);
 
-    if (event.originalEvent.preventDefault) {
-        event.originalEvent.preventDefault();
+    if (originalEvent && typeof originalEvent.preventDefault === 'function') {
+        originalEvent.preventDefault();
     }
 }
 
 function handleManageModeMouseMove(event) {
     if (!isManageModeActive() || !map) { return; }
+    if (!manageModeState.isDragging) { return; }
 
-    if (manageModeState.isMiddlePanning) {
-        handleManageModeMiddlePanMove(event);
-        return;
+    const currentLatLng = getEventLngLat(event);
+    const currentPoint = getEventPoint(event);
+
+    if (!currentLatLng && !currentPoint) { return; }
+    if (currentLatLng) {
+        manageModeState.dragCurrentLatLng = currentLatLng;
+    }
+    if (currentPoint) {
+        manageModeState.dragCurrentPoint = currentPoint;
+        if (manageModeState.dragStartPoint) {
+            updateSelectionOverlay(manageModeState.dragStartPoint, currentPoint);
+        }
     }
 
-    if (!manageModeState.isDragging || !manageModeState.dragStartLatLng || !event || !event.latlng) {
-        return;
-    }
-
-    manageModeState.dragCurrentLatLng = event.latlng;
-    manageModeState.dragCurrentPoint = event.containerPoint
-        ? { x: event.containerPoint.x, y: event.containerPoint.y }
-        : manageModeState.dragCurrentPoint;
-
-    const bounds = L.latLngBounds(manageModeState.dragStartLatLng, event.latlng);
-    if (!manageModeState.selectionRectangle) {
-        manageModeState.selectionRectangle = L.rectangle(bounds, {
-            color: '#2563eb',
-            weight: 1.2,
-            dashArray: '6',
-            fillOpacity: 0.08,
-            fillColor: '#60a5fa',
-            interactive: false,
-        }).addTo(map);
-    } else {
-        manageModeState.selectionRectangle.setBounds(bounds);
+    const originalEvent = event && event.originalEvent ? event.originalEvent : null;
+    if (originalEvent && typeof originalEvent.preventDefault === 'function') {
+        originalEvent.preventDefault();
     }
 }
 
 function handleManageModeMouseUp(event) {
-    if (manageModeState.isMiddlePanning) {
-        endManageModeMiddlePan();
-        if (event && event.originalEvent && typeof event.originalEvent.preventDefault === 'function') {
-            event.originalEvent.preventDefault();
-        }
-        return;
-    }
-
     if (!manageModeState.isDragging) { return; }
-
-    let endLatLng = event && event.latlng ? event.latlng : null;
-    if (!endLatLng && map && event && event.originalEvent) {
-        try {
-            endLatLng = map.mouseEventToLatLng(event.originalEvent);
-        } catch (error) {
-            endLatLng = null;
-        }
+    finalizeManageModeDrag(getEventLngLat(event), getEventPoint(event));
+    const originalEvent = event && event.originalEvent ? event.originalEvent : null;
+    if (originalEvent && typeof originalEvent.preventDefault === 'function') {
+        originalEvent.preventDefault();
     }
-    if (!endLatLng) {
-        endLatLng = manageModeState.dragCurrentLatLng || null;
-    }
-
-    let endPoint = event && event.containerPoint
-        ? { x: event.containerPoint.x, y: event.containerPoint.y }
-        : null;
-    if (!endPoint && manageModeState.dragCurrentPoint) {
-        endPoint = { ...manageModeState.dragCurrentPoint };
-    }
-
-    finalizeManageModeDrag(endLatLng, endPoint);
 }
 
 function handleManageModeMouseLeave() {
-    if (manageModeState.isMiddlePanning) {
-        endManageModeMiddlePan();
-    }
-
     if (!manageModeState.isDragging) { return; }
-    const fallbackLatLng = manageModeState.dragCurrentLatLng || manageModeState.dragStartLatLng;
-    const fallbackPoint = manageModeState.dragCurrentPoint
-        ? { ...manageModeState.dragCurrentPoint }
-        : (manageModeState.dragStartPoint ? { ...manageModeState.dragStartPoint } : null);
-
-    finalizeManageModeDrag(fallbackLatLng, fallbackPoint);
+    finalizeManageModeDrag(manageModeState.dragCurrentLatLng || manageModeState.dragStartLatLng,
+        manageModeState.dragCurrentPoint || manageModeState.dragStartPoint);
 }
-
 function handleSelectionAddToTrip() {
     if (!isManageModeActive()) { return; }
     const ids = getSelectedMarkerIds();
@@ -3154,7 +3163,9 @@ function normaliseTripPhotoItems(photoItems, fallbackUrls) {
     };
 
     items.forEach(addItem);
-    fallbacks.forEach(addItem);
+    if (result.length === 0 && fallbacks.length > 0) {
+        fallbacks.forEach(addItem);
+    }
 
     return result;
 }
@@ -4500,7 +4511,7 @@ function openTripPhotoModal(photoIndex) {
             link.target = '_blank';
             link.rel = 'noreferrer noopener';
             link.className = 'trip-photo-modal-link';
-            link.textContent = 'Open original';
+            link.textContent = 'View in Google Photos';
             tripPhotoModalCaptionElement.appendChild(document.createTextNode(' '));
             tripPhotoModalCaptionElement.appendChild(link);
         }
@@ -5272,6 +5283,19 @@ function initTripProfilePanel() {
                     tripPhotoModalController.close();
                 }
             });
+        }
+        const modalContentElement = document.querySelector('#tripPhotoModal .modal-content');
+        if (modalContentElement && !modalContentElement.dataset.tripPhotoDismiss) {
+            modalContentElement.addEventListener('click', (event) => {
+                const target = event.target;
+                if (!target) { return; }
+                const isButton = target.closest('button') !== null;
+                const isImage = target === tripPhotoModalImageElement;
+                if (!isButton && !isImage && tripPhotoModalController) {
+                    tripPhotoModalController.close();
+                }
+            });
+            modalContentElement.dataset.tripPhotoDismiss = 'true';
         }
         tripPhotoPrevButton = document.querySelector('[data-trip-photo-prev]');
         if (tripPhotoPrevButton && !tripPhotoPrevButton.dataset.initialised) {
