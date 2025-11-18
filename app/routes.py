@@ -1,24 +1,29 @@
 """Flask routes for the WanderLog application."""
 
+import hashlib
 import json
 import logging
 import os
 import re
+import shutil
+import tempfile
+import time
 from typing import Any, Optional
 
 import pandas as pd
 import requests
 from flask import (
     Blueprint,
+    Response,
     abort,
     current_app,
     jsonify,
     redirect,
     render_template,
     request,
+    send_file,
     session,
     url_for,
-    Response,
 )
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
@@ -41,6 +46,7 @@ MAX_TRIP_NAME_LENGTH = 120
 MAX_TRIP_DESCRIPTION_LENGTH = 2000
 MAX_LOCATION_DESCRIPTION_LENGTH = 2000
 MAX_TRIP_PHOTOS_URL_LENGTH = 1000
+DEFAULT_TRIP_PHOTO_CACHE_TTL_SECONDS = 60 * 60 * 24  # 24 hours
 
 # Scopes control which Google APIs the user grants access to.  ``openid`` and
 # the ``userinfo`` scopes allow WanderLog to read the signed-in profile details
@@ -463,6 +469,98 @@ def _format_trip_photo_display_url(base_url: str) -> str:
         return cleaned
 
     return f"{cleaned}=w2048-h2048"
+
+
+def _trip_photo_cache_ttl_seconds() -> int:
+    """Return the configured cache time-to-live for trip photos."""
+
+    raw = current_app.config.get('TRIP_PHOTO_CACHE_TTL_SECONDS', DEFAULT_TRIP_PHOTO_CACHE_TTL_SECONDS)
+    try:
+        ttl = int(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_TRIP_PHOTO_CACHE_TTL_SECONDS
+    return max(0, ttl)
+
+
+def _safe_trip_cache_id(trip_id: str) -> str:
+    cleaned = _clean_string(trip_id) or "trip"
+    return re.sub(r"[^a-zA-Z0-9._-]", "_", cleaned)
+
+
+def _compute_trip_photo_cache_key(photo_entry: dict, index: int) -> Optional[str]:
+    candidates = [
+        _clean_string(photo_entry.get("id")),
+        _clean_string(photo_entry.get("download_url") or photo_entry.get("downloadUrl")),
+        _clean_string(photo_entry.get("base_url") or photo_entry.get("baseUrl")),
+        _clean_string(photo_entry.get("url")),
+        f"index:{index}",
+    ]
+    for candidate in candidates:
+        if candidate:
+            return hashlib.sha1(candidate.encode("utf-8")).hexdigest()
+    return None
+
+
+def _get_trip_photo_cache_directory(trip_id: str, *, create: bool = False) -> Optional[str]:
+    base = current_app.instance_path
+    if not base:
+        return None
+    safe_trip = _safe_trip_cache_id(trip_id)
+    directory = os.path.join(base, "trip_photos", safe_trip)
+    if create:
+        os.makedirs(directory, exist_ok=True)
+    return directory
+
+
+def _get_trip_photo_cache_file(
+    trip_id: str,
+    photo_entry: dict,
+    index: int,
+    *,
+    create: bool = False,
+) -> Optional[str]:
+    cache_key = _compute_trip_photo_cache_key(photo_entry, index)
+    if not cache_key:
+        return None
+    directory = _get_trip_photo_cache_directory(trip_id, create=create)
+    if not directory:
+        return None
+    return os.path.join(directory, f"{cache_key}.bin")
+
+
+def _clear_trip_photo_cache(trip_id: str) -> None:
+    directory = _get_trip_photo_cache_directory(trip_id, create=False)
+    if directory and os.path.isdir(directory):
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def _serve_cached_trip_photo(trip_id: str, photo_entry: dict, index: int):
+    ttl = _trip_photo_cache_ttl_seconds()
+    if ttl <= 0:
+        return None
+    cache_path = _get_trip_photo_cache_file(trip_id, photo_entry, index, create=False)
+    if not cache_path:
+        return None
+    if not os.path.exists(cache_path):
+        return None
+    try:
+        modified = os.path.getmtime(cache_path)
+    except OSError:
+        return None
+    if time.time() - modified > ttl:
+        try:
+            os.unlink(cache_path)
+        except OSError:
+            pass
+        return None
+    mime_type = _clean_string(photo_entry.get("mime_type") or photo_entry.get("mimeType")) or "application/octet-stream"
+    filename = _clean_string(photo_entry.get("filename") or photo_entry.get("mediaItemFilename"))
+    response = send_file(cache_path, mimetype=mime_type)
+    response.headers.setdefault("Cache-Control", "public, max-age=86400")
+    response.headers["X-Trip-Photo-Cache"] = "hit"
+    if filename:
+        response.headers["Content-Disposition"] = f'inline; filename="{filename}"'
+    return response
 
 
 def _serialise_trip_photo_items(trip) -> list[dict]:
@@ -1864,6 +1962,8 @@ def api_update_trip_photos(trip_id: str):
     except ValueError as exc:
         return jsonify(status='error', message=str(exc) or 'Failed to import Google Photos selections.'), 400
 
+    _clear_trip_photo_cache(identifier)
+
     photo_items = _serialise_trip_photo_items(trip)
     photos = [item['url'] for item in photo_items]
     imported_count = len(photo_items)
@@ -1905,6 +2005,8 @@ def api_delete_trip_photo(trip_id: str, photo_index: int):
         return jsonify(status='error', message='Trip photo not found.'), 404
     except KeyError:
         return jsonify(status='error', message='Trip not found.'), 404
+
+    _clear_trip_photo_cache(identifier)
 
     photo_items = _serialise_trip_photo_items(trip)
     photos = [item['url'] for item in photo_items]
@@ -1989,6 +2091,8 @@ def api_trip_photos_bulk_delete(trip_id: str):
     except KeyError:
         return jsonify(status='error', message='Trip not found.'), 404
 
+    _clear_trip_photo_cache(identifier)
+
     photo_items = _serialise_trip_photo_items(trip)
     photos = [item['url'] for item in photo_items]
 
@@ -2024,6 +2128,10 @@ def api_trip_photo_image(trip_id: str, photo_index: int):
     photo_entry = photos[photo_index]
     if not isinstance(photo_entry, dict):
         abort(404)
+
+    cached_response = _serve_cached_trip_photo(identifier, photo_entry, photo_index)
+    if cached_response is not None:
+        return cached_response
 
     credentials = _ensure_google_credentials(_GOOGLE_PHOTOS_PICKER_SCOPE)
     if not credentials:
@@ -2066,17 +2174,56 @@ def api_trip_photo_image(trip_id: str, photo_index: int):
                 mime_type = _clean_string(photo_entry.get('mime_type')) or upstream.headers.get('Content-Type') or 'application/octet-stream'
                 filename = _clean_string(photo_entry.get('filename'))
 
+                ttl_seconds = _trip_photo_cache_ttl_seconds()
+                cache_path = _get_trip_photo_cache_file(identifier, photo_entry, photo_index, create=True) if ttl_seconds > 0 else None
+                temp_path = None
+                cache_file = None
+                if cache_path:
+                    try:
+                        directory = os.path.dirname(cache_path)
+                        os.makedirs(directory, exist_ok=True)
+                        fd, temp_path = tempfile.mkstemp(dir=directory, prefix='photo-', suffix='.cache')
+                        cache_file = os.fdopen(fd, 'wb')
+                    except OSError:
+                        cache_file = None
+                        if temp_path:
+                            try:
+                                os.unlink(temp_path)
+                            except OSError:
+                                pass
+                            temp_path = None
+
                 def generate():
                     try:
                         for chunk in upstream.iter_content(chunk_size=8192):
-                            if chunk:
-                                yield chunk
+                            if not chunk:
+                                continue
+                            if cache_file:
+                                cache_file.write(chunk)
+                            yield chunk
                     finally:
                         upstream.close()
+                        if cache_file:
+                            cache_file.close()
+                            if temp_path:
+                                try:
+                                    os.replace(temp_path, cache_path)
+                                except OSError:
+                                    try:
+                                        os.unlink(temp_path)
+                                    except OSError:
+                                        pass
+                        elif temp_path:
+                            try:
+                                os.unlink(temp_path)
+                            except OSError:
+                                pass
 
                 response = Response(generate(), mimetype=mime_type)
                 response.headers['Cache-Control'] = 'private, max-age=3600'
                 response.headers['X-Source-Url'] = cleaned_url
+                if cache_path:
+                    response.headers['X-Trip-Photo-Cache'] = 'refreshed'
                 if filename:
                     response.headers['Content-Disposition'] = f'inline; filename="{filename}"'
                 length = upstream.headers.get('Content-Length')

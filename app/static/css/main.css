@@ -15,6 +15,19 @@ button, input, select { font-family: inherit; }
 #map {  width: 100%;
         height: 100%; }
 
+.manage-selection-box {
+    position: absolute;
+    border: 1px dashed #60a5fa;
+    background: rgba(96, 165, 250, 0.2);
+    pointer-events: none;
+    display: none;
+    z-index: 1200;
+}
+
+.manage-mode-active .manage-selection-box {
+    display: block;
+}
+
 .leaflet-marker-icon.marker-pin-icon {
     filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.25));
 }
@@ -295,7 +308,10 @@ button, input, select { font-family: inherit; }
 
 .trip-panel {           display: flex;
                         flex-direction: column;
-                        gap: 16px; }
+                        gap: 16px;
+                        flex: 1 1 auto;
+                        width: 100%;
+                        min-height: 0; }
 
 .trip-profile-overlay {
     position: absolute;
@@ -353,6 +369,10 @@ button, input, select { font-family: inherit; }
     border-bottom-right-radius: 10px;
     border-bottom-left-radius: 10px;
 
+}
+
+:root.night-mode .trip-profile-hero {
+    background: linear-gradient(135deg, rgba(2,6,23,0.95), rgba(30,64,175,0.8));
 }
 
 .trip-profile-hero::after {
@@ -534,6 +554,24 @@ button, input, select { font-family: inherit; }
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
+}
+
+:root.night-mode .trip-detail-edit,
+:root.night-mode .trip-detail-cancel {
+    background: rgba(248, 250, 252, 0.1);
+    color: #f8fafc;
+    box-shadow: inset 0 0 0 1px rgba(248, 250, 252, 0.35);
+}
+
+:root.night-mode .trip-detail-edit:hover:not(:disabled),
+:root.night-mode .trip-detail-cancel:hover:not(:disabled) {
+    background: rgba(248, 250, 252, 0.2);
+    box-shadow: 0 6px 16px rgba(2, 6, 23, 0.6);
+}
+
+:root.night-mode .trip-detail-edit:focus-visible,
+:root.night-mode .trip-detail-cancel:focus-visible {
+    outline: 2px solid rgba(248, 250, 252, 0.7);
 }
 
 .trip-profile-hero .trip-detail-delete { 
@@ -1311,27 +1349,44 @@ button, input, select { font-family: inherit; }
     align-items: center;
     justify-content: center;
     gap: 10px;
-    background: linear-gradient(135deg, #0f172a, #1e293b);
-    color: #f8fafc;
-    border: 1px solid rgba(255,255,255,0.15);
-    box-shadow: 0 8px 18px rgba(2, 6, 23, 0.5);
+    background: #ffffff;
+    color: #3c4043;
+    border: 1px solid #dadce0;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
     font-weight: 600;
+    transition: background 0.2s ease, box-shadow 0.2s ease;
 }
 
 .overlay-button-google:hover {
-    background: linear-gradient(135deg, #1c2741, #1f2f47);
-    box-shadow: 0 10px 22px rgba(2, 6, 23, 0.55);
+    background: #f1f5f9;
+    box-shadow: 0 6px 14px rgba(0, 0, 0, 0.12);
     transform: none;
 }
 
 .overlay-button-google:focus-visible {
-    outline: 2px solid rgba(248, 250, 252, 0.65);
+    outline: 2px solid rgba(66, 133, 244, 0.6);
     outline-offset: 2px;
 }
 
 .overlay-button-google:active {
     transform: none;
-    box-shadow: 0 6px 16px rgba(2, 6, 23, 0.45);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+}
+
+:root.night-mode .overlay-button-google {
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    color: #f8fafc;
+    border-color: rgba(148, 163, 184, 0.35);
+    box-shadow: 0 10px 22px rgba(2, 6, 23, 0.55);
+}
+
+:root.night-mode .overlay-button-google:hover {
+    background: linear-gradient(135deg, #1f2d44, #24324a);
+    box-shadow: 0 12px 26px rgba(2, 6, 23, 0.65);
+}
+
+:root.night-mode .overlay-button-google:focus-visible {
+    outline: 2px solid rgba(248, 250, 252, 0.65);
 }
 
 .overlay-button-google-icon {
@@ -1787,7 +1842,7 @@ button, input, select { font-family: inherit; }
 @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
 .modal-overlay {    position: absolute;
-                    inset: 0; background: rgba(0,0,0,0.45);
+                    inset: 0; background: rgba(0,0,0,0.8);
                     display: none;
                     align-items: center;
                     justify-content: center;
@@ -2182,17 +2237,42 @@ button, input, select { font-family: inherit; }
     transform: translateY(-1px);
 }
 
+/* Trip photo modal */
 .trip-photo-modal {
     position: relative;
-    max-width: 90vw;
-    max-height: 90vh;
+    width: min(98vw, 1380px);
+    height: min(95vh, 945px);
     display: flex;
     flex-direction: column;
-    align-items: center;
+    background: transparent;
+    color: #f8fafc;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+    backdrop-filter: none;
     justify-content: center;
-    background-color: #111;
-    color: #fff;
-    padding: 2.5rem 3.75rem 2.5rem 3.75rem;
+    align-items: center;
+}
+
+.trip-photo-modal .modal-close {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    background: rgba(8, 8, 8, 0.5);
+    border: none;
+    color: inherit;
+    font-size: 1.2rem;
+    line-height: 1;
+    padding: 0.3rem 0.45rem;
+    cursor: pointer;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    border-radius: 8px;
+}
+
+.trip-photo-modal .modal-close:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+    background: rgba(8, 8, 8, 0.75);
 }
 
 .trip-photo-modal .trip-photo-modal-figure {
@@ -2203,12 +2283,18 @@ button, input, select { font-family: inherit; }
     flex-direction: column;
     align-items: center;
     gap: 0.75rem;
+    padding: 1rem 1.5rem 2rem;
+    background: transparent;
+    border-radius: 0;
+    box-shadow: none;
 }
 
 .trip-photo-modal img {
     max-width: 100%;
-    max-height: 70vh;
+    max-height: 82vh;
     object-fit: contain;
+    border-radius: 0;
+    box-shadow: none;
 }
 
 .trip-photo-modal figcaption {
@@ -2221,6 +2307,7 @@ button, input, select { font-family: inherit; }
     margin-left: 0.75rem;
     color: #8ec9ff;
     text-decoration: underline;
+    font-size: 0.85rem;
 }
 
 .trip-photo-modal-nav {
@@ -2234,14 +2321,14 @@ button, input, select { font-family: inherit; }
     height: 3rem;
     border-radius: 50%;
     border: none;
-    background: rgba(0, 0, 0, 0.45);
-    color: #fff;
+    background: rgba(248, 250, 252, 0.1);
+    color: #f8fafc;
     cursor: pointer;
     transition: background 0.2s ease, opacity 0.2s ease;
 }
 
 .trip-photo-modal-nav:hover:not(:disabled) {
-    background: rgba(0, 0, 0, 0.65);
+    background: rgba(248, 250, 252, 0.2);
 }
 
 .trip-photo-modal-nav:disabled,
@@ -2251,38 +2338,11 @@ button, input, select { font-family: inherit; }
 }
 
 .trip-photo-modal-nav.trip-photo-modal-nav-prev {
-    left: 1.25rem;
+    left: 1.5rem;
 }
 
 .trip-photo-modal-nav.trip-photo-modal-nav-next {
-    right: 1.25rem;
-}
-
-.trip-photo-modal-actions {
-    margin-top: 1.25rem;
-    width: 100%;
-    display: flex;
-    justify-content: center;
-}
-
-.trip-photo-modal-delete {
-    border: none;
-    background: #d93025;
-    color: #fff;
-    padding: 0.65rem 1.5rem;
-    border-radius: 999px;
-    font-size: 0.95rem;
-    cursor: pointer;
-    transition: background 0.2s ease;
-}
-
-.trip-photo-modal-delete:hover:not(:disabled) {
-    background: #b3271e;
-}
-
-.trip-photo-modal-delete:disabled {
-    opacity: 0.6;
-    cursor: default;
+    right: 1.5rem;
 }
 
 .trip-profile-photo-button {
@@ -2392,6 +2452,36 @@ body.night-mode,
     color: var(--color-text);
 }
 
+:root.night-mode .trip-panel {
+    background: rgba(15, 23, 42, 0.9);
+    border-radius: 20px;
+    padding: 16px;
+    border: 1px solid rgba(99, 102, 241, 0.35);
+    box-shadow: 0 12px 28px rgba(2, 6, 23, 0.45);
+}
+
+:root.night-mode .trip-profile-panel {
+    background: rgba(8, 12, 24, 0.94);
+    box-shadow: 0 20px 48px rgba(2, 6, 23, 0.75);
+}
+
+:root.night-mode .trip-profile-content {
+    background: transparent;
+    color: var(--color-text);
+}
+
+:root.night-mode #tripDetailView {
+    background: rgba(15, 23, 42, 0.85);
+    border-radius: 0 0 26px 26px;
+}
+
+:root.night-mode #menuPanelTrips {
+    background: rgba(10, 15, 28, 0.92);
+    border-radius: 24px;
+    padding: 14px;
+    box-shadow: 0 16px 34px rgba(2, 6, 23, 0.6);
+}
+
 :root.night-mode .overlay-section-title,
 :root.night-mode .toggle-label,
 :root.night-mode .trip-search-label,
@@ -2429,5 +2519,60 @@ body.night-mode,
 :root.night-mode .date-filter-group input {
     background: rgba(15,23,42,0.65);
     border-color: rgba(148,163,184,0.35);
+    color: var(--color-text);
+}
+:root.night-mode .trip-detail,
+:root.night-mode .trip-detail-controls,
+:root.night-mode .trip-profile-actions,
+:root.night-mode .trip-profile-meta-entry {
+    background: rgba(15, 23, 42, 0.85);
+    color: var(--color-text);
+    border-radius: 16px;
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    box-shadow: 0 10px 24px rgba(2, 6, 23, 0.55);
+}
+
+:root.night-mode .trip-location-list {
+    color: var(--color-text);
+}
+
+:root.night-mode .trip-location-item {
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    box-shadow: 0 8px 20px rgba(2, 6, 23, 0.55);
+}
+
+:root.night-mode .trip-location-item-active {
+    border-color: rgba(248, 250, 252, 0.6);
+    background: rgba(248, 250, 252, 0.08);
+    box-shadow: 0 12px 24px rgba(2, 6, 23, 0.65);
+}
+
+:root.night-mode .trip-profile-controls,
+:root.night-mode .trip-controls {
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    border-radius: 16px;
+    box-shadow: 0 8px 20px rgba(2, 6, 23, 0.5);
+    padding: 14px;
+}
+
+:root.night-mode .trip-profile-title,
+:root.night-mode .trip-profile-subtitle {
+    color: var(--color-text);
+}
+
+:root.night-mode .trip-detail-delete {
+    background: rgba(239, 68, 68, 0.2);
+    color: #fecaca;
+}
+:root.night-mode .trip-location-name,
+:root.night-mode .trip-location-meta,
+:root.night-mode .trip-location-meta-label,
+:root.night-mode .trip-location-description,
+:root.night-mode .trip-location-tag,
+:root.night-mode .trip-location-missing-note,
+:root.night-mode .trip-controls,
+:root.night-mode .trip-controls * {
     color: var(--color-text);
 }
