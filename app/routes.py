@@ -8,6 +8,7 @@ import re
 import shutil
 import tempfile
 import time
+from datetime import datetime
 from typing import Any, Optional
 
 import pandas as pd
@@ -539,19 +540,7 @@ def _serve_cached_trip_photo(trip_id: str, photo_entry: dict, index: int):
     if ttl <= 0:
         return None
     cache_path = _get_trip_photo_cache_file(trip_id, photo_entry, index, create=False)
-    if not cache_path:
-        return None
-    if not os.path.exists(cache_path):
-        return None
-    try:
-        modified = os.path.getmtime(cache_path)
-    except OSError:
-        return None
-    if time.time() - modified > ttl:
-        try:
-            os.unlink(cache_path)
-        except OSError:
-            pass
+    if not cache_path or not os.path.exists(cache_path):
         return None
     mime_type = _clean_string(photo_entry.get("mime_type") or photo_entry.get("mimeType")) or "application/octet-stream"
     filename = _clean_string(photo_entry.get("filename") or photo_entry.get("mediaItemFilename"))
@@ -651,6 +640,13 @@ def _serialise_trip_photo_items(trip) -> list[dict]:
             entry["width"] = width_value
         if height_value is not None:
             entry["height"] = height_value
+
+        creation_time = _clean_string(
+            raw.get("creation_time")
+            or raw.get("creationTime")
+        )
+        if creation_time:
+            entry["creation_time"] = creation_time
 
         if trip_identifier:
             entry["proxy_url"] = url_for(
@@ -1704,6 +1700,71 @@ def api_source_types():
 
     types = sorted(df.get('Source Type').dropna().unique().tolist())
     return jsonify(types)
+
+
+@main.route('/api/master_timeline', methods=['GET'])
+def api_master_timeline():
+    """Return the full master timeline dataset for the Advanced tab."""
+
+    data_cache.ensure_archived_column()
+    df = data_cache.timeline_df
+    generated_at = datetime.utcnow().isoformat() + 'Z'
+
+    if df is None or df.empty:
+        return jsonify(
+            columns=[],
+            rows=[],
+            total=0,
+            generated_at=generated_at,
+        )
+
+    preferred_columns = [
+        'Start Date',
+        'End Date',
+        'date',
+        'Source Type',
+        'Place Name',
+        'Latitude',
+        'Longitude',
+        'Place ID',
+        'Alias',
+        'Description',
+        'Archived',
+    ]
+
+    ordered_columns = [column for column in preferred_columns if column in df.columns]
+    remaining_columns = [column for column in df.columns if column not in ordered_columns]
+    columns = ordered_columns + remaining_columns
+
+    def _serialise_cell(value):
+        if pd.isna(value):
+            return ''
+        if isinstance(value, pd.Timestamp):
+            return value.isoformat()
+        if hasattr(value, 'isoformat'):
+            try:
+                return value.isoformat()
+            except Exception:
+                return str(value)
+        if isinstance(value, (int, float, bool)):
+            return value
+        if isinstance(value, str):
+            return value
+        return str(value)
+
+    rows = []
+    for _, row in df[columns].iterrows():
+        serialised_row = {}
+        for column in columns:
+            serialised_row[column] = _serialise_cell(row.get(column))
+        rows.append(serialised_row)
+
+    return jsonify(
+        columns=columns,
+        rows=rows,
+        total=len(rows),
+        generated_at=generated_at,
+    )
 
 
 @main.route('/api/trips', methods=['GET'])
