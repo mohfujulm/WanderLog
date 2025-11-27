@@ -98,6 +98,7 @@
                 <button class="overlay-button" type="button" id="refreshMapButton">Refresh Map</button>
                 <button class="overlay-button" type="button" id="viewArchivedPointsButton">View Archived Points</button>
                 <button class="overlay-button" type="button" id="manageModeToggle" data-manage-mode-toggle data-manage-mode-active-class="overlay-button-active" data-manage-mode-label-default="Enter Manage Mode" data-manage-mode-label-active="Exit Manage Mode">Enter Manage Mode</button>
+                <button class="overlay-subaction-button" type="button" id="masterDataOpenButton">Advanced: View Master Database</button>
                 <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
                 <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
                 <label class="toggle-control" for="clusterToggle">
@@ -107,6 +108,10 @@
                 <label class="toggle-control" for="mapThemeToggle">
                     <span class="toggle-label">Night mode</span>
                     <input type="checkbox" id="mapThemeToggle" name="mapThemeToggle">
+                </label>
+                <label class="toggle-control" for="mapReliefToggle">
+                    <span class="toggle-label">Relief mode</span>
+                    <input type="checkbox" id="mapReliefToggle" name="mapReliefToggle">
                 </label>
                 <h2 class="overlay-section-title" id="dateFiltersTitle">Date Range</h2>
                 <div class="date-filter-group" id="dateFilters" role="group" aria-labelledby="dateFiltersTitle">
@@ -160,6 +165,41 @@
         </div>
     </div>
     <div id="status"></div>
+    <div id="masterDataOverlay" class="advanced-overlay" hidden aria-hidden="true">
+        <div class="advanced-overlay-backdrop" data-master-overlay-close tabindex="-1"></div>
+        <div class="advanced-overlay-panel" role="dialog" aria-modal="true" aria-labelledby="masterDataOverlayTitle" tabindex="-1">
+            <div class="advanced-overlay-header">
+                <div class="advanced-overlay-titles">
+                    <h3 class="advanced-overlay-title" id="masterDataOverlayTitle">Master Database</h3>
+                    <p class="advanced-overlay-subtitle">Inspect every data point loaded into WanderLog, including manual entries and Google Timeline locations.</p>
+                </div>
+                <button type="button" class="advanced-overlay-close" data-master-overlay-close aria-label="Close master database view">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="advanced-panel advanced-panel-modal">
+                <div class="advanced-panel-controls">
+                    <label class="advanced-search" for="masterDataSearch">
+                        <span class="advanced-search-label">Search</span>
+                        <input type="search" id="masterDataSearch" name="masterDataSearch" placeholder="Search any column" autocomplete="off">
+                    </label>
+                    <div class="advanced-meta" id="masterDataMeta" aria-live="polite">No records loaded yet.</div>
+                    <button type="button" class="overlay-button overlay-button-secondary" id="masterDataRefreshButton">Reload Data</button>
+                </div>
+                <div class="advanced-table-wrapper">
+                    <div class="advanced-table-message" id="masterDataLoading" role="status">Loading master database...</div>
+                    <div class="advanced-table-message advanced-table-message-error" id="masterDataError" role="alert" hidden></div>
+                    <div class="advanced-table-message" id="masterDataEmpty" hidden>No master data found. Import your Google Timeline to populate this table.</div>
+                    <div class="advanced-table-scroll" id="masterDataTableScroll" role="region" aria-labelledby="masterDataOverlayTitle" tabindex="0">
+                        <table class="advanced-table" id="masterDataTable" hidden>
+                            <thead></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
     <div id="selectionToolbar" class="selection-toolbar" hidden aria-live="polite">
         <div class="selection-summary">
             <div class="selection-count"><span id="selectionCount">0</span> selected</div>
@@ -348,16 +388,25 @@
                             </button>
                             <button
                                 type="button"
-                                class="trip-profile-photos-action-button"
-                                data-trip-photo-select-toggle
-                                hidden
-                            >
-                                Select photos
-                            </button>
-                            <button
-                                type="button"
-                                class="trip-profile-photos-action-button destructive"
-                                data-trip-photo-delete-selected
+                            class="trip-profile-photos-action-button"
+                            data-trip-photo-select-toggle
+                            hidden
+                        >
+                            Select photos
+                        </button>
+                        <button
+                            type="button"
+                            class="trip-profile-photos-action-button secondary"
+                            data-trip-photo-select-all
+                            hidden
+                            disabled
+                        >
+                            Select all
+                        </button>
+                        <button
+                            type="button"
+                            class="trip-profile-photos-action-button destructive"
+                            data-trip-photo-delete-selected
                                 hidden
                                 disabled
                             >

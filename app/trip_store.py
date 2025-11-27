@@ -198,6 +198,22 @@ def _normalise_trip_photo_entry(raw: Any) -> Optional[Dict[str, Any]]:
     if not height and google_media:
         height = _clean_string(google_media.get("height"))
 
+    creation_time_sources = [
+        raw.get("creation_time"),
+        raw.get("creationTime"),
+        media_item.get("creationTime") if media_item else None,
+        google_media_item.get("creationTime") if google_media_item else None,
+        google_media.get("creationTime") if google_media else None,
+        media_file.get("creationTime") if media_file else None,
+        _extract_media_metadata("creationTime"),
+    ]
+    creation_time = ""
+    for candidate in creation_time_sources:
+        candidate_clean = _clean_string(candidate)
+        if candidate_clean:
+            creation_time = candidate_clean
+            break
+
     download_url_sources = [
         raw.get("download_url"),
         raw.get("downloadUrl"),
@@ -225,6 +241,8 @@ def _normalise_trip_photo_entry(raw: Any) -> Optional[Dict[str, Any]]:
         entry["width"] = width
     if height:
         entry["height"] = height
+    if creation_time:
+        entry["creation_time"] = creation_time
 
     return entry
 
