@@ -7,3 +7,4 @@ v0.5 - added archiving/deleting of data points, backups for timeline data on cle
 v0.6 - added "Trips" prototype, added edit mode with multi-selection/editing of data points, updates to UI, fixed sorting, added descriptions to Trips
 v0.7 - added Google Photos sign in and API to pull photos into trips (partial functionality).  UI fixes, visual updates
 v0.8 - added new UI updates - new rustic map, 3D relief styling for both maps, additional context menus to add locations more easily, and other miscellaneous UI updates
+v0.9 - 
