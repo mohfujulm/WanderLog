@@ -32,6 +32,42 @@ select {
   height: 100%;
 }
 
+.map-context-menu {
+  position: absolute;
+  min-width: 220px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 12px;
+  box-shadow: 0 16px 32px rgba(15, 23, 42, 0.2);
+  padding: 6px;
+  z-index: 1300;
+  backdrop-filter: blur(2px);
+}
+
+.map-context-menu[hidden] {
+  display: none !important;
+}
+
+.map-context-menu-action {
+  display: block;
+  width: 100%;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #0f172a;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.map-context-menu-action:hover,
+.map-context-menu-action:focus-visible {
+  background: rgba(239, 246, 255, 0.95);
+  outline: none;
+}
+
 .manage-selection-box {
   position: absolute;
   border: 1px dashed #60a5fa;
@@ -2485,6 +2521,69 @@ select {
   gap: 14px;
 }
 
+#manualPointModal {
+  background: rgba(0, 0, 0, 0.52);
+}
+
+#manualPointModal .modal-content {
+  border-radius: 6px;
+  width: min(620px, 100%);
+  padding: 18px 18px 16px;
+  gap: 10px;
+}
+
+#manualPointModal .modal-content h2 {
+  font-size: 18px;
+  margin-bottom: 0;
+}
+
+#manualPointModal .modal-content form {
+  gap: 10px;
+}
+
+#manualPointModal .form-group {
+  gap: 4px;
+}
+
+#manualPointModal .form-group input,
+#manualPointModal .form-group select,
+#manualPointModal .form-group textarea {
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+#manualPointModal .form-group textarea {
+  min-height: 108px;
+  line-height: 1.4;
+}
+
+#manualPointModal .form-helper-text {
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+#manualPointModal .modal-actions {
+  margin-top: 4px;
+  gap: 8px;
+}
+
+#manualPointModal .modal-button {
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+#manualPointModal .manual-point-compact-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+@media (max-width: 860px) {
+  #manualPointModal .manual-point-compact-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
@@ -2727,6 +2826,17 @@ select {
   color: #222;
 }
 
+.mapboxgl-popup.wanderlog-mapbox-popup .mapboxgl-popup-close-button {
+  font-size: 27px;
+  width: 45px;
+  height: 45px;
+  line-height: 45px;
+}
+
+.mapboxgl-popup.wanderlog-mapbox-popup .mapboxgl-popup-content {
+  padding-right: 52px;
+}
+
 .marker-popup-header {
   display: flex;
   justify-content: space-between;
@@ -2745,9 +2855,10 @@ select {
   border: none;
   background: rgba(255, 255, 255, 0.9);
   border-radius: 8px;
-  width: 28px;
-  height: 28px;
-  padding: 4px;
+  width: 42px;
+  height: 42px;
+  padding: 6px;
+  margin-right: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;

@@ -31,6 +31,9 @@ const MAPBOX_CLUSTER_RADIUS = 70;
 const MAP_STYLE_MODE_DAY = 'day';
 const MAP_STYLE_MODE_NIGHT = 'night';
 const MAP_STYLE_STORAGE_KEY = 'wanderlog.map.style';
+const RELIEF_OVERLAY_HILLSHADE_LAYER_ID = 'wanderlog-relief-overlay-hillshade';
+const RELIEF_OVERLAY_CONTOURS_SOURCE_ID = 'wanderlog-relief-overlay-contours';
+const RELIEF_OVERLAY_CONTOURS_LAYER_ID = 'wanderlog-relief-overlay-contours-layer';
 const MUIRWAY_RELIEF_STYLE = {
     version: 8,
     name: 'muirway-relief-demo',
@@ -202,8 +205,8 @@ let markerSourceFeaturesAll = [];
 const markerFeatureIdLookup = new Map();
 const mapboxIconPromises = new Map();
 let markerFeatureIdCounter = 1;
-let pendingClusterToggleState = true;
-let isClusteringEnabled = true;
+let pendingClusterToggleState = false;
+let isClusteringEnabled = false;
 let activePopup = null;
 let loadMarkersAbortController = null;
 let loadMarkersRequestToken = 0;
@@ -215,6 +218,11 @@ let previousMapView = null;
 let manualPointForm;
 let manualPointModalController = null;
 let manualDescriptionCharacterCountElement = null;
+let mapContextMenuElement = null;
+let mapContextMenuAddToTripButton = null;
+let pendingManualPointCoordinates = null;
+let pendingManualPointTripAssignment = null;
+let mapContextMenuHandlersAttached = false;
 let archivedPointsModalController = null;
 let archivedPointsList = null;
 let aliasForm;
@@ -1511,6 +1519,72 @@ function applyTerrainExaggeration() {
     map.setTerrain({ source: MAPBOX_TERRAIN_SOURCE_ID, exaggeration: MAPBOX_TERRAIN_EXAGGERATION });
 }
 
+function getBaseReferenceLayerId() {
+    if (!map || typeof map.getStyle !== 'function') { return null; }
+    const style = map.getStyle();
+    const layers = style && Array.isArray(style.layers) ? style.layers : [];
+    if (!layers.length) { return null; }
+    const backgroundIndex = layers.findIndex((entry) => entry && entry.type === 'background');
+    const targetIndex = backgroundIndex >= 0 && backgroundIndex + 1 < layers.length ? backgroundIndex + 1 : 0;
+    const layer = layers[targetIndex];
+    return layer && layer.id ? layer.id : null;
+}
+
+function applyReliefOverlayToStandardMode() {
+    if (!map || mapStyleMode === MAP_STYLE_MODE_MUIRWAY) { return; }
+    const baseReferenceLayerId = getBaseReferenceLayerId();
+
+    if (map.getSource(MAPBOX_TERRAIN_SOURCE_ID) && !map.getLayer(RELIEF_OVERLAY_HILLSHADE_LAYER_ID)) {
+        try {
+            map.addLayer({
+                id: RELIEF_OVERLAY_HILLSHADE_LAYER_ID,
+                type: 'hillshade',
+                source: MAPBOX_TERRAIN_SOURCE_ID,
+                layout: { visibility: 'visible' },
+                paint: {
+                    'hillshade-exaggeration': 0.65,
+                    'hillshade-highlight-color': 'rgba(255, 255, 255, 0.45)',
+                    'hillshade-shadow-color': 'rgba(0, 0, 0, 0.35)',
+                    'hillshade-accent-color': 'rgba(0, 0, 0, 0.28)',
+                    'hillshade-illumination-direction': 315,
+                    'hillshade-illumination-anchor': 'viewport',
+                },
+            }, baseReferenceLayerId || undefined);
+        } catch (hillshadeError) {
+            console.warn('Unable to add relief hillshade overlay', hillshadeError);
+        }
+    }
+
+    if (!map.getSource(RELIEF_OVERLAY_CONTOURS_SOURCE_ID)) {
+        try {
+            map.addSource(RELIEF_OVERLAY_CONTOURS_SOURCE_ID, {
+                type: 'vector',
+                url: 'mapbox://mapbox.mapbox-terrain-v2',
+            });
+        } catch (contourSourceError) {
+            console.warn('Unable to add contour source', contourSourceError);
+        }
+    }
+
+    if (map.getSource(RELIEF_OVERLAY_CONTOURS_SOURCE_ID) && !map.getLayer(RELIEF_OVERLAY_CONTOURS_LAYER_ID)) {
+        try {
+            map.addLayer({
+                id: RELIEF_OVERLAY_CONTOURS_LAYER_ID,
+                type: 'line',
+                source: RELIEF_OVERLAY_CONTOURS_SOURCE_ID,
+                'source-layer': 'contour',
+                paint: {
+                    'line-color': 'rgba(0, 0, 0, 0.35)',
+                    'line-width': ['interpolate', ['linear'], ['zoom'], 10, 0.25, 12, 0.6, 14, 1.1],
+                    'line-opacity': 0.35,
+                },
+            }, baseReferenceLayerId || undefined);
+        } catch (contourLayerError) {
+            console.warn('Unable to add contour overlay', contourLayerError);
+        }
+    }
+}
+
 function syncMapThemeToggleControl(mode = mapStyleMode) {
     const isNight = mode === MAP_STYLE_MODE_NIGHT;
     const isRelief = mode === MAP_STYLE_MODE_MUIRWAY;
@@ -2284,9 +2358,8 @@ function setMarkerSourceData(features) {
 }
 
 function getActiveTripMarkerIds() {
-    const selectedTripId = tripDetailState && tripDetailState.selectedTripId
-        ? String(tripDetailState.selectedTripId).trim()
-        : '';
+    const selectedTrip = getSelectedTripContext();
+    const selectedTripId = selectedTrip ? selectedTrip.id : '';
     if (!selectedTripId) { return null; }
     const ids = new Set();
 
@@ -2312,6 +2385,34 @@ function getActiveTripMarkerIds() {
     });
 
     return ids;
+}
+
+function getSelectedTripContext() {
+    const selectedTripId = tripDetailState && tripDetailState.selectedTripId
+        ? String(tripDetailState.selectedTripId).trim()
+        : '';
+    if (!selectedTripId) { return null; }
+
+    const detailTrip = tripDetailState && tripDetailState.trip && typeof tripDetailState.trip === 'object'
+        ? tripDetailState.trip
+        : null;
+    const detailTripId = detailTrip && detailTrip.id
+        ? String(detailTrip.id).trim()
+        : '';
+    const tripFromDetail = detailTripId === selectedTripId ? detailTrip : null;
+
+    const tripFromList = Array.isArray(tripListState && tripListState.trips)
+        ? tripListState.trips.find((entry) => entry && String(entry.id || '').trim() === selectedTripId)
+        : null;
+
+    const sourceTrip = tripFromDetail || tripFromList || null;
+    const tripNameRaw = sourceTrip && sourceTrip.name ? sourceTrip.name : '';
+    const tripName = typeof tripNameRaw === 'string' ? tripNameRaw.trim() : String(tripNameRaw || '').trim();
+
+    return {
+        id: selectedTripId,
+        name: tripName || '',
+    };
 }
 
 function applyActiveMarkerFilter() {
@@ -7735,6 +7836,9 @@ async function initMap() {
 
     map.addControl(new mapboxgl.NavigationControl({ showCompass: true, showZoom: true, visualizePitch: true }), 'top-left');
     map.addControl(new mapboxgl.FullscreenControl(), 'top-left');
+    map.on('contextmenu', handleMapContextMenu);
+    map.on('click', hideMapContextMenu);
+    map.on('movestart', hideMapContextMenu);
 
     map.on('style.load', async () => {
         const isStyleReload = mapStyleLoadCount > 0;
@@ -7755,6 +7859,7 @@ async function initMap() {
             if (typeof map.setFog === 'function') {
                 map.setFog(MAPBOX_FOG_CONFIG);
             }
+            applyReliefOverlayToStandardMode();
         } catch (terrainError) {
             console.warn('Unable to configure Mapbox terrain.', terrainError);
         }
@@ -8028,6 +8133,163 @@ function updateManualDescriptionCharacterCount(value) {
     manualDescriptionCharacterCountElement.textContent = `${length} / ${MAX_LOCATION_DESCRIPTION_LENGTH} characters`;
 }
 
+function getLocalIsoDate() {
+    const now = new Date();
+    const year = String(now.getFullYear()).padStart(4, '0');
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
+
+function hideMapContextMenu() {
+    pendingManualPointCoordinates = null;
+    if (!mapContextMenuElement) { return; }
+    mapContextMenuElement.hidden = true;
+}
+
+function ensureMapContextMenu() {
+    if (mapContextMenuElement && mapContextMenuElement.parentNode) {
+        return mapContextMenuElement;
+    }
+    if (!map || typeof map.getContainer !== 'function') { return null; }
+
+    const container = map.getContainer();
+    if (!container) { return null; }
+
+    const menu = document.createElement('div');
+    menu.className = 'map-context-menu';
+    menu.hidden = true;
+    menu.setAttribute('role', 'menu');
+    menu.setAttribute('aria-label', 'Map actions');
+
+    const addMarkerButton = document.createElement('button');
+    addMarkerButton.type = 'button';
+    addMarkerButton.className = 'map-context-menu-action';
+    addMarkerButton.setAttribute('role', 'menuitem');
+    addMarkerButton.textContent = 'Add location marker here';
+    addMarkerButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const coordinates = pendingManualPointCoordinates
+            ? { ...pendingManualPointCoordinates }
+            : null;
+        hideMapContextMenu();
+        addManualPoint({ coordinates, setDefaultDate: true });
+    });
+
+    menu.appendChild(addMarkerButton);
+
+    const addToTripButton = document.createElement('button');
+    addToTripButton.type = 'button';
+    addToTripButton.className = 'map-context-menu-action';
+    addToTripButton.setAttribute('role', 'menuitem');
+    addToTripButton.hidden = true;
+    addToTripButton.textContent = 'Add location to trip';
+    addToTripButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const selectedTrip = getSelectedTripContext();
+        if (!selectedTrip || !selectedTrip.id) {
+            hideMapContextMenu();
+            showStatus('Select a trip first to use this option.', true);
+            return;
+        }
+
+        const coordinates = pendingManualPointCoordinates
+            ? { ...pendingManualPointCoordinates }
+            : null;
+        hideMapContextMenu();
+        addManualPoint({
+            coordinates,
+            setDefaultDate: true,
+            prefillTripId: selectedTrip.id,
+            prefillTripName: selectedTrip.name,
+        });
+    });
+
+    menu.appendChild(addToTripButton);
+    container.appendChild(menu);
+    mapContextMenuElement = menu;
+    mapContextMenuAddToTripButton = addToTripButton;
+
+    if (!mapContextMenuHandlersAttached) {
+        document.addEventListener('pointerdown', (event) => {
+            if (!mapContextMenuElement || mapContextMenuElement.hidden) { return; }
+            const target = event && event.target ? event.target : null;
+            if (target && mapContextMenuElement.contains(target)) { return; }
+            hideMapContextMenu();
+        });
+        document.addEventListener('scroll', hideMapContextMenu, true);
+        mapContextMenuHandlersAttached = true;
+    }
+
+    return mapContextMenuElement;
+}
+
+function showMapContextMenu(point, latLng) {
+    if (!map || !point || !latLng) { return; }
+
+    const menu = ensureMapContextMenu();
+    if (!menu) { return; }
+
+    pendingManualPointCoordinates = {
+        lat: Number(latLng.lat),
+        lng: Number(latLng.lng),
+    };
+
+    const selectedTrip = getSelectedTripContext();
+    if (mapContextMenuAddToTripButton) {
+        const showAddToTrip = Boolean(selectedTrip && selectedTrip.id);
+        mapContextMenuAddToTripButton.hidden = !showAddToTrip;
+        if (showAddToTrip) {
+            const tripLabel = selectedTrip.name ? selectedTrip.name : 'Selected trip';
+            mapContextMenuAddToTripButton.textContent = `Add location to trip (${tripLabel})`;
+        } else {
+            mapContextMenuAddToTripButton.textContent = 'Add location to trip';
+        }
+    }
+
+    menu.hidden = false;
+    menu.style.left = '0px';
+    menu.style.top = '0px';
+
+    const container = map.getContainer();
+    if (!container) {
+        hideMapContextMenu();
+        return;
+    }
+
+    const menuRect = menu.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+    const margin = 10;
+    const maxLeft = Math.max(margin, containerRect.width - menuRect.width - margin);
+    const maxTop = Math.max(margin, containerRect.height - menuRect.height - margin);
+    const left = Math.min(Math.max(point.x, margin), maxLeft);
+    const top = Math.min(Math.max(point.y, margin), maxTop);
+
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.top = `${Math.round(top)}px`;
+}
+
+function handleMapContextMenu(event) {
+    if (!map || !event) { return; }
+    const originalEvent = event.originalEvent || null;
+    if (originalEvent && typeof originalEvent.preventDefault === 'function') {
+        originalEvent.preventDefault();
+    }
+
+    const point = getEventPoint(event);
+    const latLng = getEventLngLat(event);
+    if (!point || !latLng) {
+        hideMapContextMenu();
+        return;
+    }
+
+    showMapContextMenu(point, latLng);
+}
+
 function ensureManualPointModal() {
     if (manualPointModalController) { return manualPointModalController; }
 
@@ -8041,6 +8303,7 @@ function ensureManualPointModal() {
         onClose: () => {
             const form = manualPointForm || document.getElementById('manualPointForm');
             if (form) { form.reset(); }
+            pendingManualPointTripAssignment = null;
             updateManualDescriptionCharacterCount('');
         },
     });
@@ -8795,6 +9058,10 @@ async function handleManualPointSubmit(event) {
         return;
     }
 
+    const pendingTripAssignment = pendingManualPointTripAssignment
+        ? { ...pendingManualPointTripAssignment }
+        : null;
+
     showLoading();
     try {
         const response = await fetch('/api/add_point', {
@@ -8810,26 +9077,107 @@ async function handleManualPointSubmit(event) {
                 description: descriptionValue,
             })
         });
-        const result = await response.json();
-        hideLoading();
-        showStatus(result.message, result.status === 'error');
-        if (result.status === 'success') {
-            if (manualPointModalController) {
-                manualPointModalController.close();
-            }
-            loadMarkers();
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok || result.status === 'error') {
+            const message = (result && result.message)
+                ? result.message
+                : 'Failed to add data point.';
+            throw new Error(message);
         }
+
+        let finalMessage = (result && result.message)
+            ? result.message
+            : 'Data point added successfully.';
+
+        if (pendingTripAssignment && pendingTripAssignment.id) {
+            const placeIdRaw = result && result.place_id ? result.place_id : '';
+            const placeId = typeof placeIdRaw === 'string'
+                ? placeIdRaw.trim()
+                : String(placeIdRaw || '').trim();
+
+            if (placeId) {
+                const assignResponse = await fetch('/api/trips/assign', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        place_id: placeId,
+                        trip_id: pendingTripAssignment.id,
+                    }),
+                });
+                const assignResult = await assignResponse.json().catch(() => ({}));
+                if (!assignResponse.ok || assignResult.status === 'error') {
+                    const assignMessage = (assignResult && assignResult.message)
+                        ? assignResult.message
+                        : 'Location was added, but could not be assigned to the selected trip.';
+                    finalMessage = `${finalMessage} ${assignMessage}`;
+                } else {
+                    const tripName = pendingTripAssignment.name
+                        ? pendingTripAssignment.name
+                        : 'selected trip';
+                    finalMessage = `${finalMessage} Added to trip "${tripName}".`;
+                    if (assignResult && assignResult.trip) {
+                        upsertTripInList(assignResult.trip);
+                    }
+                }
+            } else {
+                finalMessage = `${finalMessage} Trip assignment skipped because the new location ID was unavailable.`;
+            }
+        }
+
+        if (manualPointModalController) {
+            manualPointModalController.close();
+        }
+        await loadMarkers();
+        showStatus(finalMessage);
     } catch(err) {
-        hideLoading();
         showStatus('Error: ' + err.message, true);
+    } finally {
+        hideLoading();
     }
 }
 
-function addManualPoint() {
+function addManualPoint(options = {}) {
     const controller = ensureManualPointModal();
-    if (controller) {
-        controller.open();
+    if (!controller) { return; }
+
+    const prefillTripIdRaw = options && options.prefillTripId
+        ? options.prefillTripId
+        : '';
+    const prefillTripId = typeof prefillTripIdRaw === 'string'
+        ? prefillTripIdRaw.trim()
+        : String(prefillTripIdRaw || '').trim();
+    if (prefillTripId) {
+        const prefillTripNameRaw = options && options.prefillTripName ? options.prefillTripName : '';
+        const prefillTripName = typeof prefillTripNameRaw === 'string'
+            ? prefillTripNameRaw.trim()
+            : String(prefillTripNameRaw || '').trim();
+        pendingManualPointTripAssignment = { id: prefillTripId, name: prefillTripName };
+    } else {
+        pendingManualPointTripAssignment = null;
     }
+
+    manualPointForm = manualPointForm || document.getElementById('manualPointForm');
+    if (manualPointForm) {
+        const coordinates = options && options.coordinates ? options.coordinates : null;
+        if (coordinates) {
+            const lat = Number(coordinates.lat);
+            const lng = Number(coordinates.lng);
+            if (Number.isFinite(lat) && Number.isFinite(lng)) {
+                manualPointForm.elements['latitude'].value = lat.toFixed(6);
+                manualPointForm.elements['longitude'].value = lng.toFixed(6);
+            }
+        }
+
+        if (options && options.setDefaultDate) {
+            const dateField = manualPointForm.elements['start_date'];
+            if (dateField && !dateField.value) {
+                dateField.value = getLocalIsoDate();
+            }
+        }
+    }
+
+    controller.open();
 }
 
 function viewArchivedPoints() {
@@ -9371,6 +9719,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     document.addEventListener('keydown', (event) => {
         if (event.key !== 'Escape') { return; }
+        if (mapContextMenuElement && !mapContextMenuElement.hidden) {
+            event.preventDefault();
+            hideMapContextMenu();
+            return;
+        }
         const manualModalElement = document.getElementById('manualPointModal');
         if (manualModalElement && manualModalElement.classList.contains('open')) { return; }
         const aliasModalElement = document.getElementById('aliasModal');
