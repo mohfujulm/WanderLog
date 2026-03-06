@@ -1529,9 +1529,11 @@ def api_add_point():
         description_value if description_value.strip() else ''
     )
 
+    place_id = str(os.urandom(16).hex())
+
     new_row = pd.DataFrame([
         {
-            'Place ID': str(os.urandom(16).hex()),
+            'Place ID': place_id,
             'Latitude': lat,
             'Longitude': lon,
             'Start Date': start_date,
@@ -1551,7 +1553,11 @@ def api_add_point():
     data_cache.ensure_archived_column()
     data_cache.save_timeline_data()
 
-    return jsonify(status='success', message='Data point added successfully.')
+    return jsonify(
+        status='success',
+        message='Data point added successfully.',
+        place_id=place_id,
+    )
 
 
 @main.route('/api/markers/<place_id>/archive', methods=['POST'])

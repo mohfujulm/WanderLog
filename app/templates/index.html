@@ -103,7 +103,7 @@
                 <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
                 <label class="toggle-control" for="clusterToggle">
                     <span class="toggle-label">Cluster markers</span>
-                    <input type="checkbox" id="clusterToggle" name="clusterToggle" checked>
+                    <input type="checkbox" id="clusterToggle" name="clusterToggle">
                 </label>
                 <label class="toggle-control" for="mapThemeToggle">
                     <span class="toggle-label">Night mode</span>
@@ -249,17 +249,19 @@
                     <p class="form-helper-text">Optional. Share details or memories about this visit.</p>
                     <p id="manualDescriptionCharacterCount" class="form-helper-text form-helper-counter" aria-live="polite">0 / 2000 characters</p>
                 </div>
-                <div class="form-group">
-                    <label for="manualDate">Date</label>
-                    <input type="date" id="manualDate" name="start_date" required>
-                </div>
-                <div class="form-group">
-                    <label for="manualLatitude">Latitude</label>
-                    <input type="number" id="manualLatitude" name="latitude" step="any" required>
-                </div>
-                <div class="form-group">
-                    <label for="manualLongitude">Longitude</label>
-                    <input type="number" id="manualLongitude" name="longitude" step="any" required>
+                <div class="manual-point-compact-row">
+                    <div class="form-group">
+                        <label for="manualDate">Date</label>
+                        <input type="date" id="manualDate" name="start_date" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="manualLatitude">Latitude</label>
+                        <input type="number" id="manualLatitude" name="latitude" step="any" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="manualLongitude">Longitude</label>
+                        <input type="number" id="manualLongitude" name="longitude" step="any" required>
+                    </div>
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="modal-button secondary" id="manualPointCancel">Cancel</button>
