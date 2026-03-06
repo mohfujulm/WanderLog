@@ -13,6 +13,25 @@
 <body>
 <div id="map-container">
     <div id="map"></div>
+    <div class="map-quick-toggles" role="group" aria-label="Map quick settings">
+        <button type="button" class="map-quick-toggle" id="quickClusterToggle" aria-pressed="false" aria-label="Toggle cluster markers" title="Cluster markers">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <circle cx="8" cy="9" r="3.2"></circle>
+                <circle cx="15.5" cy="8.5" r="2.8"></circle>
+                <circle cx="12" cy="15.2" r="3.4"></circle>
+            </svg>
+        </button>
+        <button type="button" class="map-quick-toggle" id="quickNightToggle" aria-pressed="false" aria-label="Toggle night mode" title="Night mode">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M14.7 2.3a8.9 8.9 0 1 0 7 13.9a9.3 9.3 0 0 1-3.9.8A9.2 9.2 0 0 1 8.6 7.8a9 9 0 0 1 .8-3.9a8.7 8.7 0 0 0 5.3-1.6z"></path>
+            </svg>
+        </button>
+        <button type="button" class="map-quick-toggle" id="quickReliefToggle" aria-pressed="false" aria-label="Toggle relief mode" title="Relief mode">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M3.5 18.5l5.1-7.1l3 4.1l2.7-3.9l6.2 6.9z"></path>
+            </svg>
+        </button>
+    </div>
     <input type="file" id="timelineFile" accept=".json" hidden>
     <div class="menu-container" role="complementary" aria-label="Map controls panel">
         <button class="menu-toggle" id="menuToggle" type="button" aria-label="Open menu" aria-expanded="false" aria-controls="menuControls">
@@ -22,6 +41,7 @@
             <span class="menu-toggle-text">Menu</span>
         </button>
         <div class="overlay-controls" id="menuControls" aria-hidden="true" inert>
+            <button type="button" class="menu-panel-close" id="menuPanelClose" aria-label="Close menu">✕</button>
             {% if google_auth_enabled %}
             {#
                 When Google OAuth is configured we render a dedicated account

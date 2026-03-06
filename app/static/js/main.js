@@ -281,6 +281,9 @@ let tripSortDirectionButton = null;
 let tripListView = null;
 let mapThemeToggle = null;
 let mapReliefToggle = null;
+let quickClusterToggleButton = null;
+let quickNightToggleButton = null;
+let quickReliefToggleButton = null;
 let tripDetailContainer = null;
 let tripDetailBackButton = null;
 let tripDetailTitleElement = null;
@@ -1595,6 +1598,28 @@ function syncMapThemeToggleControl(mode = mapStyleMode) {
     if (mapReliefToggle) {
         mapReliefToggle.checked = isRelief;
     }
+    updateQuickMapToggleButtons(mode);
+}
+
+function updateQuickMapToggleButtons(mode = mapStyleMode) {
+    const isNight = mode === MAP_STYLE_MODE_NIGHT;
+    const isRelief = mode === MAP_STYLE_MODE_MUIRWAY;
+
+    if (quickClusterToggleButton) {
+        quickClusterToggleButton.classList.toggle('map-quick-toggle-active', isClusteringEnabled);
+        quickClusterToggleButton.setAttribute('aria-pressed', isClusteringEnabled ? 'true' : 'false');
+    }
+
+    if (quickNightToggleButton) {
+        quickNightToggleButton.classList.toggle('map-quick-toggle-active', isNight);
+        quickNightToggleButton.setAttribute('aria-pressed', isNight ? 'true' : 'false');
+        quickNightToggleButton.disabled = isRelief;
+    }
+
+    if (quickReliefToggleButton) {
+        quickReliefToggleButton.classList.toggle('map-quick-toggle-active', isRelief);
+        quickReliefToggleButton.setAttribute('aria-pressed', isRelief ? 'true' : 'false');
+    }
 }
 
 function setMapStyleMode(mode) {
@@ -2551,6 +2576,11 @@ function applyClusterLayerVisibility() {
 function setClusteringEnabled(enabled) {
     pendingClusterToggleState = enabled;
     isClusteringEnabled = enabled;
+    const clusterToggleInput = document.getElementById('clusterToggle');
+    if (clusterToggleInput) {
+        clusterToggleInput.checked = enabled;
+    }
+    updateQuickMapToggleButtons();
     if (!map) { return; }
     applyClusterLayerVisibility();
 }
@@ -9479,6 +9509,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             toggleMenu();
         });
     }
+    const menuPanelCloseButton = document.getElementById('menuPanelClose');
+    if (menuPanelCloseButton) {
+        menuPanelCloseButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            const menu = document.querySelector('.menu-container');
+            if (!menu || !menu.classList.contains('open')) { return; }
+            toggleMenu();
+            if (menuToggleButton && typeof menuToggleButton.focus === 'function') {
+                menuToggleButton.focus();
+            }
+        });
+    }
     const timelineFileInput = document.getElementById('timelineFile');
     const importTimelineButton = document.getElementById('importTimelineButton');
     if (importTimelineButton && timelineFileInput) {
@@ -9641,7 +9683,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     mapThemeToggle = document.getElementById('mapThemeToggle');
     mapReliefToggle = document.getElementById('mapReliefToggle');
+    quickClusterToggleButton = document.getElementById('quickClusterToggle');
+    quickNightToggleButton = document.getElementById('quickNightToggle');
+    quickReliefToggleButton = document.getElementById('quickReliefToggle');
+
+    if (quickClusterToggleButton) {
+        quickClusterToggleButton.addEventListener('click', () => {
+            setClusteringEnabled(!isClusteringEnabled);
+        });
+    }
+    if (quickNightToggleButton) {
+        quickNightToggleButton.addEventListener('click', () => {
+            const nextMode = mapStyleMode === MAP_STYLE_MODE_NIGHT
+                ? MAP_STYLE_MODE_DAY
+                : MAP_STYLE_MODE_NIGHT;
+            setMapStyleMode(nextMode);
+        });
+    }
+    if (quickReliefToggleButton) {
+        quickReliefToggleButton.addEventListener('click', () => {
+            if (mapStyleMode !== MAP_STYLE_MODE_MUIRWAY) {
+                setMapStyleMode(MAP_STYLE_MODE_MUIRWAY);
+            } else {
+                const nextMode = mapThemeToggle && mapThemeToggle.checked
+                    ? MAP_STYLE_MODE_NIGHT
+                    : MAP_STYLE_MODE_DAY;
+                setMapStyleMode(nextMode);
+            }
+        });
+    }
+
     syncMapThemeToggleControl();
+    updateQuickMapToggleButtons();
     if (mapThemeToggle) {
         mapThemeToggle.addEventListener('change', (event) => {
             const nextMode = event.currentTarget.checked ? MAP_STYLE_MODE_NIGHT : MAP_STYLE_MODE_DAY;
@@ -9778,6 +9851,7 @@ function toggleMenu() {
 
 function applyMenuState(menu, isOpen, options = {}) {
     const skipPersistence = options && options.skipPersistence;
+    const rootElement = document.documentElement;
     const trigger = menu.querySelector('.menu-toggle');
     const icon = trigger ? trigger.querySelector('.menu-toggle-icon img') : null;
     const label = trigger ? trigger.querySelector('.menu-toggle-text') : null;
@@ -9787,8 +9861,8 @@ function applyMenuState(menu, isOpen, options = {}) {
         trigger.setAttribute('aria-expanded', String(isOpen));
         trigger.setAttribute('aria-label', isOpen ? 'Close menu' : 'Open menu');
     }
-    if (icon) { icon.setAttribute('src', isOpen ? CLOSE_ICON_PATH : MENU_ICON_PATH); }
-    if (label) { label.textContent = isOpen ? 'Close' : 'Menu'; }
+    if (icon) { icon.setAttribute('src', MENU_ICON_PATH); }
+    if (label) { label.textContent = 'Menu'; }
     if (controls) {
         controls.setAttribute('aria-hidden', String(!isOpen));
         if (isOpen) { controls.removeAttribute('inert'); }
@@ -9815,6 +9889,9 @@ function applyMenuState(menu, isOpen, options = {}) {
                 element.setAttribute('tabindex', '-1');
             }
         });
+    }
+    if (rootElement) {
+        rootElement.classList.toggle('menu-open', Boolean(isOpen));
     }
 
     if (!skipPersistence) {

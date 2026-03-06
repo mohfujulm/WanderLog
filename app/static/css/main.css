@@ -32,6 +32,117 @@ select {
   height: 100%;
 }
 
+.map-quick-toggles {
+  position: absolute;
+  top: 24px;
+  left: 62px;
+  z-index: 1100;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(10px);
+}
+
+.map-quick-toggle {
+  border: 1px solid rgba(203, 213, 225, 0.9);
+  background: rgba(255, 255, 255, 0.95);
+  color: #0f172a;
+  border-radius: 10px;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  line-height: 0;
+  cursor: pointer;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.map-quick-toggle svg {
+  width: 19px;
+  height: 19px;
+  display: block;
+  margin: 0 auto;
+}
+
+.map-quick-toggle svg path,
+.map-quick-toggle svg circle {
+  fill: currentColor;
+}
+
+.map-quick-toggle:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.16);
+}
+
+.map-quick-toggle:focus-visible {
+  outline: 2px solid rgba(30, 64, 175, 0.55);
+  outline-offset: 2px;
+}
+
+.map-quick-toggle-active {
+  background: #0f172a;
+  color: #ffffff;
+  border-color: #0f172a;
+}
+
+.map-quick-toggle:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+:root.night-mode .map-quick-toggles {
+  background: rgba(15, 23, 42, 0.9);
+  border-color: rgba(148, 163, 184, 0.35);
+  box-shadow: 0 10px 26px rgba(2, 6, 23, 0.5);
+}
+
+:root.night-mode .map-quick-toggle {
+  background: rgba(30, 41, 59, 0.9);
+  color: #e2e8f0;
+  border-color: rgba(100, 116, 139, 0.7);
+}
+
+:root.night-mode .map-quick-toggle-active {
+  background: #f8fafc;
+  color: #0f172a;
+  border-color: #f8fafc;
+}
+
+@media (max-width: 900px) {
+  .map-quick-toggles {
+    top: 18px;
+    left: 58px;
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .map-quick-toggle {
+    width: 34px;
+    height: 34px;
+  }
+
+  .map-quick-toggle svg {
+    width: 17px;
+    height: 17px;
+  }
+}
+
+@media (max-width: 640px) {
+  .map-quick-toggles {
+    top: 18px;
+    left: 54px;
+  }
+}
+
 .map-context-menu {
   position: absolute;
   min-width: 220px;
@@ -176,6 +287,10 @@ select {
   gap: 20px;
 }
 
+.menu-container.open .menu-toggle {
+  display: none;
+}
+
 .menu-toggle {
   align-self: flex-end;
   cursor: pointer;
@@ -235,36 +350,15 @@ select {
   font-size: 12px;
 }
 
-.menu-container.open .menu-toggle {
-  align-self: flex-end;
-  margin-left: auto;
-  writing-mode: horizontal-tb;
-  flex-direction: row;
-  padding: 10px 16px;
-  border-radius: 14px;
-  gap: 8px;
-  letter-spacing: 0.08em;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
-}
-.menu-container.open .menu-toggle .menu-toggle-text {
-  font-size: 14px;
-}
-
 .overlay-controls {
-  display: flex;
+  position: relative;
+  display: none;
   flex-direction: column;
   align-items: stretch;
   gap: 16px;
-  opacity: 0;
-  transform: translateY(-8px) scale(0.98);
-  transform-origin: top right;
-  transition:
-    opacity 0.25s ease,
-    transform 0.25s ease;
-  pointer-events: none;
   background: var(--color-bg-muted);
   border-radius: 20px;
-  padding: 24px 24px 20px;
+  padding: 52px 24px 20px;
   box-shadow: var(--card-shadow);
   backdrop-filter: blur(14px);
   width: min(360px, calc(100vw - 64px));
@@ -1908,9 +2002,35 @@ select {
 }
 
 .menu-container.open .overlay-controls {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  pointer-events: auto;
+  display: flex;
+}
+
+.menu-panel-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 999px;
+  background: #111827;
+  color: #ffffff;
+  font-size: 18px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.28);
+}
+
+.menu-panel-close:hover {
+  background: #b91c1c;
+}
+
+.menu-panel-close:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.75);
+  outline-offset: 2px;
 }
 
 .overlay-button {
