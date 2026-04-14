@@ -36,7 +36,7 @@ select {
   position: absolute;
   top: 24px;
   left: 62px;
-  z-index: 1100;
+  z-index: 900;
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -281,6 +281,11 @@ select {
   align-items: flex-end;
   gap: 16px;
   width: auto;
+}
+
+.menu-container.trip-detail-open .overlay-controls {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .menu-container.open {
@@ -808,14 +813,15 @@ select {
 
 .trip-profile-overlay {
   position: absolute;
-  top: 24px;
-  left: 24px;
-  z-index: 950;
+  top: 0;
+  right: 0;
+  z-index: 1001;
   display: flex;
   align-items: flex-start;
-  justify-content: flex-start;
-  pointer-events: none;
-  max-width: calc(100vw - 48px);
+  justify-content: flex-end;
+  pointer-events: auto;
+  width: min(360px, calc(100vw - 64px));
+  max-width: 100%;
 }
 
 .trip-profile-overlay[hidden] {
@@ -825,11 +831,11 @@ select {
 .trip-profile-panel {
   pointer-events: auto;
   background: rgba(255, 255, 255, 0.95);
-  border-radius: 26px;
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.28);
+  border-radius: 20px;
+  box-shadow: var(--card-shadow);
   backdrop-filter: blur(18px);
-  width: min(440px, calc(100vw - 72px));
-  max-height: min(92vh, 820px);
+  width: 100%;
+  max-height: min(calc(100vh - 120px), 960px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -1512,9 +1518,7 @@ select {
 
 @media (max-width: 640px) {
   .trip-profile-overlay {
-    left: 16px;
-    right: 16px;
-    max-width: none;
+    width: min(100%, calc(100vw - 32px));
   }
 
   .trip-profile-panel {

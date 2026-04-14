@@ -2238,7 +2238,12 @@ def api_trip_photo_image(trip_id: str, photo_index: int):
                 continue
 
             if upstream.status_code == 200:
-                mime_type = _clean_string(photo_entry.get('mime_type')) or upstream.headers.get('Content-Type') or 'application/octet-stream'
+                upstream_content_type = _clean_string(upstream.headers.get('Content-Type'))
+                mime_type = _clean_string(photo_entry.get('mime_type')) or upstream_content_type or 'application/octet-stream'
+                if upstream_content_type and not upstream_content_type.lower().startswith('image/'):
+                    last_status = 502
+                    upstream.close()
+                    continue
                 filename = _clean_string(photo_entry.get('filename'))
 
                 ttl_seconds = _trip_photo_cache_ttl_seconds()

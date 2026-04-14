@@ -993,48 +993,79 @@ async function fetchGooglePhotosPickerSession(sessionId) {
 }
 
 async function listGooglePhotosPickerMediaItems(sessionId) {
-    let response;
-    try {
-        const url = new URL('/api/google/photos/picker/media-items', window.location.origin);
-        url.searchParams.set('session_id', sessionId);
-        response = await fetch(url.toString(), {
-            method: 'GET',
-            credentials: 'include',
-            cache: 'no-store',
+    const allMediaItems = [];
+    const seenIds = new Set();
+    let nextPageToken = '';
+    let pageCount = 0;
+
+    while (pageCount < 100) {
+        pageCount += 1;
+
+        let response;
+        try {
+            const url = new URL('/api/google/photos/picker/media-items', window.location.origin);
+            url.searchParams.set('session_id', sessionId);
+            url.searchParams.set('page_size', '100');
+            if (nextPageToken) {
+                url.searchParams.set('page_token', nextPageToken);
+            }
+            response = await fetch(url.toString(), {
+                method: 'GET',
+                credentials: 'include',
+                cache: 'no-store',
+            });
+        } catch (error) {
+            throw new Error('Network error while retrieving Google Photos selections.');
+        }
+
+        let payload = null;
+        try {
+            payload = await response.json();
+        } catch (error) {
+            payload = null;
+        }
+
+        if (!response.ok) {
+            const message = payload && payload.error
+                ? payload.error
+                : 'Failed to retrieve Google Photos selections.';
+            throw new Error(message);
+        }
+
+        const mediaItems = payload && Array.isArray(payload.mediaItems)
+            ? payload.mediaItems
+            : [];
+
+        mediaItems.forEach((item) => {
+            if (!item || typeof item !== 'object') { return; }
+            const itemId = typeof item.id === 'string' ? item.id.trim() : '';
+            if (itemId && seenIds.has(itemId)) { return; }
+            if (itemId) {
+                seenIds.add(itemId);
+            }
+            allMediaItems.push(item);
         });
-    } catch (error) {
-        throw new Error('Network error while retrieving Google Photos selections.');
-    }
 
-    let payload = null;
-    try {
-        payload = await response.json();
-    } catch (error) {
-        payload = null;
+        nextPageToken = payload && typeof payload.nextPageToken === 'string'
+            ? payload.nextPageToken.trim()
+            : '';
+        if (!nextPageToken) {
+            break;
+        }
     }
-
-    if (!response.ok) {
-        const message = payload && payload.error
-            ? payload.error
-            : 'Failed to retrieve Google Photos selections.';
-        throw new Error(message);
-    }
-
-    const mediaItems = payload && Array.isArray(payload.mediaItems)
-        ? payload.mediaItems
-        : [];
 
     try {
         console.info('Google Photos Picker media items retrieved', {
             sessionId,
-            count: mediaItems.length,
-            mediaItems,
+            count: allMediaItems.length,
+            pages: pageCount,
+            mediaItems: allMediaItems,
         });
     } catch (error) {
         // Ignore logging errors in restricted environments.
     }
 
-    return { mediaItems, nextPageToken: payload ? payload.nextPageToken : null };
+    return { mediaItems: allMediaItems, nextPageToken };
 }
 
 async function deleteGooglePhotosPickerSession(sessionId) {
@@ -6271,6 +6302,7 @@ function openTripDetail(tripId, triggerElement) {
     if (!tripListState.initialised) { initTripsPanel(); }
     initTripDetailPanel();
     exitTripPhotoSelectionMode({ preserveSelection: false, silent: true });
+    setActiveMenuPanel('menuPanelTrips');
 
     const requestId = tripDetailState.requestId + 1;
     tripDetailState.requestId = requestId;
@@ -6375,6 +6407,7 @@ function closeTripDetail(options = {}) {
     }
     setTripDetailLoading(false);
     hideTripDetailView();
+    setActiveMenuPanel('menuPanelControls');
 
     if (tripDetailTitleElement) {
         const defaultTitle = tripDetailTitleElement.dataset.defaultText || 'Trip details';
@@ -6461,6 +6494,10 @@ function showTripDetailView() {
         tripDetailContainer.hidden = false;
         tripDetailContainer.setAttribute('aria-hidden', 'false');
     }
+    const menuContainer = document.querySelector('.menu-container');
+    if (menuContainer) {
+        menuContainer.classList.add('trip-detail-open');
+    }
     if (tripProfileOverlay) {
         tripProfileOverlay.hidden = false;
         tripProfileOverlay.setAttribute('aria-hidden', 'false');
@@ -6495,6 +6532,10 @@ function hideTripDetailView() {
     if (tripDetailContainer) {
         tripDetailContainer.hidden = true;
         tripDetailContainer.setAttribute('aria-hidden', 'true');
+    }
+    const menuContainer = document.querySelector('.menu-container');
+    if (menuContainer) {
+        menuContainer.classList.remove('trip-detail-open');
     }
     if (tripProfileOverlay) {
         tripProfileOverlay.classList.remove('open');
@@ -9847,6 +9888,28 @@ function toggleMenu() {
     if (isOpen && typeof googleAuthRefreshHandler === 'function') {
         googleAuthRefreshHandler();
     }
+}
+
+function setActiveMenuPanel(panelId) {
+    const menuControls = document.getElementById('menuControls');
+    if (!menuControls || !panelId) { return; }
+    const tabs = Array.from(menuControls.querySelectorAll('[role="tab"]'));
+    const panels = Array.from(menuControls.querySelectorAll('[role="tabpanel"]'));
+    const nextPanel = panels.find((panel) => panel && panel.id === panelId) || null;
+    if (!nextPanel) { return; }
+    const nextTab = tabs.find((tab) => tab && tab.getAttribute('aria-controls') === panelId) || null;
+
+    tabs.forEach((tab) => {
+        const isActive = tab === nextTab;
+        tab.setAttribute('aria-selected', String(isActive));
+        tab.setAttribute('tabindex', isActive ? '0' : '-1');
+    });
+
+    panels.forEach((panel) => {
+        panel.hidden = panel !== nextPanel;
+    });
+
+    menuControls.dataset.activePanel = nextPanel.id;
 }
 
 function applyMenuState(menu, isOpen, options = {}) {
