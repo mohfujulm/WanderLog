@@ -342,6 +342,20 @@ let masterDataPaginationElement = null;
 let masterDataPaginationMetaElement = null;
 let masterDataPrevPageButton = null;
 let masterDataNextPageButton = null;
+let masterDataHistoryListElement = null;
+let masterDataHistoryLoadingElement = null;
+let masterDataHistoryErrorElement = null;
+let masterDataHistoryEmptyElement = null;
+let masterDataHistoryRefreshButton = null;
+let masterDataHistorySectionElement = null;
+let masterDataHistoryContentElement = null;
+let masterDataHistoryToggleButton = null;
+let masterDataHistoryPreviewElement = null;
+let masterDataHistoryPreviewTitleElement = null;
+let masterDataHistoryPreviewSummaryElement = null;
+let masterDataHistoryPreviewBodyElement = null;
+let masterDataHistoryPreviewLoadingElement = null;
+let masterDataHistoryPreviewErrorElement = null;
 
 const TRIP_SORT_FIELD_NAME = 'name';
 const TRIP_SORT_FIELD_DATE = 'latest_location_date';
@@ -354,6 +368,8 @@ const TRIP_LOCATION_SORT_FIELD_NAME = 'name';
 const MASTER_DATA_OVERLAY_ID = 'masterDataOverlay';
 const MASTER_DATA_API_ENDPOINT = '/api/master_timeline';
 const MASTER_DATA_UPDATE_API_ENDPOINT = '/api/master_timeline/update';
+const MASTER_DATA_HISTORY_API_ENDPOINT = '/api/master_timeline/history';
+const MASTER_DATA_HISTORY_DIFF_API_SUFFIX = '/diff';
 const MASTER_DATA_EMPTY_DEFAULT_MESSAGE = 'No master data found. Import your Google Timeline to populate this table.';
 const MASTER_DATA_EMPTY_FILTER_MESSAGE = 'No rows match your current search.';
 const MASTER_DATA_READ_ONLY_COLUMNS = new Set(['Place ID']);
@@ -445,6 +461,13 @@ const masterDataState = {
     page: 1,
     pageSize: 250,
     searchDebounceTimer: null,
+    historyEntries: [],
+    historyLoading: false,
+    restoringVersionId: '',
+    historyCollapsed: true,
+    previewVersionId: '',
+    previewLoading: false,
+    previewDiff: null,
     menuWasOpenOnOpen: false,
     lastLoadedAt: null,
     emptyMessageDefault: MASTER_DATA_EMPTY_DEFAULT_MESSAGE,
@@ -3431,6 +3454,20 @@ function initAdvancedPanel() {
     masterDataPaginationMetaElement = document.getElementById('masterDataPaginationMeta');
     masterDataPrevPageButton = document.getElementById('masterDataPrevPageButton');
     masterDataNextPageButton = document.getElementById('masterDataNextPageButton');
+    masterDataHistoryListElement = document.getElementById('masterDataHistoryList');
+    masterDataHistoryLoadingElement = document.getElementById('masterDataHistoryLoading');
+    masterDataHistoryErrorElement = document.getElementById('masterDataHistoryError');
+    masterDataHistoryEmptyElement = document.getElementById('masterDataHistoryEmpty');
+    masterDataHistoryRefreshButton = document.getElementById('masterDataHistoryRefreshButton');
+    masterDataHistorySectionElement = document.getElementById('masterDataHistorySection');
+    masterDataHistoryContentElement = document.getElementById('masterDataHistoryContent');
+    masterDataHistoryToggleButton = document.getElementById('masterDataHistoryToggleButton');
+    masterDataHistoryPreviewElement = document.getElementById('masterDataHistoryPreview');
+    masterDataHistoryPreviewTitleElement = document.getElementById('masterDataHistoryPreviewTitle');
+    masterDataHistoryPreviewSummaryElement = document.getElementById('masterDataHistoryPreviewSummary');
+    masterDataHistoryPreviewBodyElement = document.getElementById('masterDataHistoryPreviewBody');
+    masterDataHistoryPreviewLoadingElement = document.getElementById('masterDataHistoryPreviewLoading');
+    masterDataHistoryPreviewErrorElement = document.getElementById('masterDataHistoryPreviewError');
 
     if (masterDataEmptyElement && masterDataEmptyElement.textContent) {
         masterDataState.emptyMessageDefault = masterDataEmptyElement.textContent.trim() || MASTER_DATA_EMPTY_DEFAULT_MESSAGE;
@@ -3489,6 +3526,19 @@ function initAdvancedPanel() {
     if (masterDataRefreshButton) {
         masterDataRefreshButton.addEventListener('click', () => {
             loadMasterData();
+            loadMasterDataHistory();
+        });
+    }
+
+    if (masterDataHistoryRefreshButton) {
+        masterDataHistoryRefreshButton.addEventListener('click', () => {
+            loadMasterDataHistory();
+        });
+    }
+
+    if (masterDataHistoryToggleButton) {
+        masterDataHistoryToggleButton.addEventListener('click', () => {
+            setMasterDataHistoryCollapsed(!masterDataState.historyCollapsed);
         });
     }
 
@@ -3518,7 +3568,22 @@ function initAdvancedPanel() {
     }
 
     resetMasterDataMessages();
+    setMasterDataHistoryCollapsed(masterDataState.historyCollapsed);
     masterDataState.initialised = true;
+}
+
+function setMasterDataHistoryCollapsed(isCollapsed) {
+    masterDataState.historyCollapsed = Boolean(isCollapsed);
+    if (masterDataHistorySectionElement) {
+        masterDataHistorySectionElement.classList.toggle('advanced-history-collapsed', masterDataState.historyCollapsed);
+    }
+    if (masterDataHistoryContentElement) {
+        masterDataHistoryContentElement.hidden = masterDataState.historyCollapsed;
+    }
+    if (masterDataHistoryToggleButton) {
+        masterDataHistoryToggleButton.textContent = masterDataState.historyCollapsed ? 'Show History' : 'Hide History';
+        masterDataHistoryToggleButton.setAttribute('aria-expanded', String(!masterDataState.historyCollapsed));
+    }
 }
 
 function updateMasterDataFilterColumnOptions() {
@@ -3750,6 +3815,334 @@ function updateMasterDataPagination() {
     }
     if (masterDataNextPageButton) {
         masterDataNextPageButton.disabled = page >= totalPages || masterDataState.pageSize === 'all';
+    }
+}
+
+function formatMasterDataHistoryTimestamp(value) {
+    if (!value) { return 'Unknown time'; }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) { return String(value); }
+    return parsed.toLocaleString();
+}
+
+function formatMasterDataHistorySize(value) {
+    const size = Number(value);
+    if (!Number.isFinite(size) || size <= 0) { return ''; }
+    if (size < 1024) { return `${size} B`; }
+    if (size < (1024 * 1024)) { return `${(size / 1024).toFixed(1)} KB`; }
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderMasterDataHistory() {
+    if (!masterDataHistoryListElement) { return; }
+    masterDataHistoryListElement.innerHTML = '';
+
+    if (masterDataHistoryLoadingElement) {
+        masterDataHistoryLoadingElement.hidden = !masterDataState.historyLoading;
+    }
+
+    if (masterDataHistoryErrorElement && !masterDataHistoryErrorElement.textContent) {
+        masterDataHistoryErrorElement.hidden = true;
+    }
+
+    const entries = Array.isArray(masterDataState.historyEntries) ? masterDataState.historyEntries : [];
+    const hasEntries = entries.length > 0;
+
+    if (masterDataHistoryEmptyElement) {
+        masterDataHistoryEmptyElement.hidden = masterDataState.historyLoading || hasEntries || Boolean(masterDataHistoryErrorElement && !masterDataHistoryErrorElement.hidden);
+    }
+    masterDataHistoryListElement.hidden = !hasEntries;
+    if (!hasEntries) { return; }
+
+    const fragment = document.createDocumentFragment();
+    entries.forEach((entry) => {
+        const item = document.createElement('div');
+        item.className = 'advanced-history-item';
+
+        const main = document.createElement('div');
+        main.className = 'advanced-history-item-main';
+
+        const title = document.createElement('div');
+        title.className = 'advanced-history-item-title';
+        title.textContent = entry && entry.reason ? entry.reason : 'Automatic save';
+        main.appendChild(title);
+
+        const meta = document.createElement('div');
+        meta.className = 'advanced-history-item-meta';
+        const bits = [formatMasterDataHistoryTimestamp(entry ? entry.created_at : '')];
+        const sizeLabel = formatMasterDataHistorySize(entry ? entry.size_bytes : 0);
+        if (sizeLabel) {
+            bits.push(sizeLabel);
+        }
+        meta.textContent = bits.join(' • ');
+        main.appendChild(meta);
+
+        item.appendChild(main);
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'overlay-button overlay-button-secondary advanced-history-restore';
+        button.textContent = masterDataState.restoringVersionId === (entry && entry.id ? entry.id : '') ? 'Restoring...' : 'Restore';
+        button.disabled = masterDataState.restoringVersionId === (entry && entry.id ? entry.id : '');
+        const actions = document.createElement('div');
+        actions.className = 'advanced-history-actions';
+
+        const previewButton = document.createElement('button');
+        previewButton.type = 'button';
+        previewButton.className = 'overlay-button overlay-button-secondary advanced-history-preview-button';
+        previewButton.textContent = (masterDataState.previewLoading && masterDataState.previewVersionId === (entry && entry.id ? entry.id : ''))
+            ? 'Loading...'
+            : 'Preview';
+        previewButton.disabled = masterDataState.previewLoading && masterDataState.previewVersionId === (entry && entry.id ? entry.id : '');
+        previewButton.addEventListener('click', () => {
+            if (!entry || !entry.id) { return; }
+            loadMasterDataHistoryPreview(entry.id);
+        });
+
+        button.addEventListener('click', () => {
+            if (!entry || !entry.id) { return; }
+            restoreMasterDataHistory(entry.id);
+        });
+
+        actions.appendChild(previewButton);
+        actions.appendChild(button);
+        item.appendChild(actions);
+
+        fragment.appendChild(item);
+    });
+
+    masterDataHistoryListElement.appendChild(fragment);
+}
+
+function renderMasterDataHistoryPreview() {
+    if (!masterDataHistoryPreviewElement || !masterDataHistoryPreviewBodyElement) { return; }
+
+    const hasPreview = Boolean(masterDataState.previewDiff);
+    const showPreview = masterDataState.previewLoading || hasPreview || Boolean(masterDataHistoryPreviewErrorElement && !masterDataHistoryPreviewErrorElement.hidden);
+    masterDataHistoryPreviewElement.hidden = !showPreview;
+
+    if (masterDataHistoryPreviewLoadingElement) {
+        masterDataHistoryPreviewLoadingElement.hidden = !masterDataState.previewLoading;
+    }
+
+    masterDataHistoryPreviewBodyElement.innerHTML = '';
+
+    if (!hasPreview) {
+        if (masterDataHistoryPreviewSummaryElement) {
+            masterDataHistoryPreviewSummaryElement.textContent = '';
+        }
+        return;
+    }
+
+    const diff = masterDataState.previewDiff || {};
+    const version = diff.version || {};
+    const summary = diff.summary || {};
+    const preview = diff.preview || {};
+
+    if (masterDataHistoryPreviewTitleElement) {
+        masterDataHistoryPreviewTitleElement.textContent = `Preview Changes: ${version.reason || 'Saved version'}`;
+    }
+    if (masterDataHistoryPreviewSummaryElement) {
+        const summaryBits = [
+            `${Number(summary.changed_rows || 0).toLocaleString()} changed rows`,
+            `${Number(summary.changed_cells || 0).toLocaleString()} changed cells`,
+            `${Number(summary.added_rows || 0).toLocaleString()} added`,
+            `${Number(summary.removed_rows || 0).toLocaleString()} removed`,
+        ];
+        masterDataHistoryPreviewSummaryElement.textContent = summaryBits.join(' • ');
+    }
+
+    const sections = [
+        {
+            title: 'Changed Rows',
+            rows: Array.isArray(preview.changed_rows) ? preview.changed_rows : [],
+            renderRow: (row) => {
+                const item = document.createElement('div');
+                item.className = 'advanced-history-preview-row';
+                const title = document.createElement('div');
+                title.className = 'advanced-history-preview-row-title';
+                title.textContent = row && row.label ? row.label : (row && row.id ? row.id : 'Changed row');
+                item.appendChild(title);
+                const changes = Array.isArray(row && row.changes) ? row.changes : [];
+                changes.forEach((change) => {
+                    const line = document.createElement('div');
+                    line.className = 'advanced-history-preview-change';
+                    const column = document.createElement('span');
+                    column.className = 'advanced-history-preview-change-column';
+                    column.textContent = `${change && change.column ? change.column : 'Column'}: `;
+                    line.appendChild(column);
+                    line.append(document.createTextNode(`${change && typeof change.before !== 'undefined' ? change.before : ''} `));
+                    const direction = document.createElement('span');
+                    direction.className = 'advanced-history-preview-direction';
+                    direction.textContent = '→';
+                    line.appendChild(direction);
+                    line.append(document.createTextNode(` ${change && typeof change.after !== 'undefined' ? change.after : ''}`));
+                    item.appendChild(line);
+                });
+                return item;
+            },
+        },
+        {
+            title: 'Added Rows',
+            rows: Array.isArray(preview.added_rows) ? preview.added_rows : [],
+            renderRow: (row) => {
+                const item = document.createElement('div');
+                item.className = 'advanced-history-preview-row';
+                const title = document.createElement('div');
+                title.className = 'advanced-history-preview-row-title';
+                title.textContent = row && row.label ? row.label : (row && row.id ? row.id : 'Added row');
+                item.appendChild(title);
+                return item;
+            },
+        },
+        {
+            title: 'Removed Rows',
+            rows: Array.isArray(preview.removed_rows) ? preview.removed_rows : [],
+            renderRow: (row) => {
+                const item = document.createElement('div');
+                item.className = 'advanced-history-preview-row';
+                const title = document.createElement('div');
+                title.className = 'advanced-history-preview-row-title';
+                title.textContent = row && row.label ? row.label : (row && row.id ? row.id : 'Removed row');
+                item.appendChild(title);
+                return item;
+            },
+        },
+    ];
+
+    sections.forEach((section) => {
+        if (!section.rows.length) { return; }
+        const sectionElement = document.createElement('section');
+        sectionElement.className = 'advanced-history-preview-section';
+
+        const heading = document.createElement('div');
+        heading.className = 'advanced-history-preview-section-title';
+        heading.textContent = section.title;
+        sectionElement.appendChild(heading);
+
+        section.rows.forEach((row) => {
+            sectionElement.appendChild(section.renderRow(row));
+        });
+
+        masterDataHistoryPreviewBodyElement.appendChild(sectionElement);
+    });
+
+    if (!masterDataHistoryPreviewBodyElement.children.length) {
+        const empty = document.createElement('div');
+        empty.className = 'advanced-history-message';
+        empty.textContent = 'No differences from the current master database.';
+        masterDataHistoryPreviewBodyElement.appendChild(empty);
+    }
+}
+
+async function loadMasterDataHistory() {
+    if (masterDataState.historyLoading) { return; }
+    masterDataState.historyLoading = true;
+    if (masterDataHistoryErrorElement) {
+        masterDataHistoryErrorElement.hidden = true;
+        masterDataHistoryErrorElement.textContent = '';
+    }
+    renderMasterDataHistory();
+
+    try {
+        const response = await fetch(MASTER_DATA_HISTORY_API_ENDPOINT, {
+            headers: {
+                Accept: 'application/json',
+            },
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(payload && payload.message ? payload.message : 'Failed to load version history.');
+        }
+        masterDataState.historyEntries = Array.isArray(payload.entries) ? payload.entries : [];
+    } catch (error) {
+        masterDataState.historyEntries = [];
+        if (masterDataHistoryErrorElement) {
+            masterDataHistoryErrorElement.textContent = error.message || 'Failed to load version history.';
+            masterDataHistoryErrorElement.hidden = false;
+        }
+    } finally {
+        masterDataState.historyLoading = false;
+        renderMasterDataHistory();
+    }
+}
+
+async function loadMasterDataHistoryPreview(versionId) {
+    const identifier = String(versionId || '').trim();
+    if (!identifier || masterDataState.previewLoading) { return; }
+
+    setMasterDataHistoryCollapsed(false);
+    masterDataState.previewVersionId = identifier;
+    masterDataState.previewLoading = true;
+    masterDataState.previewDiff = null;
+    if (masterDataHistoryPreviewErrorElement) {
+        masterDataHistoryPreviewErrorElement.hidden = true;
+        masterDataHistoryPreviewErrorElement.textContent = '';
+    }
+    renderMasterDataHistory();
+    renderMasterDataHistoryPreview();
+
+    try {
+        const response = await fetch(`${MASTER_DATA_HISTORY_API_ENDPOINT}/${encodeURIComponent(identifier)}${MASTER_DATA_HISTORY_DIFF_API_SUFFIX}`, {
+            headers: {
+                Accept: 'application/json',
+            },
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || (payload && payload.status === 'error')) {
+            throw new Error(payload && payload.message ? payload.message : 'Failed to preview saved version.');
+        }
+        masterDataState.previewDiff = payload && payload.diff ? payload.diff : null;
+    } catch (error) {
+        masterDataState.previewDiff = null;
+        if (masterDataHistoryPreviewErrorElement) {
+            masterDataHistoryPreviewErrorElement.textContent = error.message || 'Failed to preview saved version.';
+            masterDataHistoryPreviewErrorElement.hidden = false;
+        }
+    } finally {
+        masterDataState.previewLoading = false;
+        renderMasterDataHistory();
+        renderMasterDataHistoryPreview();
+    }
+}
+
+async function restoreMasterDataHistory(versionId) {
+    const identifier = String(versionId || '').trim();
+    if (!identifier || masterDataState.restoringVersionId) { return; }
+
+    setMasterDataHistoryCollapsed(false);
+    const confirmed = window.confirm('Restore this saved version of the master database? Current data will be replaced.');
+    if (!confirmed) { return; }
+
+    masterDataState.restoringVersionId = identifier;
+    renderMasterDataHistory();
+
+    try {
+        const response = await fetch(`${MASTER_DATA_HISTORY_API_ENDPOINT}/${encodeURIComponent(identifier)}/restore`, {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+            },
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || (payload && payload.status === 'error')) {
+            throw new Error(payload && payload.message ? payload.message : 'Failed to restore saved version.');
+        }
+
+        showStatus(payload.message || 'Master database restored successfully.');
+        await loadMasterData();
+        await loadMasterDataHistory();
+        masterDataState.previewDiff = null;
+        masterDataState.previewVersionId = '';
+        renderMasterDataHistoryPreview();
+        if (typeof loadMarkers === 'function') {
+            loadMarkers();
+        }
+    } catch (error) {
+        showStatus(error.message || 'Failed to restore saved version.', true);
+    } finally {
+        masterDataState.restoringVersionId = '';
+        renderMasterDataHistory();
     }
 }
 
@@ -4007,6 +4400,7 @@ async function saveMasterDataCell(row, column, value) {
         masterDataState.savingCellKey = '';
         filterMasterDataRows();
         shouldRerender = false;
+        loadMasterDataHistory();
         if (typeof loadMarkers === 'function') {
             loadMarkers();
         }
@@ -4112,6 +4506,7 @@ function openMasterDataOverlay(triggerElement = null) {
     } else {
         filterMasterDataRows();
     }
+    loadMasterDataHistory();
     if (masterDataOverlayPanelElement) {
         masterDataOverlayPanelElement.focus();
     }

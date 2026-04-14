@@ -118,7 +118,7 @@
                 <button class="overlay-button" type="button" id="refreshMapButton">Refresh Map</button>
                 <button class="overlay-button" type="button" id="viewArchivedPointsButton">View Archived Points</button>
                 <button class="overlay-button" type="button" id="manageModeToggle" data-manage-mode-toggle data-manage-mode-active-class="overlay-button-active" data-manage-mode-label-default="Enter Manage Mode" data-manage-mode-label-active="Exit Manage Mode">Enter Manage Mode</button>
-                <button class="overlay-subaction-button" type="button" id="masterDataOpenButton">Advanced: View Master Database</button>
+                <button class="overlay-button master-data-open-button" type="button" id="masterDataOpenButton">Open Master Database</button>
                 <h2 class="overlay-section-title" id="filtersTitle">Filters</h2>
                 <div id="sourceTypeFilters" class="checkbox-group" role="group" aria-labelledby="filtersTitle"></div>
                 <label class="toggle-control" for="clusterToggle">
@@ -353,6 +353,33 @@
                         <button type="button" class="overlay-button overlay-button-secondary advanced-pagination-button" id="masterDataNextPageButton">Next</button>
                     </div>
                 </div>
+                <section class="advanced-history advanced-history-collapsed" id="masterDataHistorySection" aria-labelledby="masterDataHistoryTitle">
+                    <div class="advanced-history-header">
+                        <div>
+                            <h4 class="advanced-history-title" id="masterDataHistoryTitle">Version History</h4>
+                            <p class="advanced-history-subtitle">Restore an earlier saved CSV snapshot.</p>
+                        </div>
+                        <div class="advanced-history-header-actions">
+                            <button type="button" class="overlay-button overlay-button-secondary advanced-history-refresh" id="masterDataHistoryRefreshButton">Refresh History</button>
+                            <button type="button" class="overlay-button overlay-button-secondary advanced-history-toggle" id="masterDataHistoryToggleButton" aria-expanded="false" aria-controls="masterDataHistoryContent">Show History</button>
+                        </div>
+                    </div>
+                    <div class="advanced-history-content" id="masterDataHistoryContent" hidden>
+                        <div class="advanced-history-message" id="masterDataHistoryLoading" hidden>Loading version history...</div>
+                        <div class="advanced-history-message advanced-history-message-error" id="masterDataHistoryError" hidden></div>
+                        <div class="advanced-history-message" id="masterDataHistoryEmpty" hidden>No saved versions yet.</div>
+                        <div class="advanced-history-list" id="masterDataHistoryList" hidden></div>
+                        <div class="advanced-history-preview" id="masterDataHistoryPreview" hidden>
+                            <div class="advanced-history-preview-header">
+                                <h5 class="advanced-history-preview-title" id="masterDataHistoryPreviewTitle">Preview Changes</h5>
+                                <div class="advanced-history-preview-summary" id="masterDataHistoryPreviewSummary"></div>
+                            </div>
+                            <div class="advanced-history-message" id="masterDataHistoryPreviewLoading" hidden>Loading preview...</div>
+                            <div class="advanced-history-message advanced-history-message-error" id="masterDataHistoryPreviewError" hidden></div>
+                            <div class="advanced-history-preview-body" id="masterDataHistoryPreviewBody"></div>
+                        </div>
+                    </div>
+                </section>
                 <div class="advanced-table-wrapper">
                     <div class="advanced-table-message" id="masterDataLoading" role="status">Loading master database...</div>
                     <div class="advanced-table-message advanced-table-message-error" id="masterDataError" role="alert" hidden></div>
