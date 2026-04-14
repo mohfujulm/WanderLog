@@ -27,6 +27,42 @@ select {
   height: 100vh;
 }
 
+#map-container:fullscreen,
+#map-container:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+}
+
+#map-container:fullscreen .menu-container,
+#map-container:-webkit-full-screen .menu-container {
+  position: fixed;
+  top: env(safe-area-inset-top, 0);
+  right: env(safe-area-inset-right, 0);
+  bottom: env(safe-area-inset-bottom, 0);
+  z-index: 4000;
+}
+
+#map-container:fullscreen .overlay-controls,
+#map-container:-webkit-full-screen .overlay-controls,
+#map-container:fullscreen .trip-profile-overlay,
+#map-container:-webkit-full-screen .trip-profile-overlay {
+  max-height: calc(100vh - env(safe-area-inset-top, 0) - env(safe-area-inset-bottom, 0));
+}
+
+#map-container:fullscreen .menu-toggle,
+#map-container:-webkit-full-screen .menu-toggle {
+  margin-top: calc(env(safe-area-inset-top, 0) + 24px);
+  margin-right: calc(env(safe-area-inset-right, 0) + 24px);
+}
+
+#map-container:fullscreen .map-quick-toggles,
+#map-container:-webkit-full-screen .map-quick-toggles {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0) + 24px);
+  left: calc(env(safe-area-inset-left, 0) + 62px);
+  z-index: 3990;
+}
+
 #map {
   width: 100%;
   height: 100%;
@@ -273,14 +309,17 @@ select {
 
 .menu-container {
   position: absolute;
-  top: 24px;
-  right: 24px;
+  top: 0;
+  right: 0;
+  bottom: 0;
   z-index: 1000;
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 16px;
-  width: auto;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0;
+  width: min(360px, calc(100vw - 16px));
+  pointer-events: none;
 }
 
 .menu-container.trip-detail-open .overlay-controls {
@@ -289,7 +328,7 @@ select {
 }
 
 .menu-container.open {
-  gap: 20px;
+  gap: 0;
 }
 
 .menu-container.open .menu-toggle {
@@ -320,6 +359,8 @@ select {
   writing-mode: vertical-rl;
   text-orientation: mixed;
   font-weight: 500;
+  margin: 24px 24px 0 0;
+  pointer-events: auto;
 }
 
 .menu-toggle:hover {
@@ -356,25 +397,27 @@ select {
 }
 
 .overlay-controls {
-  position: relative;
+  position: absolute;
+  inset: 0;
   display: none;
   flex-direction: column;
   align-items: stretch;
   gap: 16px;
   background: var(--color-bg-muted);
-  border-radius: 20px;
+  border-radius: 0;
   padding: 52px 24px 20px;
   box-shadow: var(--card-shadow);
   backdrop-filter: blur(14px);
-  width: min(360px, calc(100vw - 64px));
-  max-height: min(calc(100vh - 120px), 768px);
+  width: 100%;
+  max-height: 100vh;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  pointer-events: auto;
 }
 
 .overlay-controls[data-active-panel="menuPanelTrips"] {
-  max-height: min(calc(100vh - 120px), 960px);
+  max-height: 100vh;
 }
 
 .overlay-tabs-wrapper {
@@ -817,10 +860,11 @@ select {
   right: 0;
   z-index: 1001;
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   justify-content: flex-end;
   pointer-events: auto;
-  width: min(360px, calc(100vw - 64px));
+  width: 100%;
+  height: 100%;
   max-width: 100%;
 }
 
@@ -831,11 +875,11 @@ select {
 .trip-profile-panel {
   pointer-events: auto;
   background: rgba(255, 255, 255, 0.95);
-  border-radius: 20px;
+  border-radius: 0;
   box-shadow: var(--card-shadow);
   backdrop-filter: blur(18px);
   width: 100%;
-  max-height: min(calc(100vh - 120px), 960px);
+  max-height: 100vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -1517,8 +1561,12 @@ select {
 }
 
 @media (max-width: 640px) {
+  .menu-container {
+    width: min(360px, 100vw);
+  }
+
   .trip-profile-overlay {
-    width: min(100%, calc(100vw - 32px));
+    width: 100%;
   }
 
   .trip-profile-panel {
@@ -3343,12 +3391,17 @@ body.night-mode,
   color: var(--color-text);
 }
 
+:root.night-mode .trip-panel-heading {
+  background: rgba(30, 41, 59, 0.9);
+  color: #f8fafc;
+}
+
 :root.night-mode .trip-panel {
-  background: rgba(15, 23, 42, 0.9);
-  border-radius: 20px;
-  padding: 16px;
-  border: 1px solid rgba(99, 102, 241, 0.35);
-  box-shadow: 0 12px 28px rgba(2, 6, 23, 0.45);
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  border: none;
+  box-shadow: none;
 }
 
 :root.night-mode .trip-panel-header {
@@ -3460,18 +3513,6 @@ body.night-mode,
   color: var(--color-text);
 }
 
-:root.night-mode #tripDetailView {
-  background: rgba(15, 23, 42, 0.85);
-  border-radius: 0 0 26px 26px;
-}
-
-:root.night-mode #menuPanelTrips {
-  background: rgba(10, 15, 28, 0.92);
-  border-radius: 24px;
-  padding: 14px;
-  box-shadow: 0 16px 34px rgba(2, 6, 23, 0.6);
-}
-
 :root.night-mode .overlay-section-title,
 :root.night-mode .toggle-label,
 :root.night-mode .trip-search-label,
@@ -3511,8 +3552,6 @@ body.night-mode,
   border-color: rgba(148, 163, 184, 0.35);
   color: var(--color-text);
 }
-:root.night-mode .trip-detail,
-:root.night-mode .trip-detail-controls,
 :root.night-mode .trip-profile-actions,
 :root.night-mode .trip-profile-meta-entry {
   background: rgba(15, 23, 42, 0.85);
@@ -3520,6 +3559,14 @@ body.night-mode,
   border-radius: 16px;
   border: 1px solid rgba(99, 102, 241, 0.25);
   box-shadow: 0 10px 24px rgba(2, 6, 23, 0.55);
+}
+
+:root.night-mode .trip-detail,
+:root.night-mode .trip-detail-controls {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 0;
 }
 
 :root.night-mode .trip-location-list {
