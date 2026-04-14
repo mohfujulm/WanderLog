@@ -333,8 +333,15 @@ let masterDataLoadingElement = null;
 let masterDataErrorElement = null;
 let masterDataEmptyElement = null;
 let masterDataSearchInput = null;
+let masterDataFilterColumnSelect = null;
+let masterDataPageSizeSelect = null;
 let masterDataMetaElement = null;
+let masterDataClearFiltersButton = null;
 let masterDataRefreshButton = null;
+let masterDataPaginationElement = null;
+let masterDataPaginationMetaElement = null;
+let masterDataPrevPageButton = null;
+let masterDataNextPageButton = null;
 
 const TRIP_SORT_FIELD_NAME = 'name';
 const TRIP_SORT_FIELD_DATE = 'latest_location_date';
@@ -346,8 +353,11 @@ const TRIP_LOCATION_SORT_FIELD_DATE = 'date';
 const TRIP_LOCATION_SORT_FIELD_NAME = 'name';
 const MASTER_DATA_OVERLAY_ID = 'masterDataOverlay';
 const MASTER_DATA_API_ENDPOINT = '/api/master_timeline';
+const MASTER_DATA_UPDATE_API_ENDPOINT = '/api/master_timeline/update';
 const MASTER_DATA_EMPTY_DEFAULT_MESSAGE = 'No master data found. Import your Google Timeline to populate this table.';
 const MASTER_DATA_EMPTY_FILTER_MESSAGE = 'No rows match your current search.';
+const MASTER_DATA_READ_ONLY_COLUMNS = new Set(['Place ID']);
+const MASTER_DATA_SEARCH_DEBOUNCE_MS = 120;
 
 const tripListState = {
     trips: [],
@@ -427,7 +437,15 @@ const masterDataState = {
     rows: [],
     filteredRows: [],
     searchTerm: '',
+    filterColumn: '',
+    sortColumn: '',
+    sortDirection: 'asc',
     loading: false,
+    savingCellKey: '',
+    page: 1,
+    pageSize: 250,
+    searchDebounceTimer: null,
+    menuWasOpenOnOpen: false,
     lastLoadedAt: null,
     emptyMessageDefault: MASTER_DATA_EMPTY_DEFAULT_MESSAGE,
 };
@@ -3405,7 +3423,14 @@ function initAdvancedPanel() {
     masterDataEmptyElement = document.getElementById('masterDataEmpty');
     masterDataMetaElement = document.getElementById('masterDataMeta');
     masterDataSearchInput = document.getElementById('masterDataSearch');
+    masterDataFilterColumnSelect = document.getElementById('masterDataFilterColumn');
+    masterDataPageSizeSelect = document.getElementById('masterDataPageSize');
+    masterDataClearFiltersButton = document.getElementById('masterDataClearFiltersButton');
     masterDataRefreshButton = document.getElementById('masterDataRefreshButton');
+    masterDataPaginationElement = document.getElementById('masterDataPagination');
+    masterDataPaginationMetaElement = document.getElementById('masterDataPaginationMeta');
+    masterDataPrevPageButton = document.getElementById('masterDataPrevPageButton');
+    masterDataNextPageButton = document.getElementById('masterDataNextPageButton');
 
     if (masterDataEmptyElement && masterDataEmptyElement.textContent) {
         masterDataState.emptyMessageDefault = masterDataEmptyElement.textContent.trim() || MASTER_DATA_EMPTY_DEFAULT_MESSAGE;
@@ -3413,7 +3438,50 @@ function initAdvancedPanel() {
 
     if (masterDataSearchInput) {
         masterDataSearchInput.addEventListener('input', () => {
-            masterDataState.searchTerm = masterDataSearchInput.value.trim().toLowerCase();
+            if (masterDataState.searchDebounceTimer) {
+                window.clearTimeout(masterDataState.searchDebounceTimer);
+            }
+            masterDataState.searchDebounceTimer = window.setTimeout(() => {
+                masterDataState.searchTerm = masterDataSearchInput.value.trim().toLowerCase();
+                masterDataState.page = 1;
+                filterMasterDataRows();
+            }, MASTER_DATA_SEARCH_DEBOUNCE_MS);
+        });
+    }
+
+    if (masterDataFilterColumnSelect) {
+        masterDataFilterColumnSelect.addEventListener('change', () => {
+            masterDataState.filterColumn = masterDataFilterColumnSelect.value || '';
+            masterDataState.page = 1;
+            filterMasterDataRows();
+        });
+    }
+
+    if (masterDataPageSizeSelect) {
+        masterDataPageSizeSelect.addEventListener('change', () => {
+            const rawValue = masterDataPageSizeSelect.value;
+            masterDataState.pageSize = rawValue === 'all' ? 'all' : Math.max(1, Number(rawValue) || 250);
+            masterDataState.page = 1;
+            filterMasterDataRows();
+        });
+    }
+
+    if (masterDataClearFiltersButton) {
+        masterDataClearFiltersButton.addEventListener('click', () => {
+            masterDataState.searchTerm = '';
+            masterDataState.filterColumn = '';
+            masterDataState.sortColumn = '';
+            masterDataState.sortDirection = 'asc';
+            masterDataState.page = 1;
+            if (masterDataSearchInput) {
+                masterDataSearchInput.value = '';
+            }
+            if (masterDataFilterColumnSelect) {
+                masterDataFilterColumnSelect.value = '';
+            }
+            if (masterDataPageSizeSelect) {
+                masterDataPageSizeSelect.value = String(masterDataState.pageSize);
+            }
             filterMasterDataRows();
         });
     }
@@ -3428,8 +3496,133 @@ function initAdvancedPanel() {
         masterDataLoadingElement.hidden = true;
     }
 
+    if (masterDataPrevPageButton) {
+        masterDataPrevPageButton.addEventListener('click', () => {
+            if (masterDataState.page <= 1) { return; }
+            masterDataState.page -= 1;
+            renderMasterDataTable();
+            updateMasterDataMeta();
+            updateMasterDataPagination();
+        });
+    }
+
+    if (masterDataNextPageButton) {
+        masterDataNextPageButton.addEventListener('click', () => {
+            const totalPages = getMasterDataTotalPages();
+            if (masterDataState.page >= totalPages) { return; }
+            masterDataState.page += 1;
+            renderMasterDataTable();
+            updateMasterDataMeta();
+            updateMasterDataPagination();
+        });
+    }
+
     resetMasterDataMessages();
     masterDataState.initialised = true;
+}
+
+function updateMasterDataFilterColumnOptions() {
+    if (!masterDataFilterColumnSelect) { return; }
+    const columns = Array.isArray(masterDataState.columns) ? masterDataState.columns : [];
+    const currentValue = masterDataState.filterColumn || '';
+    masterDataFilterColumnSelect.innerHTML = '';
+
+    const allOption = document.createElement('option');
+    allOption.value = '';
+    allOption.textContent = 'All columns';
+    masterDataFilterColumnSelect.appendChild(allOption);
+
+    columns.forEach((column) => {
+        const option = document.createElement('option');
+        option.value = column;
+        option.textContent = column;
+        masterDataFilterColumnSelect.appendChild(option);
+    });
+
+    if (currentValue && columns.includes(currentValue)) {
+        masterDataFilterColumnSelect.value = currentValue;
+    } else {
+        masterDataState.filterColumn = '';
+        masterDataFilterColumnSelect.value = '';
+    }
+}
+
+function isMasterDataColumnEditable(column, row) {
+    if (!column || MASTER_DATA_READ_ONLY_COLUMNS.has(column)) { return false; }
+    return Boolean(row && row['Place ID']);
+}
+
+function getMasterDataCellKey(placeId, column) {
+    return `${placeId || ''}::${column || ''}`;
+}
+
+function normaliseMasterDataBoolean(value) {
+    if (typeof value === 'boolean') { return value; }
+    if (typeof value === 'number') { return value !== 0; }
+    const text = String(value || '').trim().toLowerCase();
+    return ['true', '1', 'yes', 'y', 'on'].includes(text);
+}
+
+function getMasterDataComparableValue(column, value) {
+    if (value === null || typeof value === 'undefined' || value === '') {
+        return { type: 'empty', value: '' };
+    }
+
+    if (column === 'Archived') {
+        return { type: 'boolean', value: normaliseMasterDataBoolean(value) ? 1 : 0 };
+    }
+
+    if (column === 'Latitude' || column === 'Longitude') {
+        const numericValue = Number(value);
+        if (Number.isFinite(numericValue)) {
+            return { type: 'number', value: numericValue };
+        }
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return { type: 'number', value };
+    }
+
+    if (/date/i.test(column || '')) {
+        const timestamp = Date.parse(String(value));
+        if (!Number.isNaN(timestamp)) {
+            return { type: 'date', value: timestamp };
+        }
+    }
+
+    const numericValue = Number(value);
+    if (String(value).trim() !== '' && Number.isFinite(numericValue)) {
+        return { type: 'number', value: numericValue };
+    }
+
+    return { type: 'string', value: String(value).toLowerCase() };
+}
+
+function compareMasterDataRows(leftRow, rightRow, column, direction) {
+    const multiplier = direction === 'desc' ? -1 : 1;
+    const leftComparable = getMasterDataComparableValue(column, leftRow ? leftRow[column] : '');
+    const rightComparable = getMasterDataComparableValue(column, rightRow ? rightRow[column] : '');
+
+    if (leftComparable.type === 'empty' && rightComparable.type !== 'empty') { return 1; }
+    if (rightComparable.type === 'empty' && leftComparable.type !== 'empty') { return -1; }
+
+    if (leftComparable.value < rightComparable.value) { return -1 * multiplier; }
+    if (leftComparable.value > rightComparable.value) { return 1 * multiplier; }
+
+    const leftPlaceId = leftRow && leftRow['Place ID'] ? String(leftRow['Place ID']) : '';
+    const rightPlaceId = rightRow && rightRow['Place ID'] ? String(rightRow['Place ID']) : '';
+    return leftPlaceId.localeCompare(rightPlaceId) * multiplier;
+}
+
+function toggleMasterDataSort(column) {
+    if (!column) { return; }
+    if (masterDataState.sortColumn === column) {
+        masterDataState.sortDirection = masterDataState.sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        masterDataState.sortColumn = column;
+        masterDataState.sortDirection = 'asc';
+    }
+    filterMasterDataRows();
 }
 
 function resetMasterDataMessages() {
@@ -3504,6 +3697,147 @@ function formatMasterDataCell(value) {
     return String(value);
 }
 
+function getMasterDataPageSizeValue() {
+    return masterDataState.pageSize === 'all'
+        ? masterDataState.filteredRows.length || masterDataState.rows.length || 1
+        : Math.max(1, Number(masterDataState.pageSize) || 250);
+}
+
+function getMasterDataTotalPages() {
+    const totalRows = Array.isArray(masterDataState.filteredRows) ? masterDataState.filteredRows.length : 0;
+    if (!totalRows) { return 1; }
+    if (masterDataState.pageSize === 'all') { return 1; }
+    return Math.max(1, Math.ceil(totalRows / getMasterDataPageSizeValue()));
+}
+
+function getMasterDataVisibleRows() {
+    const rows = Array.isArray(masterDataState.filteredRows) ? masterDataState.filteredRows : [];
+    if (masterDataState.pageSize === 'all') {
+        return rows;
+    }
+    const pageSize = getMasterDataPageSizeValue();
+    const totalPages = getMasterDataTotalPages();
+    const page = Math.min(Math.max(1, masterDataState.page), totalPages);
+    const startIndex = (page - 1) * pageSize;
+    return rows.slice(startIndex, startIndex + pageSize);
+}
+
+function updateMasterDataPagination() {
+    if (!masterDataPaginationElement || !masterDataPaginationMetaElement) { return; }
+    const totalRows = Array.isArray(masterDataState.filteredRows) ? masterDataState.filteredRows.length : 0;
+    const hasRows = totalRows > 0;
+    masterDataPaginationElement.hidden = !hasRows;
+    if (!hasRows) {
+        masterDataPaginationMetaElement.textContent = '';
+        return;
+    }
+
+    const totalPages = getMasterDataTotalPages();
+    const page = Math.min(Math.max(1, masterDataState.page), totalPages);
+    masterDataState.page = page;
+
+    if (masterDataState.pageSize === 'all') {
+        masterDataPaginationMetaElement.textContent = `Showing all ${totalRows.toLocaleString()} rows`;
+    } else {
+        const pageSize = getMasterDataPageSizeValue();
+        const start = ((page - 1) * pageSize) + 1;
+        const end = Math.min(page * pageSize, totalRows);
+        masterDataPaginationMetaElement.textContent = `Rows ${start.toLocaleString()}-${end.toLocaleString()} of ${totalRows.toLocaleString()}`;
+    }
+
+    if (masterDataPrevPageButton) {
+        masterDataPrevPageButton.disabled = page <= 1 || masterDataState.pageSize === 'all';
+    }
+    if (masterDataNextPageButton) {
+        masterDataNextPageButton.disabled = page >= totalPages || masterDataState.pageSize === 'all';
+    }
+}
+
+function createMasterDataTextEditor(column, row, value) {
+    const input = document.createElement(column === 'Description' ? 'textarea' : 'input');
+    input.className = 'advanced-table-cell-editor';
+    if (column === 'Description') {
+        input.classList.add('advanced-table-cell-editor-textarea');
+    } else {
+        input.type = (column === 'Latitude' || column === 'Longitude') ? 'number' : 'text';
+        if (column === 'Latitude' || column === 'Longitude') {
+            input.step = 'any';
+            input.inputMode = 'decimal';
+        }
+    }
+
+    const initialValue = value === null || typeof value === 'undefined' ? '' : String(value);
+    input.value = initialValue;
+    input.dataset.originalValue = initialValue;
+
+    const placeId = row && row['Place ID'] ? String(row['Place ID']) : '';
+    const cellKey = getMasterDataCellKey(placeId, column);
+    if (masterDataState.savingCellKey === cellKey) {
+        input.disabled = true;
+    }
+
+    const commitIfChanged = async () => {
+        const nextValue = input.value;
+        if (nextValue === input.dataset.originalValue) { return; }
+        const ok = await saveMasterDataCell(row, column, nextValue);
+        if (!ok) {
+            input.value = input.dataset.originalValue || '';
+        }
+    };
+
+    input.addEventListener('blur', () => {
+        commitIfChanged();
+    });
+
+    input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && !event.shiftKey && column !== 'Description') {
+            event.preventDefault();
+            input.blur();
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            input.value = input.dataset.originalValue || '';
+            input.blur();
+        } else if (
+            column === 'Description'
+            && event.key === 'Enter'
+            && (event.ctrlKey || event.metaKey)
+        ) {
+            event.preventDefault();
+            input.blur();
+        }
+    });
+
+    return input;
+}
+
+function createMasterDataBooleanEditor(column, row, value) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'advanced-table-cell-boolean';
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.className = 'advanced-table-cell-checkbox';
+    input.checked = normaliseMasterDataBoolean(value);
+    input.dataset.originalValue = input.checked ? 'true' : 'false';
+
+    const placeId = row && row['Place ID'] ? String(row['Place ID']) : '';
+    const cellKey = getMasterDataCellKey(placeId, column);
+    if (masterDataState.savingCellKey === cellKey) {
+        input.disabled = true;
+    }
+
+    input.addEventListener('change', async () => {
+        const nextValue = input.checked;
+        const ok = await saveMasterDataCell(row, column, nextValue);
+        if (!ok) {
+            input.checked = input.dataset.originalValue === 'true';
+        }
+    });
+
+    wrapper.appendChild(input);
+    return wrapper;
+}
+
 function renderMasterDataTable() {
     if (!masterDataTableElement || !masterDataTableHead || !masterDataTableBody) { return; }
     const columns = Array.isArray(masterDataState.columns) ? masterDataState.columns : [];
@@ -3515,17 +3849,54 @@ function renderMasterDataTable() {
     columns.forEach((column) => {
         const th = document.createElement('th');
         th.scope = 'col';
-        th.textContent = column;
+        if (masterDataState.sortColumn === column) {
+            th.setAttribute('aria-sort', masterDataState.sortDirection === 'asc' ? 'ascending' : 'descending');
+        } else {
+            th.setAttribute('aria-sort', 'none');
+        }
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'advanced-table-sort';
+        button.setAttribute('aria-label', `Sort by ${column}`);
+        button.addEventListener('click', () => {
+            toggleMasterDataSort(column);
+        });
+
+        const label = document.createElement('span');
+        label.textContent = column;
+        button.appendChild(label);
+
+        const indicator = document.createElement('span');
+        indicator.className = 'advanced-table-sort-indicator';
+        if (masterDataState.sortColumn === column) {
+            indicator.textContent = masterDataState.sortDirection === 'asc' ? '▲' : '▼';
+        } else {
+            indicator.textContent = '↕';
+        }
+        button.appendChild(indicator);
+
+        th.appendChild(button);
         headerRow.appendChild(th);
     });
     masterDataTableHead.appendChild(headerRow);
 
     const fragment = document.createDocumentFragment();
-    masterDataState.filteredRows.forEach((row) => {
+    const visibleRows = getMasterDataVisibleRows();
+    visibleRows.forEach((row) => {
         const tr = document.createElement('tr');
         columns.forEach((column) => {
             const td = document.createElement('td');
-            td.textContent = formatMasterDataCell(row ? row[column] : '');
+            const value = row ? row[column] : '';
+            if (!isMasterDataColumnEditable(column, row)) {
+                const span = document.createElement('span');
+                span.className = 'advanced-table-readonly';
+                span.textContent = formatMasterDataCell(value);
+                td.appendChild(span);
+            } else if (column === 'Archived') {
+                td.appendChild(createMasterDataBooleanEditor(column, row, value));
+            } else {
+                td.appendChild(createMasterDataTextEditor(column, row, value));
+            }
             tr.appendChild(td);
         });
         fragment.appendChild(tr);
@@ -3538,17 +3909,31 @@ function filterMasterDataRows() {
     const columns = Array.isArray(masterDataState.columns) ? masterDataState.columns : [];
     const baseRows = Array.isArray(masterDataState.rows) ? masterDataState.rows : [];
     const term = (masterDataState.searchTerm || '').trim().toLowerCase();
+    const filterColumn = masterDataState.filterColumn || '';
     let filtered = baseRows.slice();
 
     if (term) {
-        filtered = filtered.filter((row) => columns.some((column) => {
+        const searchableColumns = filterColumn && columns.includes(filterColumn)
+            ? [filterColumn]
+            : columns;
+        filtered = filtered.filter((row) => searchableColumns.some((column) => {
             const value = row ? row[column] : null;
             if (value === null || typeof value === 'undefined') { return false; }
             return String(value).toLowerCase().includes(term);
         }));
     }
 
+    if (masterDataState.sortColumn && columns.includes(masterDataState.sortColumn)) {
+        filtered.sort((leftRow, rightRow) => compareMasterDataRows(
+            leftRow,
+            rightRow,
+            masterDataState.sortColumn,
+            masterDataState.sortDirection,
+        ));
+    }
+
     masterDataState.filteredRows = filtered;
+    masterDataState.page = Math.min(Math.max(1, masterDataState.page), getMasterDataTotalPages());
     renderMasterDataTable();
 
     const hasRows = filtered.length > 0 && columns.length > 0;
@@ -3572,6 +3957,72 @@ function filterMasterDataRows() {
     }
 
     updateMasterDataMeta();
+    updateMasterDataPagination();
+}
+
+async function saveMasterDataCell(row, column, value) {
+    const placeId = row && row['Place ID'] ? String(row['Place ID']) : '';
+    if (!placeId || !column || !isMasterDataColumnEditable(column, row)) {
+        return false;
+    }
+
+    const cellKey = getMasterDataCellKey(placeId, column);
+    masterDataState.savingCellKey = cellKey;
+    let shouldRerender = true;
+
+    try {
+        const response = await fetch(MASTER_DATA_UPDATE_API_ENDPOINT, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+            },
+            body: JSON.stringify({
+                place_id: placeId,
+                column,
+                value,
+            }),
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || (payload && payload.status === 'error')) {
+            const message = payload && payload.message ? payload.message : `Failed to update ${column}.`;
+            throw new Error(message);
+        }
+
+        const updatedRow = payload && payload.row && typeof payload.row === 'object'
+            ? payload.row
+            : null;
+
+        const rowIndex = masterDataState.rows.findIndex((entry) => entry && String(entry['Place ID'] || '') === placeId);
+        if (rowIndex >= 0) {
+            if (updatedRow) {
+                masterDataState.rows[rowIndex] = updatedRow;
+            } else {
+                masterDataState.rows[rowIndex][column] = value;
+            }
+        }
+
+        showStatus(payload.message || `${column} updated successfully.`);
+        masterDataState.savingCellKey = '';
+        filterMasterDataRows();
+        shouldRerender = false;
+        if (typeof loadMarkers === 'function') {
+            loadMarkers();
+        }
+        return true;
+    } catch (error) {
+        console.error(`Failed to update master data column "${column}"`, error);
+        showStatus(error.message || `Failed to update ${column}.`, true);
+        return false;
+    } finally {
+        if (masterDataState.savingCellKey === cellKey) {
+            masterDataState.savingCellKey = '';
+        }
+        if (shouldRerender) {
+            renderMasterDataTable();
+        }
+    }
 }
 
 async function loadMasterData() {
@@ -3580,6 +4031,9 @@ async function loadMasterData() {
 
     masterDataState.searchTerm = masterDataSearchInput
         ? masterDataSearchInput.value.trim().toLowerCase()
+        : '';
+    masterDataState.filterColumn = masterDataFilterColumnSelect
+        ? masterDataFilterColumnSelect.value || ''
         : '';
 
     resetMasterDataMessages();
@@ -3599,6 +4053,7 @@ async function loadMasterData() {
 
         masterDataState.columns = Array.isArray(payload.columns) ? payload.columns : [];
         masterDataState.rows = Array.isArray(payload.rows) ? payload.rows : [];
+        updateMasterDataFilterColumnOptions();
         if (payload.generated_at) {
             const parsed = new Date(payload.generated_at);
             masterDataState.lastLoadedAt = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
@@ -3635,8 +4090,17 @@ function ensureMasterDataOverlay() {
 function openMasterDataOverlay(triggerElement = null) {
     if (!ensureMasterDataOverlay()) { return; }
     masterDataOverlayTriggerElement = triggerElement || document.activeElement || null;
+    const menuElement = document.querySelector('.menu-container');
+    if (menuElement) {
+        masterDataState.menuWasOpenOnOpen = menuElement.classList.contains('open');
+        if (!masterDataState.menuWasOpenOnOpen) {
+            menuElement.classList.add('open');
+            applyMenuState(menuElement, true);
+        }
+    }
     masterDataOverlayElement.hidden = false;
     masterDataOverlayElement.setAttribute('aria-hidden', 'false');
+    document.documentElement.classList.add('master-data-open');
     requestAnimationFrame(() => {
         if (masterDataOverlayElement) {
             masterDataOverlayElement.classList.add('open');
@@ -3653,10 +4117,15 @@ function openMasterDataOverlay(triggerElement = null) {
     }
     if (!masterDataOverlayEscapeHandler) {
         masterDataOverlayEscapeHandler = (event) => {
-            if (event.key === 'Escape') {
-                event.preventDefault();
-                closeMasterDataOverlay();
+            if (event.key !== 'Escape') { return; }
+            event.preventDefault();
+            if (typeof event.stopImmediatePropagation === 'function') {
+                event.stopImmediatePropagation();
             }
+            if (typeof event.stopPropagation === 'function') {
+                event.stopPropagation();
+            }
+            closeMasterDataOverlay();
         };
         document.addEventListener('keydown', masterDataOverlayEscapeHandler, true);
     }
@@ -3666,6 +4135,7 @@ function closeMasterDataOverlay(options = {}) {
     if (!masterDataOverlayElement || masterDataOverlayElement.hidden) { return; }
     masterDataOverlayElement.classList.remove('open');
     masterDataOverlayElement.setAttribute('aria-hidden', 'true');
+    document.documentElement.classList.remove('master-data-open');
     const overlayElement = masterDataOverlayElement;
     setTimeout(() => {
         if (overlayElement && !overlayElement.classList.contains('open')) {
@@ -3679,6 +4149,14 @@ function closeMasterDataOverlay(options = {}) {
     if (options.restoreFocus !== false && masterDataOverlayTriggerElement && typeof masterDataOverlayTriggerElement.focus === 'function') {
         masterDataOverlayTriggerElement.focus();
     }
+    if (options.restoreMenu !== false) {
+        const menuElement = document.querySelector('.menu-container');
+        if (menuElement && !masterDataState.menuWasOpenOnOpen) {
+            menuElement.classList.remove('open');
+            applyMenuState(menuElement, false);
+        }
+    }
+    masterDataState.menuWasOpenOnOpen = false;
     masterDataOverlayTriggerElement = null;
 }
 
@@ -7905,8 +8383,14 @@ async function initMap() {
         map.setProjection({ name: 'globe' });
     }
 
+    const fullscreenContainer = document.getElementById('map-container');
     map.addControl(new mapboxgl.NavigationControl({ showCompass: true, showZoom: true, visualizePitch: true }), 'top-left');
-    map.addControl(new mapboxgl.FullscreenControl(), 'top-left');
+    map.addControl(
+        new mapboxgl.FullscreenControl(
+            fullscreenContainer ? { container: fullscreenContainer } : {}
+        ),
+        'top-left'
+    );
     map.on('contextmenu', handleMapContextMenu);
     map.on('click', hideMapContextMenu);
     map.on('movestart', hideMapContextMenu);
@@ -9883,6 +10367,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 function toggleMenu() {
     const menu = document.querySelector('.menu-container');
     if (!menu) { return; }
+    if (
+        document.documentElement.classList.contains('master-data-open')
+        && menu.classList.contains('open')
+    ) {
+        closeMasterDataOverlay({ restoreFocus: false, restoreMenu: false });
+    }
     const isOpen = menu.classList.toggle('open');
     applyMenuState(menu, isOpen);
     if (isOpen && typeof googleAuthRefreshHandler === 'function') {

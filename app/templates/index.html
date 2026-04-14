@@ -309,9 +309,8 @@
         </div>
     </div>
     <div id="status"></div>
-    <div id="masterDataOverlay" class="advanced-overlay" hidden aria-hidden="true">
-        <div class="advanced-overlay-backdrop" data-master-overlay-close tabindex="-1"></div>
-        <div class="advanced-overlay-panel" role="dialog" aria-modal="true" aria-labelledby="masterDataOverlayTitle" tabindex="-1">
+    <div id="masterDataOverlay" class="advanced-overlay advanced-overlay-workspace" hidden aria-hidden="true">
+        <div class="advanced-overlay-panel advanced-overlay-panel-workspace" role="dialog" aria-modal="false" aria-labelledby="masterDataOverlayTitle" tabindex="-1">
             <div class="advanced-overlay-header">
                 <div class="advanced-overlay-titles">
                     <h3 class="advanced-overlay-title" id="masterDataOverlayTitle">Master Database</h3>
@@ -327,8 +326,32 @@
                         <span class="advanced-search-label">Search</span>
                         <input type="search" id="masterDataSearch" name="masterDataSearch" placeholder="Search any column" autocomplete="off">
                     </label>
+                    <label class="advanced-search" for="masterDataFilterColumn">
+                        <span class="advanced-search-label">Filter Column</span>
+                        <select id="masterDataFilterColumn" name="masterDataFilterColumn">
+                            <option value="">All columns</option>
+                        </select>
+                    </label>
+                    <label class="advanced-search advanced-search-compact" for="masterDataPageSize">
+                        <span class="advanced-search-label">Rows</span>
+                        <select id="masterDataPageSize" name="masterDataPageSize">
+                            <option value="100">100</option>
+                            <option value="250" selected>250</option>
+                            <option value="500">500</option>
+                            <option value="1000">1000</option>
+                            <option value="all">All</option>
+                        </select>
+                    </label>
                     <div class="advanced-meta" id="masterDataMeta" aria-live="polite">No records loaded yet.</div>
+                    <button type="button" class="overlay-button overlay-button-secondary" id="masterDataClearFiltersButton">Clear Filters</button>
                     <button type="button" class="overlay-button overlay-button-secondary" id="masterDataRefreshButton">Reload Data</button>
+                </div>
+                <div class="advanced-pagination" id="masterDataPagination" hidden>
+                    <div class="advanced-pagination-meta" id="masterDataPaginationMeta" aria-live="polite"></div>
+                    <div class="advanced-pagination-actions">
+                        <button type="button" class="overlay-button overlay-button-secondary advanced-pagination-button" id="masterDataPrevPageButton">Previous</button>
+                        <button type="button" class="overlay-button overlay-button-secondary advanced-pagination-button" id="masterDataNextPageButton">Next</button>
+                    </div>
                 </div>
                 <div class="advanced-table-wrapper">
                     <div class="advanced-table-message" id="masterDataLoading" role="status">Loading master database...</div>

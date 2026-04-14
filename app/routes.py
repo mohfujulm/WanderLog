@@ -47,6 +47,7 @@ MAX_TRIP_NAME_LENGTH = 120
 MAX_TRIP_DESCRIPTION_LENGTH = 2000
 MAX_LOCATION_DESCRIPTION_LENGTH = 2000
 MAX_TRIP_PHOTOS_URL_LENGTH = 1000
+MASTER_TIMELINE_READ_ONLY_COLUMNS = {'Place ID'}
 DEFAULT_TRIP_PHOTO_CACHE_TTL_SECONDS = 60 * 60 * 24  # 24 hours
 
 # Scopes control which Google APIs the user grants access to.  ``openid`` and
@@ -1770,6 +1771,132 @@ def api_master_timeline():
         rows=rows,
         total=len(rows),
         generated_at=generated_at,
+    )
+
+
+@main.route('/api/master_timeline/update', methods=['POST'])
+def api_update_master_timeline_cell():
+    """Persist a single edited master timeline cell."""
+
+    data_cache.ensure_archived_column()
+    df = data_cache.timeline_df
+    if df is None or df.empty or 'Place ID' not in df.columns:
+        return jsonify(status='error', message='Master timeline data is unavailable.'), 404
+
+    payload = request.get_json(silent=True) or {}
+    place_id = _clean_string(payload.get('place_id'))
+    column = _clean_string(payload.get('column'))
+
+    if not place_id:
+        return jsonify(status='error', message='A valid place ID is required.'), 400
+    if not column:
+        return jsonify(status='error', message='A valid column is required.'), 400
+    if column not in df.columns:
+        return jsonify(status='error', message='Column not found.'), 404
+    if column in MASTER_TIMELINE_READ_ONLY_COLUMNS:
+        return jsonify(status='error', message=f'{column} is read-only.'), 400
+
+    mask = df['Place ID'].astype(str).str.strip() == place_id
+    if not mask.any():
+        return jsonify(status='error', message='Data point not found.'), 404
+
+    raw_value = payload.get('value')
+
+    if column == 'Latitude':
+        cleaned = _clean_string(raw_value)
+        if not cleaned:
+            return jsonify(status='error', message='Latitude is required.'), 400
+        try:
+            value = float(cleaned)
+        except (TypeError, ValueError):
+            return jsonify(status='error', message='Latitude must be a valid number.'), 400
+        if value < -90 or value > 90:
+            return jsonify(status='error', message='Latitude must be between -90 and 90.'), 400
+    elif column == 'Longitude':
+        cleaned = _clean_string(raw_value)
+        if not cleaned:
+            return jsonify(status='error', message='Longitude is required.'), 400
+        try:
+            value = float(cleaned)
+        except (TypeError, ValueError):
+            return jsonify(status='error', message='Longitude must be a valid number.'), 400
+        if value < -180 or value > 180:
+            return jsonify(status='error', message='Longitude must be between -180 and 180.'), 400
+    elif column == 'Archived':
+        if isinstance(raw_value, bool):
+            value = raw_value
+        else:
+            cleaned = _clean_string(raw_value).lower()
+            if cleaned in ('true', '1', 'yes', 'y', 'on'):
+                value = True
+            elif cleaned in ('false', '0', 'no', 'n', 'off', ''):
+                value = False
+            else:
+                return jsonify(status='error', message='Archived must be true or false.'), 400
+    elif column == 'Alias':
+        value = _clean_string(raw_value)
+        if len(value) > MAX_ALIAS_LENGTH:
+            return jsonify(
+                status='error',
+                message=f'Alias must be {MAX_ALIAS_LENGTH} characters or fewer.',
+            ), 400
+    elif column == 'Description':
+        if raw_value is None:
+            value = ''
+        elif isinstance(raw_value, str):
+            value = raw_value
+        else:
+            value = str(raw_value)
+        if len(value) > MAX_LOCATION_DESCRIPTION_LENGTH:
+            return jsonify(
+                status='error',
+                message=(
+                    'Description must be '
+                    f'{MAX_LOCATION_DESCRIPTION_LENGTH} characters or fewer.'
+                ),
+            ), 400
+        value = value if value.strip() else ''
+    else:
+        if raw_value is None:
+            value = ''
+        elif isinstance(raw_value, str):
+            value = raw_value.strip()
+        else:
+            value = str(raw_value).strip()
+
+    df.loc[mask, column] = value
+    data_cache.timeline_df = df
+    data_cache.ensure_archived_column()
+    data_cache.save_timeline_data()
+
+    updated_row = data_cache.timeline_df.loc[mask].iloc[0]
+
+    def _serialise_cell(value):
+        if pd.isna(value):
+            return ''
+        if isinstance(value, pd.Timestamp):
+            return value.isoformat()
+        if hasattr(value, 'isoformat'):
+            try:
+                return value.isoformat()
+            except Exception:
+                return str(value)
+        if isinstance(value, (int, float, bool)):
+            return value
+        if isinstance(value, str):
+            return value
+        return str(value)
+
+    serialised_row = {
+        column_name: _serialise_cell(updated_row.get(column_name))
+        for column_name in data_cache.timeline_df.columns
+    }
+
+    return jsonify(
+        status='success',
+        message=f'{column} updated successfully.',
+        row=serialised_row,
+        value=_serialise_cell(updated_row.get(column)),
     )
 
 
