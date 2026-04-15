@@ -2688,13 +2688,22 @@ function openMarkerPopupAt(markerData, coordinates) {
     const popupHtml = createPopupContent(markerData);
     if (!popupHtml) { return; }
 
-    closeActivePopup();
-    activePopup = new mapboxgl.Popup({
+    const isCompactMobileViewport = typeof window !== 'undefined'
+        && typeof window.matchMedia === 'function'
+        && window.matchMedia('(max-width: 900px)').matches;
+
+    const popupOptions = {
         closeButton: true,
-        offset: 28,
+        offset: isCompactMobileViewport ? 18 : 28,
         className: MAPBOX_POPUP_CLASS,
-        maxWidth: '320px',
-    }).setLngLat(coordinates)
+        maxWidth: isCompactMobileViewport ? '240px' : '320px',
+    };
+    if (isCompactMobileViewport) {
+        popupOptions.anchor = 'bottom';
+    }
+
+    closeActivePopup();
+    activePopup = new mapboxgl.Popup(popupOptions).setLngLat(coordinates)
         .setHTML(popupHtml)
         .addTo(map);
 

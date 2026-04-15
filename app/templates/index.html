@@ -41,7 +41,10 @@
             <span class="menu-toggle-text">Menu</span>
         </button>
         <div class="overlay-controls" id="menuControls" aria-hidden="true" inert>
-            <button type="button" class="menu-panel-close" id="menuPanelClose" aria-label="Close menu">✕</button>
+            <button type="button" class="menu-panel-close" id="menuPanelClose" aria-label="Close menu">
+                <span aria-hidden="true">&times;</span>
+            </button>
+            <div class="overlay-controls-scroll">
             {% if google_auth_enabled %}
             {#
                 When Google OAuth is configured we render a dedicated account
@@ -182,14 +185,15 @@
                     </div>
                 </div>
             </div>
+            </div>
         </div>
         <div id="tripProfileOverlay" class="trip-profile-overlay" aria-hidden="true" hidden>
             <article id="tripProfilePanel" class="trip-profile-panel" role="dialog" aria-modal="false" aria-labelledby="tripDetailTitle">
+                <button type="button" class="trip-profile-close" id="tripDetailBack" aria-label="Close trip profile">
+                    <span aria-hidden="true">&times;</span>
+                </button>
                 <div id="tripDetailView" class="trip-detail trip-profile-content" hidden aria-hidden="true">
                     <div class="trip-profile-hero">
-                        <button type="button" class="trip-profile-close" id="tripDetailBack" aria-label="Close trip profile">
-                            <span aria-hidden="true">&times;</span>
-                        </button>
                         <div class="trip-profile-hero-body">
                             <p class="trip-profile-eyebrow">Trip profile</p>
                             <h2 class="trip-profile-title" id="tripDetailTitle" data-default-text="Trip details">Trip details</h2>
