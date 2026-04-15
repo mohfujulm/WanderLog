@@ -83,16 +83,13 @@ def _normalise_trip_photo_entry(raw: Any) -> Optional[Dict[str, Any]]:
         raw.get("baseUrl"),
         raw.get("url"),
         media_item.get("baseUrl") if media_item else None,
-        media_item.get("mediaItemUri") if media_item else None,
-        media_item.get("url") if media_item else None,
         media_item.get("downloadUrl") if media_item else None,
+        media_item.get("url") if media_item else None,
         google_media_item.get("baseUrl") if google_media_item else None,
-        google_media_item.get("mediaItemUri") if google_media_item else None,
         google_media_item.get("downloadUrl") if google_media_item else None,
         google_media_item.get("thumbnailUrl") if google_media_item else None,
         google_media_item.get("directMediaItemUri") if google_media_item else None,
         google_media.get("baseUrl") if google_media else None,
-        google_media.get("mediaItemUri") if google_media else None,
         google_media.get("downloadUrl") if google_media else None,
         google_media.get("thumbnailUrl") if google_media else None,
         google_media.get("directMediaItemUri") if google_media else None,
@@ -100,6 +97,9 @@ def _normalise_trip_photo_entry(raw: Any) -> Optional[Dict[str, Any]]:
         media_file.get("downloadUrl") if media_file else None,
         media_file.get("signedUrl") if media_file else None,
         raw.get("contentUrl"),
+        media_item.get("mediaItemUri") if media_item else None,
+        google_media_item.get("mediaItemUri") if google_media_item else None,
+        google_media.get("mediaItemUri") if google_media else None,
     ]
     base_url = ""
     for candidate in base_url_sources:

@@ -47,6 +47,7 @@ MAX_TRIP_NAME_LENGTH = 120
 MAX_TRIP_DESCRIPTION_LENGTH = 2000
 MAX_LOCATION_DESCRIPTION_LENGTH = 2000
 MAX_TRIP_PHOTOS_URL_LENGTH = 1000
+MASTER_TIMELINE_READ_ONLY_COLUMNS = {'Place ID'}
 DEFAULT_TRIP_PHOTO_CACHE_TTL_SECONDS = 60 * 60 * 24  # 24 hours
 
 # Scopes control which Google APIs the user grants access to.  ``openid`` and
@@ -1443,7 +1444,7 @@ def api_update_timeline():
         data_cache.ensure_archived_column()
 
         # Persist the updated timeline if required
-        data_cache.save_timeline_data()
+        data_cache.save_timeline_data(reason='Timeline import')
 
         #  Return success message
         return jsonify(
@@ -1472,7 +1473,7 @@ def api_clear():
             }), 500
 
     data_cache.timeline_df = pd.DataFrame()
-    data_cache.save_timeline_data()
+    data_cache.save_timeline_data(reason='Clear timeline data')
 
     message = 'All timeline data cleared successfully.'
     if backup_path:
@@ -1551,7 +1552,7 @@ def api_add_point():
         data_cache.timeline_df = pd.concat([data_cache.timeline_df, new_row], ignore_index=True)
 
     data_cache.ensure_archived_column()
-    data_cache.save_timeline_data()
+    data_cache.save_timeline_data(reason='Manual data point added')
 
     return jsonify(
         status='success',
@@ -1579,7 +1580,10 @@ def api_archive_marker(place_id: str):
     df.loc[mask, 'Archived'] = archived_value
     data_cache.timeline_df = df
     data_cache.ensure_archived_column()
-    data_cache.save_timeline_data()
+    data_cache.save_timeline_data(
+        reason='Marker archive updated',
+        metadata={'place_id': place_id, 'archived': archived_value},
+    )
 
     action = 'archived' if archived_value else 'unarchived'
     return jsonify(status='success', message=f'Data point {action} successfully.')
@@ -1621,7 +1625,10 @@ def api_bulk_archive_markers():
     df.loc[mask, 'Archived'] = archived_flag
     data_cache.timeline_df = df
     data_cache.ensure_archived_column()
-    data_cache.save_timeline_data()
+    data_cache.save_timeline_data(
+        reason='Bulk marker archive updated',
+        metadata={'updated': matched_count, 'archived': archived_flag},
+    )
 
     action = 'archived' if archived_flag else 'unarchived'
     return jsonify(
@@ -1645,7 +1652,10 @@ def api_delete_marker(place_id: str):
         return jsonify(status='error', message='Data point not found.'), 404
 
     data_cache.timeline_df = df.loc[~mask].reset_index(drop=True)
-    data_cache.save_timeline_data()
+    data_cache.save_timeline_data(
+        reason='Marker deleted',
+        metadata={'place_id': place_id},
+    )
 
     return jsonify(status='success', message='Data point deleted successfully.')
 
@@ -1684,7 +1694,10 @@ def api_bulk_delete_markers():
 
     data_cache.timeline_df = df.loc[~mask].reset_index(drop=True)
     data_cache.ensure_archived_column()
-    data_cache.save_timeline_data()
+    data_cache.save_timeline_data(
+        reason='Bulk marker delete',
+        metadata={'removed': matched_count},
+    )
 
     return jsonify(
         status='success',
@@ -1770,6 +1783,226 @@ def api_master_timeline():
         rows=rows,
         total=len(rows),
         generated_at=generated_at,
+    )
+
+
+@main.route('/api/master_timeline/history', methods=['GET'])
+def api_master_timeline_history():
+    """Return recent version history entries for the master timeline."""
+
+    try:
+        raw_limit = request.args.get('limit')
+        limit = int(raw_limit) if raw_limit else 30
+    except (TypeError, ValueError):
+        limit = 30
+
+    entries = data_cache.list_timeline_history(limit=limit)
+    serialised = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        serialised.append({
+            'id': entry.get('id', ''),
+            'created_at': entry.get('created_at'),
+            'reason': entry.get('reason', 'Automatic save'),
+            'size_bytes': entry.get('size_bytes'),
+            'metadata': entry.get('metadata') if isinstance(entry.get('metadata'), dict) else {},
+        })
+
+    return jsonify(entries=serialised, total=len(serialised))
+
+
+@main.route('/api/master_timeline/history/<version_id>/restore', methods=['POST'])
+def api_restore_master_timeline_history(version_id: str):
+    """Restore the master timeline from a saved history entry."""
+
+    identifier = _clean_string(version_id)
+    if not identifier:
+        return jsonify(status='error', message='A valid version ID is required.'), 400
+
+    try:
+        result = data_cache.restore_timeline_version(identifier)
+    except KeyError:
+        return jsonify(status='error', message='Version not found.'), 404
+    except FileNotFoundError:
+        return jsonify(status='error', message='Snapshot file is missing.'), 404
+    except Exception:
+        current_app.logger.exception('Failed to restore master timeline version')
+        return jsonify(status='error', message='Failed to restore the selected version.'), 500
+
+    restored_entry = result.get('restored_entry') if isinstance(result, dict) else None
+    restore_point = result.get('restore_point') if isinstance(result, dict) else None
+
+    message = 'Master database restored successfully.'
+    if isinstance(restored_entry, dict) and restored_entry.get('created_at'):
+        message = f"Master database restored to {restored_entry.get('created_at')}."
+
+    return jsonify(
+        status='success',
+        message=message,
+        restored_version={
+            'id': restored_entry.get('id') if isinstance(restored_entry, dict) else '',
+            'created_at': restored_entry.get('created_at') if isinstance(restored_entry, dict) else None,
+            'reason': restored_entry.get('reason') if isinstance(restored_entry, dict) else None,
+        },
+        restore_point={
+            'id': restore_point.get('id') if isinstance(restore_point, dict) else '',
+            'created_at': restore_point.get('created_at') if isinstance(restore_point, dict) else None,
+            'reason': restore_point.get('reason') if isinstance(restore_point, dict) else None,
+        },
+    )
+
+
+@main.route('/api/master_timeline/history/<version_id>/diff', methods=['GET'])
+def api_master_timeline_history_diff(version_id: str):
+    """Return a preview of changes between a snapshot and the current CSV."""
+
+    identifier = _clean_string(version_id)
+    if not identifier:
+        return jsonify(status='error', message='A valid version ID is required.'), 400
+
+    try:
+        diff_payload = data_cache.get_timeline_version_diff(identifier)
+    except KeyError:
+        return jsonify(status='error', message='Version not found.'), 404
+    except FileNotFoundError:
+        return jsonify(status='error', message='Snapshot file is missing.'), 404
+    except Exception:
+        current_app.logger.exception('Failed to diff master timeline version')
+        return jsonify(status='error', message='Failed to preview the selected version.'), 500
+
+    return jsonify(status='success', diff=diff_payload)
+
+
+@main.route('/api/master_timeline/update', methods=['POST'])
+def api_update_master_timeline_cell():
+    """Persist a single edited master timeline cell."""
+
+    data_cache.ensure_archived_column()
+    df = data_cache.timeline_df
+    if df is None or df.empty or 'Place ID' not in df.columns:
+        return jsonify(status='error', message='Master timeline data is unavailable.'), 404
+
+    payload = request.get_json(silent=True) or {}
+    place_id = _clean_string(payload.get('place_id'))
+    column = _clean_string(payload.get('column'))
+
+    if not place_id:
+        return jsonify(status='error', message='A valid place ID is required.'), 400
+    if not column:
+        return jsonify(status='error', message='A valid column is required.'), 400
+    if column not in df.columns:
+        return jsonify(status='error', message='Column not found.'), 404
+    if column in MASTER_TIMELINE_READ_ONLY_COLUMNS:
+        return jsonify(status='error', message=f'{column} is read-only.'), 400
+
+    mask = df['Place ID'].astype(str).str.strip() == place_id
+    if not mask.any():
+        return jsonify(status='error', message='Data point not found.'), 404
+
+    raw_value = payload.get('value')
+
+    if column == 'Latitude':
+        cleaned = _clean_string(raw_value)
+        if not cleaned:
+            return jsonify(status='error', message='Latitude is required.'), 400
+        try:
+            value = float(cleaned)
+        except (TypeError, ValueError):
+            return jsonify(status='error', message='Latitude must be a valid number.'), 400
+        if value < -90 or value > 90:
+            return jsonify(status='error', message='Latitude must be between -90 and 90.'), 400
+    elif column == 'Longitude':
+        cleaned = _clean_string(raw_value)
+        if not cleaned:
+            return jsonify(status='error', message='Longitude is required.'), 400
+        try:
+            value = float(cleaned)
+        except (TypeError, ValueError):
+            return jsonify(status='error', message='Longitude must be a valid number.'), 400
+        if value < -180 or value > 180:
+            return jsonify(status='error', message='Longitude must be between -180 and 180.'), 400
+    elif column == 'Archived':
+        if isinstance(raw_value, bool):
+            value = raw_value
+        else:
+            cleaned = _clean_string(raw_value).lower()
+            if cleaned in ('true', '1', 'yes', 'y', 'on'):
+                value = True
+            elif cleaned in ('false', '0', 'no', 'n', 'off', ''):
+                value = False
+            else:
+                return jsonify(status='error', message='Archived must be true or false.'), 400
+    elif column == 'Alias':
+        value = _clean_string(raw_value)
+        if len(value) > MAX_ALIAS_LENGTH:
+            return jsonify(
+                status='error',
+                message=f'Alias must be {MAX_ALIAS_LENGTH} characters or fewer.',
+            ), 400
+    elif column == 'Description':
+        if raw_value is None:
+            value = ''
+        elif isinstance(raw_value, str):
+            value = raw_value
+        else:
+            value = str(raw_value)
+        if len(value) > MAX_LOCATION_DESCRIPTION_LENGTH:
+            return jsonify(
+                status='error',
+                message=(
+                    'Description must be '
+                    f'{MAX_LOCATION_DESCRIPTION_LENGTH} characters or fewer.'
+                ),
+            ), 400
+        value = value if value.strip() else ''
+    else:
+        if raw_value is None:
+            value = ''
+        elif isinstance(raw_value, str):
+            value = raw_value.strip()
+        else:
+            value = str(raw_value).strip()
+
+    df.loc[mask, column] = value
+    data_cache.timeline_df = df
+    data_cache.ensure_archived_column()
+    data_cache.save_timeline_data(
+        reason='Master database cell edit',
+        metadata={
+            'place_id': place_id,
+            'column': column,
+        },
+    )
+
+    updated_row = data_cache.timeline_df.loc[mask].iloc[0]
+
+    def _serialise_cell(value):
+        if pd.isna(value):
+            return ''
+        if isinstance(value, pd.Timestamp):
+            return value.isoformat()
+        if hasattr(value, 'isoformat'):
+            try:
+                return value.isoformat()
+            except Exception:
+                return str(value)
+        if isinstance(value, (int, float, bool)):
+            return value
+        if isinstance(value, str):
+            return value
+        return str(value)
+
+    serialised_row = {
+        column_name: _serialise_cell(updated_row.get(column_name))
+        for column_name in data_cache.timeline_df.columns
+    }
+
+    return jsonify(
+        status='success',
+        message=f'{column} updated successfully.',
+        row=serialised_row,
+        value=_serialise_cell(updated_row.get(column)),
     )
 
 
@@ -2238,7 +2471,12 @@ def api_trip_photo_image(trip_id: str, photo_index: int):
                 continue
 
             if upstream.status_code == 200:
-                mime_type = _clean_string(photo_entry.get('mime_type')) or upstream.headers.get('Content-Type') or 'application/octet-stream'
+                upstream_content_type = _clean_string(upstream.headers.get('Content-Type'))
+                mime_type = _clean_string(photo_entry.get('mime_type')) or upstream_content_type or 'application/octet-stream'
+                if upstream_content_type and not upstream_content_type.lower().startswith('image/'):
+                    last_status = 502
+                    upstream.close()
+                    continue
                 filename = _clean_string(photo_entry.get('filename'))
 
                 ttl_seconds = _trip_photo_cache_ttl_seconds()
@@ -2690,7 +2928,10 @@ def api_update_alias(place_id: str):
     df.loc[mask, 'Alias'] = alias_value
     data_cache.timeline_df = df
     data_cache.ensure_archived_column()
-    data_cache.save_timeline_data()
+    data_cache.save_timeline_data(
+        reason='Alias updated',
+        metadata={'place_id': place_id},
+    )
 
     place_name = ''
     if 'Place Name' in df.columns:
@@ -2749,7 +2990,10 @@ def api_update_marker_description(place_id: str):
     df.loc[mask, 'Description'] = final_description
     data_cache.timeline_df = df
     data_cache.ensure_archived_column()
-    data_cache.save_timeline_data()
+    data_cache.save_timeline_data(
+        reason='Description updated',
+        metadata={'place_id': place_id},
+    )
 
     message = (
         'Description saved successfully.'

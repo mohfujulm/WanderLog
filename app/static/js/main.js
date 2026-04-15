@@ -281,6 +281,9 @@ let tripSortDirectionButton = null;
 let tripListView = null;
 let mapThemeToggle = null;
 let mapReliefToggle = null;
+let quickClusterToggleButton = null;
+let quickNightToggleButton = null;
+let quickReliefToggleButton = null;
 let tripDetailContainer = null;
 let tripDetailBackButton = null;
 let tripDetailTitleElement = null;
@@ -330,8 +333,29 @@ let masterDataLoadingElement = null;
 let masterDataErrorElement = null;
 let masterDataEmptyElement = null;
 let masterDataSearchInput = null;
+let masterDataFilterColumnSelect = null;
+let masterDataPageSizeSelect = null;
 let masterDataMetaElement = null;
+let masterDataClearFiltersButton = null;
 let masterDataRefreshButton = null;
+let masterDataPaginationElement = null;
+let masterDataPaginationMetaElement = null;
+let masterDataPrevPageButton = null;
+let masterDataNextPageButton = null;
+let masterDataHistoryListElement = null;
+let masterDataHistoryLoadingElement = null;
+let masterDataHistoryErrorElement = null;
+let masterDataHistoryEmptyElement = null;
+let masterDataHistoryRefreshButton = null;
+let masterDataHistorySectionElement = null;
+let masterDataHistoryContentElement = null;
+let masterDataHistoryToggleButton = null;
+let masterDataHistoryPreviewElement = null;
+let masterDataHistoryPreviewTitleElement = null;
+let masterDataHistoryPreviewSummaryElement = null;
+let masterDataHistoryPreviewBodyElement = null;
+let masterDataHistoryPreviewLoadingElement = null;
+let masterDataHistoryPreviewErrorElement = null;
 
 const TRIP_SORT_FIELD_NAME = 'name';
 const TRIP_SORT_FIELD_DATE = 'latest_location_date';
@@ -343,8 +367,13 @@ const TRIP_LOCATION_SORT_FIELD_DATE = 'date';
 const TRIP_LOCATION_SORT_FIELD_NAME = 'name';
 const MASTER_DATA_OVERLAY_ID = 'masterDataOverlay';
 const MASTER_DATA_API_ENDPOINT = '/api/master_timeline';
+const MASTER_DATA_UPDATE_API_ENDPOINT = '/api/master_timeline/update';
+const MASTER_DATA_HISTORY_API_ENDPOINT = '/api/master_timeline/history';
+const MASTER_DATA_HISTORY_DIFF_API_SUFFIX = '/diff';
 const MASTER_DATA_EMPTY_DEFAULT_MESSAGE = 'No master data found. Import your Google Timeline to populate this table.';
 const MASTER_DATA_EMPTY_FILTER_MESSAGE = 'No rows match your current search.';
+const MASTER_DATA_READ_ONLY_COLUMNS = new Set(['Place ID']);
+const MASTER_DATA_SEARCH_DEBOUNCE_MS = 120;
 
 const tripListState = {
     trips: [],
@@ -424,7 +453,22 @@ const masterDataState = {
     rows: [],
     filteredRows: [],
     searchTerm: '',
+    filterColumn: '',
+    sortColumn: '',
+    sortDirection: 'asc',
     loading: false,
+    savingCellKey: '',
+    page: 1,
+    pageSize: 250,
+    searchDebounceTimer: null,
+    historyEntries: [],
+    historyLoading: false,
+    restoringVersionId: '',
+    historyCollapsed: true,
+    previewVersionId: '',
+    previewLoading: false,
+    previewDiff: null,
+    menuWasOpenOnOpen: false,
     lastLoadedAt: null,
     emptyMessageDefault: MASTER_DATA_EMPTY_DEFAULT_MESSAGE,
 };
@@ -990,48 +1034,79 @@ async function fetchGooglePhotosPickerSession(sessionId) {
 }
 
 async function listGooglePhotosPickerMediaItems(sessionId) {
-    let response;
-    try {
-        const url = new URL('/api/google/photos/picker/media-items', window.location.origin);
-        url.searchParams.set('session_id', sessionId);
-        response = await fetch(url.toString(), {
-            method: 'GET',
-            credentials: 'include',
-            cache: 'no-store',
+    const allMediaItems = [];
+    const seenIds = new Set();
+    let nextPageToken = '';
+    let pageCount = 0;
+
+    while (pageCount < 100) {
+        pageCount += 1;
+
+        let response;
+        try {
+            const url = new URL('/api/google/photos/picker/media-items', window.location.origin);
+            url.searchParams.set('session_id', sessionId);
+            url.searchParams.set('page_size', '100');
+            if (nextPageToken) {
+                url.searchParams.set('page_token', nextPageToken);
+            }
+            response = await fetch(url.toString(), {
+                method: 'GET',
+                credentials: 'include',
+                cache: 'no-store',
+            });
+        } catch (error) {
+            throw new Error('Network error while retrieving Google Photos selections.');
+        }
+
+        let payload = null;
+        try {
+            payload = await response.json();
+        } catch (error) {
+            payload = null;
+        }
+
+        if (!response.ok) {
+            const message = payload && payload.error
+                ? payload.error
+                : 'Failed to retrieve Google Photos selections.';
+            throw new Error(message);
+        }
+
+        const mediaItems = payload && Array.isArray(payload.mediaItems)
+            ? payload.mediaItems
+            : [];
+
+        mediaItems.forEach((item) => {
+            if (!item || typeof item !== 'object') { return; }
+            const itemId = typeof item.id === 'string' ? item.id.trim() : '';
+            if (itemId && seenIds.has(itemId)) { return; }
+            if (itemId) {
+                seenIds.add(itemId);
+            }
+            allMediaItems.push(item);
         });
-    } catch (error) {
-        throw new Error('Network error while retrieving Google Photos selections.');
-    }
 
-    let payload = null;
-    try {
-        payload = await response.json();
-    } catch (error) {
-        payload = null;
+        nextPageToken = payload && typeof payload.nextPageToken === 'string'
+            ? payload.nextPageToken.trim()
+            : '';
+        if (!nextPageToken) {
+            break;
+        }
     }
-
-    if (!response.ok) {
-        const message = payload && payload.error
-            ? payload.error
-            : 'Failed to retrieve Google Photos selections.';
-        throw new Error(message);
-    }
-
-    const mediaItems = payload && Array.isArray(payload.mediaItems)
-        ? payload.mediaItems
-        : [];
 
     try {
         console.info('Google Photos Picker media items retrieved', {
             sessionId,
-            count: mediaItems.length,
-            mediaItems,
+            count: allMediaItems.length,
+            pages: pageCount,
+            mediaItems: allMediaItems,
         });
     } catch (error) {
         // Ignore logging errors in restricted environments.
     }
 
-    return { mediaItems, nextPageToken: payload ? payload.nextPageToken : null };
+    return { mediaItems: allMediaItems, nextPageToken };
 }
 
 async function deleteGooglePhotosPickerSession(sessionId) {
@@ -1594,6 +1669,28 @@ function syncMapThemeToggleControl(mode = mapStyleMode) {
     }
     if (mapReliefToggle) {
         mapReliefToggle.checked = isRelief;
+    }
+    updateQuickMapToggleButtons(mode);
+}
+
+function updateQuickMapToggleButtons(mode = mapStyleMode) {
+    const isNight = mode === MAP_STYLE_MODE_NIGHT;
+    const isRelief = mode === MAP_STYLE_MODE_MUIRWAY;
+
+    if (quickClusterToggleButton) {
+        quickClusterToggleButton.classList.toggle('map-quick-toggle-active', isClusteringEnabled);
+        quickClusterToggleButton.setAttribute('aria-pressed', isClusteringEnabled ? 'true' : 'false');
+    }
+
+    if (quickNightToggleButton) {
+        quickNightToggleButton.classList.toggle('map-quick-toggle-active', isNight);
+        quickNightToggleButton.setAttribute('aria-pressed', isNight ? 'true' : 'false');
+        quickNightToggleButton.disabled = isRelief;
+    }
+
+    if (quickReliefToggleButton) {
+        quickReliefToggleButton.classList.toggle('map-quick-toggle-active', isRelief);
+        quickReliefToggleButton.setAttribute('aria-pressed', isRelief ? 'true' : 'false');
     }
 }
 
@@ -2551,6 +2648,11 @@ function applyClusterLayerVisibility() {
 function setClusteringEnabled(enabled) {
     pendingClusterToggleState = enabled;
     isClusteringEnabled = enabled;
+    const clusterToggleInput = document.getElementById('clusterToggle');
+    if (clusterToggleInput) {
+        clusterToggleInput.checked = enabled;
+    }
+    updateQuickMapToggleButtons();
     if (!map) { return; }
     applyClusterLayerVisibility();
 }
@@ -2586,13 +2688,22 @@ function openMarkerPopupAt(markerData, coordinates) {
     const popupHtml = createPopupContent(markerData);
     if (!popupHtml) { return; }
 
-    closeActivePopup();
-    activePopup = new mapboxgl.Popup({
+    const isCompactMobileViewport = typeof window !== 'undefined'
+        && typeof window.matchMedia === 'function'
+        && window.matchMedia('(max-width: 900px)').matches;
+
+    const popupOptions = {
         closeButton: true,
-        offset: 28,
+        offset: isCompactMobileViewport ? 18 : 28,
         className: MAPBOX_POPUP_CLASS,
-        maxWidth: '320px',
-    }).setLngLat(coordinates)
+        maxWidth: isCompactMobileViewport ? '240px' : '320px',
+    };
+    if (isCompactMobileViewport) {
+        popupOptions.anchor = 'bottom';
+    }
+
+    closeActivePopup();
+    activePopup = new mapboxgl.Popup(popupOptions).setLngLat(coordinates)
         .setHTML(popupHtml)
         .addTo(map);
 
@@ -3344,7 +3455,28 @@ function initAdvancedPanel() {
     masterDataEmptyElement = document.getElementById('masterDataEmpty');
     masterDataMetaElement = document.getElementById('masterDataMeta');
     masterDataSearchInput = document.getElementById('masterDataSearch');
+    masterDataFilterColumnSelect = document.getElementById('masterDataFilterColumn');
+    masterDataPageSizeSelect = document.getElementById('masterDataPageSize');
+    masterDataClearFiltersButton = document.getElementById('masterDataClearFiltersButton');
     masterDataRefreshButton = document.getElementById('masterDataRefreshButton');
+    masterDataPaginationElement = document.getElementById('masterDataPagination');
+    masterDataPaginationMetaElement = document.getElementById('masterDataPaginationMeta');
+    masterDataPrevPageButton = document.getElementById('masterDataPrevPageButton');
+    masterDataNextPageButton = document.getElementById('masterDataNextPageButton');
+    masterDataHistoryListElement = document.getElementById('masterDataHistoryList');
+    masterDataHistoryLoadingElement = document.getElementById('masterDataHistoryLoading');
+    masterDataHistoryErrorElement = document.getElementById('masterDataHistoryError');
+    masterDataHistoryEmptyElement = document.getElementById('masterDataHistoryEmpty');
+    masterDataHistoryRefreshButton = document.getElementById('masterDataHistoryRefreshButton');
+    masterDataHistorySectionElement = document.getElementById('masterDataHistorySection');
+    masterDataHistoryContentElement = document.getElementById('masterDataHistoryContent');
+    masterDataHistoryToggleButton = document.getElementById('masterDataHistoryToggleButton');
+    masterDataHistoryPreviewElement = document.getElementById('masterDataHistoryPreview');
+    masterDataHistoryPreviewTitleElement = document.getElementById('masterDataHistoryPreviewTitle');
+    masterDataHistoryPreviewSummaryElement = document.getElementById('masterDataHistoryPreviewSummary');
+    masterDataHistoryPreviewBodyElement = document.getElementById('masterDataHistoryPreviewBody');
+    masterDataHistoryPreviewLoadingElement = document.getElementById('masterDataHistoryPreviewLoading');
+    masterDataHistoryPreviewErrorElement = document.getElementById('masterDataHistoryPreviewError');
 
     if (masterDataEmptyElement && masterDataEmptyElement.textContent) {
         masterDataState.emptyMessageDefault = masterDataEmptyElement.textContent.trim() || MASTER_DATA_EMPTY_DEFAULT_MESSAGE;
@@ -3352,7 +3484,50 @@ function initAdvancedPanel() {
 
     if (masterDataSearchInput) {
         masterDataSearchInput.addEventListener('input', () => {
-            masterDataState.searchTerm = masterDataSearchInput.value.trim().toLowerCase();
+            if (masterDataState.searchDebounceTimer) {
+                window.clearTimeout(masterDataState.searchDebounceTimer);
+            }
+            masterDataState.searchDebounceTimer = window.setTimeout(() => {
+                masterDataState.searchTerm = masterDataSearchInput.value.trim().toLowerCase();
+                masterDataState.page = 1;
+                filterMasterDataRows();
+            }, MASTER_DATA_SEARCH_DEBOUNCE_MS);
+        });
+    }
+
+    if (masterDataFilterColumnSelect) {
+        masterDataFilterColumnSelect.addEventListener('change', () => {
+            masterDataState.filterColumn = masterDataFilterColumnSelect.value || '';
+            masterDataState.page = 1;
+            filterMasterDataRows();
+        });
+    }
+
+    if (masterDataPageSizeSelect) {
+        masterDataPageSizeSelect.addEventListener('change', () => {
+            const rawValue = masterDataPageSizeSelect.value;
+            masterDataState.pageSize = rawValue === 'all' ? 'all' : Math.max(1, Number(rawValue) || 250);
+            masterDataState.page = 1;
+            filterMasterDataRows();
+        });
+    }
+
+    if (masterDataClearFiltersButton) {
+        masterDataClearFiltersButton.addEventListener('click', () => {
+            masterDataState.searchTerm = '';
+            masterDataState.filterColumn = '';
+            masterDataState.sortColumn = '';
+            masterDataState.sortDirection = 'asc';
+            masterDataState.page = 1;
+            if (masterDataSearchInput) {
+                masterDataSearchInput.value = '';
+            }
+            if (masterDataFilterColumnSelect) {
+                masterDataFilterColumnSelect.value = '';
+            }
+            if (masterDataPageSizeSelect) {
+                masterDataPageSizeSelect.value = String(masterDataState.pageSize);
+            }
             filterMasterDataRows();
         });
     }
@@ -3360,6 +3535,19 @@ function initAdvancedPanel() {
     if (masterDataRefreshButton) {
         masterDataRefreshButton.addEventListener('click', () => {
             loadMasterData();
+            loadMasterDataHistory();
+        });
+    }
+
+    if (masterDataHistoryRefreshButton) {
+        masterDataHistoryRefreshButton.addEventListener('click', () => {
+            loadMasterDataHistory();
+        });
+    }
+
+    if (masterDataHistoryToggleButton) {
+        masterDataHistoryToggleButton.addEventListener('click', () => {
+            setMasterDataHistoryCollapsed(!masterDataState.historyCollapsed);
         });
     }
 
@@ -3367,8 +3555,148 @@ function initAdvancedPanel() {
         masterDataLoadingElement.hidden = true;
     }
 
+    if (masterDataPrevPageButton) {
+        masterDataPrevPageButton.addEventListener('click', () => {
+            if (masterDataState.page <= 1) { return; }
+            masterDataState.page -= 1;
+            renderMasterDataTable();
+            updateMasterDataMeta();
+            updateMasterDataPagination();
+        });
+    }
+
+    if (masterDataNextPageButton) {
+        masterDataNextPageButton.addEventListener('click', () => {
+            const totalPages = getMasterDataTotalPages();
+            if (masterDataState.page >= totalPages) { return; }
+            masterDataState.page += 1;
+            renderMasterDataTable();
+            updateMasterDataMeta();
+            updateMasterDataPagination();
+        });
+    }
+
     resetMasterDataMessages();
+    setMasterDataHistoryCollapsed(masterDataState.historyCollapsed);
     masterDataState.initialised = true;
+}
+
+function setMasterDataHistoryCollapsed(isCollapsed) {
+    masterDataState.historyCollapsed = Boolean(isCollapsed);
+    if (masterDataHistorySectionElement) {
+        masterDataHistorySectionElement.classList.toggle('advanced-history-collapsed', masterDataState.historyCollapsed);
+    }
+    if (masterDataHistoryContentElement) {
+        masterDataHistoryContentElement.hidden = masterDataState.historyCollapsed;
+    }
+    if (masterDataHistoryToggleButton) {
+        masterDataHistoryToggleButton.textContent = masterDataState.historyCollapsed ? 'Show History' : 'Hide History';
+        masterDataHistoryToggleButton.setAttribute('aria-expanded', String(!masterDataState.historyCollapsed));
+    }
+}
+
+function updateMasterDataFilterColumnOptions() {
+    if (!masterDataFilterColumnSelect) { return; }
+    const columns = Array.isArray(masterDataState.columns) ? masterDataState.columns : [];
+    const currentValue = masterDataState.filterColumn || '';
+    masterDataFilterColumnSelect.innerHTML = '';
+
+    const allOption = document.createElement('option');
+    allOption.value = '';
+    allOption.textContent = 'All columns';
+    masterDataFilterColumnSelect.appendChild(allOption);
+
+    columns.forEach((column) => {
+        const option = document.createElement('option');
+        option.value = column;
+        option.textContent = column;
+        masterDataFilterColumnSelect.appendChild(option);
+    });
+
+    if (currentValue && columns.includes(currentValue)) {
+        masterDataFilterColumnSelect.value = currentValue;
+    } else {
+        masterDataState.filterColumn = '';
+        masterDataFilterColumnSelect.value = '';
+    }
+}
+
+function isMasterDataColumnEditable(column, row) {
+    if (!column || MASTER_DATA_READ_ONLY_COLUMNS.has(column)) { return false; }
+    return Boolean(row && row['Place ID']);
+}
+
+function getMasterDataCellKey(placeId, column) {
+    return `${placeId || ''}::${column || ''}`;
+}
+
+function normaliseMasterDataBoolean(value) {
+    if (typeof value === 'boolean') { return value; }
+    if (typeof value === 'number') { return value !== 0; }
+    const text = String(value || '').trim().toLowerCase();
+    return ['true', '1', 'yes', 'y', 'on'].includes(text);
+}
+
+function getMasterDataComparableValue(column, value) {
+    if (value === null || typeof value === 'undefined' || value === '') {
+        return { type: 'empty', value: '' };
+    }
+
+    if (column === 'Archived') {
+        return { type: 'boolean', value: normaliseMasterDataBoolean(value) ? 1 : 0 };
+    }
+
+    if (column === 'Latitude' || column === 'Longitude') {
+        const numericValue = Number(value);
+        if (Number.isFinite(numericValue)) {
+            return { type: 'number', value: numericValue };
+        }
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return { type: 'number', value };
+    }
+
+    if (/date/i.test(column || '')) {
+        const timestamp = Date.parse(String(value));
+        if (!Number.isNaN(timestamp)) {
+            return { type: 'date', value: timestamp };
+        }
+    }
+
+    const numericValue = Number(value);
+    if (String(value).trim() !== '' && Number.isFinite(numericValue)) {
+        return { type: 'number', value: numericValue };
+    }
+
+    return { type: 'string', value: String(value).toLowerCase() };
+}
+
+function compareMasterDataRows(leftRow, rightRow, column, direction) {
+    const multiplier = direction === 'desc' ? -1 : 1;
+    const leftComparable = getMasterDataComparableValue(column, leftRow ? leftRow[column] : '');
+    const rightComparable = getMasterDataComparableValue(column, rightRow ? rightRow[column] : '');
+
+    if (leftComparable.type === 'empty' && rightComparable.type !== 'empty') { return 1; }
+    if (rightComparable.type === 'empty' && leftComparable.type !== 'empty') { return -1; }
+
+    if (leftComparable.value < rightComparable.value) { return -1 * multiplier; }
+    if (leftComparable.value > rightComparable.value) { return 1 * multiplier; }
+
+    const leftPlaceId = leftRow && leftRow['Place ID'] ? String(leftRow['Place ID']) : '';
+    const rightPlaceId = rightRow && rightRow['Place ID'] ? String(rightRow['Place ID']) : '';
+    return leftPlaceId.localeCompare(rightPlaceId) * multiplier;
+}
+
+function toggleMasterDataSort(column) {
+    if (!column) { return; }
+    if (masterDataState.sortColumn === column) {
+        masterDataState.sortDirection = masterDataState.sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+        masterDataState.sortColumn = column;
+        masterDataState.sortDirection = 'asc';
+    }
+    filterMasterDataRows();
 }
 
 function resetMasterDataMessages() {
@@ -3443,6 +3771,475 @@ function formatMasterDataCell(value) {
     return String(value);
 }
 
+function getMasterDataPageSizeValue() {
+    return masterDataState.pageSize === 'all'
+        ? masterDataState.filteredRows.length || masterDataState.rows.length || 1
+        : Math.max(1, Number(masterDataState.pageSize) || 250);
+}
+
+function getMasterDataTotalPages() {
+    const totalRows = Array.isArray(masterDataState.filteredRows) ? masterDataState.filteredRows.length : 0;
+    if (!totalRows) { return 1; }
+    if (masterDataState.pageSize === 'all') { return 1; }
+    return Math.max(1, Math.ceil(totalRows / getMasterDataPageSizeValue()));
+}
+
+function getMasterDataVisibleRows() {
+    const rows = Array.isArray(masterDataState.filteredRows) ? masterDataState.filteredRows : [];
+    if (masterDataState.pageSize === 'all') {
+        return rows;
+    }
+    const pageSize = getMasterDataPageSizeValue();
+    const totalPages = getMasterDataTotalPages();
+    const page = Math.min(Math.max(1, masterDataState.page), totalPages);
+    const startIndex = (page - 1) * pageSize;
+    return rows.slice(startIndex, startIndex + pageSize);
+}
+
+function updateMasterDataPagination() {
+    if (!masterDataPaginationElement || !masterDataPaginationMetaElement) { return; }
+    const totalRows = Array.isArray(masterDataState.filteredRows) ? masterDataState.filteredRows.length : 0;
+    const hasRows = totalRows > 0;
+    masterDataPaginationElement.hidden = !hasRows;
+    if (!hasRows) {
+        masterDataPaginationMetaElement.textContent = '';
+        return;
+    }
+
+    const totalPages = getMasterDataTotalPages();
+    const page = Math.min(Math.max(1, masterDataState.page), totalPages);
+    masterDataState.page = page;
+
+    if (masterDataState.pageSize === 'all') {
+        masterDataPaginationMetaElement.textContent = `Showing all ${totalRows.toLocaleString()} rows`;
+    } else {
+        const pageSize = getMasterDataPageSizeValue();
+        const start = ((page - 1) * pageSize) + 1;
+        const end = Math.min(page * pageSize, totalRows);
+        masterDataPaginationMetaElement.textContent = `Rows ${start.toLocaleString()}-${end.toLocaleString()} of ${totalRows.toLocaleString()}`;
+    }
+
+    if (masterDataPrevPageButton) {
+        masterDataPrevPageButton.disabled = page <= 1 || masterDataState.pageSize === 'all';
+    }
+    if (masterDataNextPageButton) {
+        masterDataNextPageButton.disabled = page >= totalPages || masterDataState.pageSize === 'all';
+    }
+}
+
+function formatMasterDataHistoryTimestamp(value) {
+    if (!value) { return 'Unknown time'; }
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) { return String(value); }
+    return parsed.toLocaleString();
+}
+
+function formatMasterDataHistorySize(value) {
+    const size = Number(value);
+    if (!Number.isFinite(size) || size <= 0) { return ''; }
+    if (size < 1024) { return `${size} B`; }
+    if (size < (1024 * 1024)) { return `${(size / 1024).toFixed(1)} KB`; }
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function renderMasterDataHistory() {
+    if (!masterDataHistoryListElement) { return; }
+    masterDataHistoryListElement.innerHTML = '';
+
+    if (masterDataHistoryLoadingElement) {
+        masterDataHistoryLoadingElement.hidden = !masterDataState.historyLoading;
+    }
+
+    if (masterDataHistoryErrorElement && !masterDataHistoryErrorElement.textContent) {
+        masterDataHistoryErrorElement.hidden = true;
+    }
+
+    const entries = Array.isArray(masterDataState.historyEntries) ? masterDataState.historyEntries : [];
+    const hasEntries = entries.length > 0;
+
+    if (masterDataHistoryEmptyElement) {
+        masterDataHistoryEmptyElement.hidden = masterDataState.historyLoading || hasEntries || Boolean(masterDataHistoryErrorElement && !masterDataHistoryErrorElement.hidden);
+    }
+    masterDataHistoryListElement.hidden = !hasEntries;
+    if (!hasEntries) { return; }
+
+    const fragment = document.createDocumentFragment();
+    entries.forEach((entry) => {
+        const item = document.createElement('div');
+        item.className = 'advanced-history-item';
+
+        const main = document.createElement('div');
+        main.className = 'advanced-history-item-main';
+
+        const title = document.createElement('div');
+        title.className = 'advanced-history-item-title';
+        title.textContent = entry && entry.reason ? entry.reason : 'Automatic save';
+        main.appendChild(title);
+
+        const meta = document.createElement('div');
+        meta.className = 'advanced-history-item-meta';
+        const bits = [formatMasterDataHistoryTimestamp(entry ? entry.created_at : '')];
+        const sizeLabel = formatMasterDataHistorySize(entry ? entry.size_bytes : 0);
+        if (sizeLabel) {
+            bits.push(sizeLabel);
+        }
+        meta.textContent = bits.join(' • ');
+        main.appendChild(meta);
+
+        item.appendChild(main);
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'overlay-button overlay-button-secondary advanced-history-restore';
+        button.textContent = masterDataState.restoringVersionId === (entry && entry.id ? entry.id : '') ? 'Restoring...' : 'Restore';
+        button.disabled = masterDataState.restoringVersionId === (entry && entry.id ? entry.id : '');
+        const actions = document.createElement('div');
+        actions.className = 'advanced-history-actions';
+
+        const previewButton = document.createElement('button');
+        previewButton.type = 'button';
+        previewButton.className = 'overlay-button overlay-button-secondary advanced-history-preview-button';
+        previewButton.textContent = (masterDataState.previewLoading && masterDataState.previewVersionId === (entry && entry.id ? entry.id : ''))
+            ? 'Loading...'
+            : 'Preview';
+        previewButton.disabled = masterDataState.previewLoading && masterDataState.previewVersionId === (entry && entry.id ? entry.id : '');
+        previewButton.addEventListener('click', () => {
+            if (!entry || !entry.id) { return; }
+            loadMasterDataHistoryPreview(entry.id);
+        });
+
+        button.addEventListener('click', () => {
+            if (!entry || !entry.id) { return; }
+            restoreMasterDataHistory(entry.id);
+        });
+
+        actions.appendChild(previewButton);
+        actions.appendChild(button);
+        item.appendChild(actions);
+
+        fragment.appendChild(item);
+    });
+
+    masterDataHistoryListElement.appendChild(fragment);
+}
+
+function renderMasterDataHistoryPreview() {
+    if (!masterDataHistoryPreviewElement || !masterDataHistoryPreviewBodyElement) { return; }
+
+    const hasPreview = Boolean(masterDataState.previewDiff);
+    const showPreview = masterDataState.previewLoading || hasPreview || Boolean(masterDataHistoryPreviewErrorElement && !masterDataHistoryPreviewErrorElement.hidden);
+    masterDataHistoryPreviewElement.hidden = !showPreview;
+
+    if (masterDataHistoryPreviewLoadingElement) {
+        masterDataHistoryPreviewLoadingElement.hidden = !masterDataState.previewLoading;
+    }
+
+    masterDataHistoryPreviewBodyElement.innerHTML = '';
+
+    if (!hasPreview) {
+        if (masterDataHistoryPreviewSummaryElement) {
+            masterDataHistoryPreviewSummaryElement.textContent = '';
+        }
+        return;
+    }
+
+    const diff = masterDataState.previewDiff || {};
+    const version = diff.version || {};
+    const summary = diff.summary || {};
+    const preview = diff.preview || {};
+
+    if (masterDataHistoryPreviewTitleElement) {
+        masterDataHistoryPreviewTitleElement.textContent = `Preview Changes: ${version.reason || 'Saved version'}`;
+    }
+    if (masterDataHistoryPreviewSummaryElement) {
+        const summaryBits = [
+            `${Number(summary.changed_rows || 0).toLocaleString()} changed rows`,
+            `${Number(summary.changed_cells || 0).toLocaleString()} changed cells`,
+            `${Number(summary.added_rows || 0).toLocaleString()} added`,
+            `${Number(summary.removed_rows || 0).toLocaleString()} removed`,
+        ];
+        masterDataHistoryPreviewSummaryElement.textContent = summaryBits.join(' • ');
+    }
+
+    const sections = [
+        {
+            title: 'Changed Rows',
+            rows: Array.isArray(preview.changed_rows) ? preview.changed_rows : [],
+            renderRow: (row) => {
+                const item = document.createElement('div');
+                item.className = 'advanced-history-preview-row';
+                const title = document.createElement('div');
+                title.className = 'advanced-history-preview-row-title';
+                title.textContent = row && row.label ? row.label : (row && row.id ? row.id : 'Changed row');
+                item.appendChild(title);
+                const changes = Array.isArray(row && row.changes) ? row.changes : [];
+                changes.forEach((change) => {
+                    const line = document.createElement('div');
+                    line.className = 'advanced-history-preview-change';
+                    const column = document.createElement('span');
+                    column.className = 'advanced-history-preview-change-column';
+                    column.textContent = `${change && change.column ? change.column : 'Column'}: `;
+                    line.appendChild(column);
+                    line.append(document.createTextNode(`${change && typeof change.before !== 'undefined' ? change.before : ''} `));
+                    const direction = document.createElement('span');
+                    direction.className = 'advanced-history-preview-direction';
+                    direction.textContent = '→';
+                    line.appendChild(direction);
+                    line.append(document.createTextNode(` ${change && typeof change.after !== 'undefined' ? change.after : ''}`));
+                    item.appendChild(line);
+                });
+                return item;
+            },
+        },
+        {
+            title: 'Added Rows',
+            rows: Array.isArray(preview.added_rows) ? preview.added_rows : [],
+            renderRow: (row) => {
+                const item = document.createElement('div');
+                item.className = 'advanced-history-preview-row';
+                const title = document.createElement('div');
+                title.className = 'advanced-history-preview-row-title';
+                title.textContent = row && row.label ? row.label : (row && row.id ? row.id : 'Added row');
+                item.appendChild(title);
+                return item;
+            },
+        },
+        {
+            title: 'Removed Rows',
+            rows: Array.isArray(preview.removed_rows) ? preview.removed_rows : [],
+            renderRow: (row) => {
+                const item = document.createElement('div');
+                item.className = 'advanced-history-preview-row';
+                const title = document.createElement('div');
+                title.className = 'advanced-history-preview-row-title';
+                title.textContent = row && row.label ? row.label : (row && row.id ? row.id : 'Removed row');
+                item.appendChild(title);
+                return item;
+            },
+        },
+    ];
+
+    sections.forEach((section) => {
+        if (!section.rows.length) { return; }
+        const sectionElement = document.createElement('section');
+        sectionElement.className = 'advanced-history-preview-section';
+
+        const heading = document.createElement('div');
+        heading.className = 'advanced-history-preview-section-title';
+        heading.textContent = section.title;
+        sectionElement.appendChild(heading);
+
+        section.rows.forEach((row) => {
+            sectionElement.appendChild(section.renderRow(row));
+        });
+
+        masterDataHistoryPreviewBodyElement.appendChild(sectionElement);
+    });
+
+    if (!masterDataHistoryPreviewBodyElement.children.length) {
+        const empty = document.createElement('div');
+        empty.className = 'advanced-history-message';
+        empty.textContent = 'No differences from the current master database.';
+        masterDataHistoryPreviewBodyElement.appendChild(empty);
+    }
+}
+
+async function loadMasterDataHistory() {
+    if (masterDataState.historyLoading) { return; }
+    masterDataState.historyLoading = true;
+    if (masterDataHistoryErrorElement) {
+        masterDataHistoryErrorElement.hidden = true;
+        masterDataHistoryErrorElement.textContent = '';
+    }
+    renderMasterDataHistory();
+
+    try {
+        const response = await fetch(MASTER_DATA_HISTORY_API_ENDPOINT, {
+            headers: {
+                Accept: 'application/json',
+            },
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(payload && payload.message ? payload.message : 'Failed to load version history.');
+        }
+        masterDataState.historyEntries = Array.isArray(payload.entries) ? payload.entries : [];
+    } catch (error) {
+        masterDataState.historyEntries = [];
+        if (masterDataHistoryErrorElement) {
+            masterDataHistoryErrorElement.textContent = error.message || 'Failed to load version history.';
+            masterDataHistoryErrorElement.hidden = false;
+        }
+    } finally {
+        masterDataState.historyLoading = false;
+        renderMasterDataHistory();
+    }
+}
+
+async function loadMasterDataHistoryPreview(versionId) {
+    const identifier = String(versionId || '').trim();
+    if (!identifier || masterDataState.previewLoading) { return; }
+
+    setMasterDataHistoryCollapsed(false);
+    masterDataState.previewVersionId = identifier;
+    masterDataState.previewLoading = true;
+    masterDataState.previewDiff = null;
+    if (masterDataHistoryPreviewErrorElement) {
+        masterDataHistoryPreviewErrorElement.hidden = true;
+        masterDataHistoryPreviewErrorElement.textContent = '';
+    }
+    renderMasterDataHistory();
+    renderMasterDataHistoryPreview();
+
+    try {
+        const response = await fetch(`${MASTER_DATA_HISTORY_API_ENDPOINT}/${encodeURIComponent(identifier)}${MASTER_DATA_HISTORY_DIFF_API_SUFFIX}`, {
+            headers: {
+                Accept: 'application/json',
+            },
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || (payload && payload.status === 'error')) {
+            throw new Error(payload && payload.message ? payload.message : 'Failed to preview saved version.');
+        }
+        masterDataState.previewDiff = payload && payload.diff ? payload.diff : null;
+    } catch (error) {
+        masterDataState.previewDiff = null;
+        if (masterDataHistoryPreviewErrorElement) {
+            masterDataHistoryPreviewErrorElement.textContent = error.message || 'Failed to preview saved version.';
+            masterDataHistoryPreviewErrorElement.hidden = false;
+        }
+    } finally {
+        masterDataState.previewLoading = false;
+        renderMasterDataHistory();
+        renderMasterDataHistoryPreview();
+    }
+}
+
+async function restoreMasterDataHistory(versionId) {
+    const identifier = String(versionId || '').trim();
+    if (!identifier || masterDataState.restoringVersionId) { return; }
+
+    setMasterDataHistoryCollapsed(false);
+    const confirmed = window.confirm('Restore this saved version of the master database? Current data will be replaced.');
+    if (!confirmed) { return; }
+
+    masterDataState.restoringVersionId = identifier;
+    renderMasterDataHistory();
+
+    try {
+        const response = await fetch(`${MASTER_DATA_HISTORY_API_ENDPOINT}/${encodeURIComponent(identifier)}/restore`, {
+            method: 'POST',
+            headers: {
+                Accept: 'application/json',
+            },
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || (payload && payload.status === 'error')) {
+            throw new Error(payload && payload.message ? payload.message : 'Failed to restore saved version.');
+        }
+
+        showStatus(payload.message || 'Master database restored successfully.');
+        await loadMasterData();
+        await loadMasterDataHistory();
+        masterDataState.previewDiff = null;
+        masterDataState.previewVersionId = '';
+        renderMasterDataHistoryPreview();
+        if (typeof loadMarkers === 'function') {
+            loadMarkers();
+        }
+    } catch (error) {
+        showStatus(error.message || 'Failed to restore saved version.', true);
+    } finally {
+        masterDataState.restoringVersionId = '';
+        renderMasterDataHistory();
+    }
+}
+
+function createMasterDataTextEditor(column, row, value) {
+    const input = document.createElement(column === 'Description' ? 'textarea' : 'input');
+    input.className = 'advanced-table-cell-editor';
+    if (column === 'Description') {
+        input.classList.add('advanced-table-cell-editor-textarea');
+    } else {
+        input.type = (column === 'Latitude' || column === 'Longitude') ? 'number' : 'text';
+        if (column === 'Latitude' || column === 'Longitude') {
+            input.step = 'any';
+            input.inputMode = 'decimal';
+        }
+    }
+
+    const initialValue = value === null || typeof value === 'undefined' ? '' : String(value);
+    input.value = initialValue;
+    input.dataset.originalValue = initialValue;
+
+    const placeId = row && row['Place ID'] ? String(row['Place ID']) : '';
+    const cellKey = getMasterDataCellKey(placeId, column);
+    if (masterDataState.savingCellKey === cellKey) {
+        input.disabled = true;
+    }
+
+    const commitIfChanged = async () => {
+        const nextValue = input.value;
+        if (nextValue === input.dataset.originalValue) { return; }
+        const ok = await saveMasterDataCell(row, column, nextValue);
+        if (!ok) {
+            input.value = input.dataset.originalValue || '';
+        }
+    };
+
+    input.addEventListener('blur', () => {
+        commitIfChanged();
+    });
+
+    input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && !event.shiftKey && column !== 'Description') {
+            event.preventDefault();
+            input.blur();
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            input.value = input.dataset.originalValue || '';
+            input.blur();
+        } else if (
+            column === 'Description'
+            && event.key === 'Enter'
+            && (event.ctrlKey || event.metaKey)
+        ) {
+            event.preventDefault();
+            input.blur();
+        }
+    });
+
+    return input;
+}
+
+function createMasterDataBooleanEditor(column, row, value) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'advanced-table-cell-boolean';
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.className = 'advanced-table-cell-checkbox';
+    input.checked = normaliseMasterDataBoolean(value);
+    input.dataset.originalValue = input.checked ? 'true' : 'false';
+
+    const placeId = row && row['Place ID'] ? String(row['Place ID']) : '';
+    const cellKey = getMasterDataCellKey(placeId, column);
+    if (masterDataState.savingCellKey === cellKey) {
+        input.disabled = true;
+    }
+
+    input.addEventListener('change', async () => {
+        const nextValue = input.checked;
+        const ok = await saveMasterDataCell(row, column, nextValue);
+        if (!ok) {
+            input.checked = input.dataset.originalValue === 'true';
+        }
+    });
+
+    wrapper.appendChild(input);
+    return wrapper;
+}
+
 function renderMasterDataTable() {
     if (!masterDataTableElement || !masterDataTableHead || !masterDataTableBody) { return; }
     const columns = Array.isArray(masterDataState.columns) ? masterDataState.columns : [];
@@ -3454,17 +4251,54 @@ function renderMasterDataTable() {
     columns.forEach((column) => {
         const th = document.createElement('th');
         th.scope = 'col';
-        th.textContent = column;
+        if (masterDataState.sortColumn === column) {
+            th.setAttribute('aria-sort', masterDataState.sortDirection === 'asc' ? 'ascending' : 'descending');
+        } else {
+            th.setAttribute('aria-sort', 'none');
+        }
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'advanced-table-sort';
+        button.setAttribute('aria-label', `Sort by ${column}`);
+        button.addEventListener('click', () => {
+            toggleMasterDataSort(column);
+        });
+
+        const label = document.createElement('span');
+        label.textContent = column;
+        button.appendChild(label);
+
+        const indicator = document.createElement('span');
+        indicator.className = 'advanced-table-sort-indicator';
+        if (masterDataState.sortColumn === column) {
+            indicator.textContent = masterDataState.sortDirection === 'asc' ? '▲' : '▼';
+        } else {
+            indicator.textContent = '↕';
+        }
+        button.appendChild(indicator);
+
+        th.appendChild(button);
         headerRow.appendChild(th);
     });
     masterDataTableHead.appendChild(headerRow);
 
     const fragment = document.createDocumentFragment();
-    masterDataState.filteredRows.forEach((row) => {
+    const visibleRows = getMasterDataVisibleRows();
+    visibleRows.forEach((row) => {
         const tr = document.createElement('tr');
         columns.forEach((column) => {
             const td = document.createElement('td');
-            td.textContent = formatMasterDataCell(row ? row[column] : '');
+            const value = row ? row[column] : '';
+            if (!isMasterDataColumnEditable(column, row)) {
+                const span = document.createElement('span');
+                span.className = 'advanced-table-readonly';
+                span.textContent = formatMasterDataCell(value);
+                td.appendChild(span);
+            } else if (column === 'Archived') {
+                td.appendChild(createMasterDataBooleanEditor(column, row, value));
+            } else {
+                td.appendChild(createMasterDataTextEditor(column, row, value));
+            }
             tr.appendChild(td);
         });
         fragment.appendChild(tr);
@@ -3477,17 +4311,31 @@ function filterMasterDataRows() {
     const columns = Array.isArray(masterDataState.columns) ? masterDataState.columns : [];
     const baseRows = Array.isArray(masterDataState.rows) ? masterDataState.rows : [];
     const term = (masterDataState.searchTerm || '').trim().toLowerCase();
+    const filterColumn = masterDataState.filterColumn || '';
     let filtered = baseRows.slice();
 
     if (term) {
-        filtered = filtered.filter((row) => columns.some((column) => {
+        const searchableColumns = filterColumn && columns.includes(filterColumn)
+            ? [filterColumn]
+            : columns;
+        filtered = filtered.filter((row) => searchableColumns.some((column) => {
             const value = row ? row[column] : null;
             if (value === null || typeof value === 'undefined') { return false; }
             return String(value).toLowerCase().includes(term);
         }));
     }
 
+    if (masterDataState.sortColumn && columns.includes(masterDataState.sortColumn)) {
+        filtered.sort((leftRow, rightRow) => compareMasterDataRows(
+            leftRow,
+            rightRow,
+            masterDataState.sortColumn,
+            masterDataState.sortDirection,
+        ));
+    }
+
     masterDataState.filteredRows = filtered;
+    masterDataState.page = Math.min(Math.max(1, masterDataState.page), getMasterDataTotalPages());
     renderMasterDataTable();
 
     const hasRows = filtered.length > 0 && columns.length > 0;
@@ -3511,6 +4359,73 @@ function filterMasterDataRows() {
     }
 
     updateMasterDataMeta();
+    updateMasterDataPagination();
+}
+
+async function saveMasterDataCell(row, column, value) {
+    const placeId = row && row['Place ID'] ? String(row['Place ID']) : '';
+    if (!placeId || !column || !isMasterDataColumnEditable(column, row)) {
+        return false;
+    }
+
+    const cellKey = getMasterDataCellKey(placeId, column);
+    masterDataState.savingCellKey = cellKey;
+    let shouldRerender = true;
+
+    try {
+        const response = await fetch(MASTER_DATA_UPDATE_API_ENDPOINT, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+            },
+            body: JSON.stringify({
+                place_id: placeId,
+                column,
+                value,
+            }),
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || (payload && payload.status === 'error')) {
+            const message = payload && payload.message ? payload.message : `Failed to update ${column}.`;
+            throw new Error(message);
+        }
+
+        const updatedRow = payload && payload.row && typeof payload.row === 'object'
+            ? payload.row
+            : null;
+
+        const rowIndex = masterDataState.rows.findIndex((entry) => entry && String(entry['Place ID'] || '') === placeId);
+        if (rowIndex >= 0) {
+            if (updatedRow) {
+                masterDataState.rows[rowIndex] = updatedRow;
+            } else {
+                masterDataState.rows[rowIndex][column] = value;
+            }
+        }
+
+        showStatus(payload.message || `${column} updated successfully.`);
+        masterDataState.savingCellKey = '';
+        filterMasterDataRows();
+        shouldRerender = false;
+        loadMasterDataHistory();
+        if (typeof loadMarkers === 'function') {
+            loadMarkers();
+        }
+        return true;
+    } catch (error) {
+        console.error(`Failed to update master data column "${column}"`, error);
+        showStatus(error.message || `Failed to update ${column}.`, true);
+        return false;
+    } finally {
+        if (masterDataState.savingCellKey === cellKey) {
+            masterDataState.savingCellKey = '';
+        }
+        if (shouldRerender) {
+            renderMasterDataTable();
+        }
+    }
 }
 
 async function loadMasterData() {
@@ -3519,6 +4434,9 @@ async function loadMasterData() {
 
     masterDataState.searchTerm = masterDataSearchInput
         ? masterDataSearchInput.value.trim().toLowerCase()
+        : '';
+    masterDataState.filterColumn = masterDataFilterColumnSelect
+        ? masterDataFilterColumnSelect.value || ''
         : '';
 
     resetMasterDataMessages();
@@ -3538,6 +4456,7 @@ async function loadMasterData() {
 
         masterDataState.columns = Array.isArray(payload.columns) ? payload.columns : [];
         masterDataState.rows = Array.isArray(payload.rows) ? payload.rows : [];
+        updateMasterDataFilterColumnOptions();
         if (payload.generated_at) {
             const parsed = new Date(payload.generated_at);
             masterDataState.lastLoadedAt = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
@@ -3574,8 +4493,17 @@ function ensureMasterDataOverlay() {
 function openMasterDataOverlay(triggerElement = null) {
     if (!ensureMasterDataOverlay()) { return; }
     masterDataOverlayTriggerElement = triggerElement || document.activeElement || null;
+    const menuElement = document.querySelector('.menu-container');
+    if (menuElement) {
+        masterDataState.menuWasOpenOnOpen = menuElement.classList.contains('open');
+        if (!masterDataState.menuWasOpenOnOpen) {
+            menuElement.classList.add('open');
+            applyMenuState(menuElement, true);
+        }
+    }
     masterDataOverlayElement.hidden = false;
     masterDataOverlayElement.setAttribute('aria-hidden', 'false');
+    document.documentElement.classList.add('master-data-open');
     requestAnimationFrame(() => {
         if (masterDataOverlayElement) {
             masterDataOverlayElement.classList.add('open');
@@ -3587,15 +4515,21 @@ function openMasterDataOverlay(triggerElement = null) {
     } else {
         filterMasterDataRows();
     }
+    loadMasterDataHistory();
     if (masterDataOverlayPanelElement) {
         masterDataOverlayPanelElement.focus();
     }
     if (!masterDataOverlayEscapeHandler) {
         masterDataOverlayEscapeHandler = (event) => {
-            if (event.key === 'Escape') {
-                event.preventDefault();
-                closeMasterDataOverlay();
+            if (event.key !== 'Escape') { return; }
+            event.preventDefault();
+            if (typeof event.stopImmediatePropagation === 'function') {
+                event.stopImmediatePropagation();
             }
+            if (typeof event.stopPropagation === 'function') {
+                event.stopPropagation();
+            }
+            closeMasterDataOverlay();
         };
         document.addEventListener('keydown', masterDataOverlayEscapeHandler, true);
     }
@@ -3605,6 +4539,7 @@ function closeMasterDataOverlay(options = {}) {
     if (!masterDataOverlayElement || masterDataOverlayElement.hidden) { return; }
     masterDataOverlayElement.classList.remove('open');
     masterDataOverlayElement.setAttribute('aria-hidden', 'true');
+    document.documentElement.classList.remove('master-data-open');
     const overlayElement = masterDataOverlayElement;
     setTimeout(() => {
         if (overlayElement && !overlayElement.classList.contains('open')) {
@@ -3618,6 +4553,14 @@ function closeMasterDataOverlay(options = {}) {
     if (options.restoreFocus !== false && masterDataOverlayTriggerElement && typeof masterDataOverlayTriggerElement.focus === 'function') {
         masterDataOverlayTriggerElement.focus();
     }
+    if (options.restoreMenu !== false) {
+        const menuElement = document.querySelector('.menu-container');
+        if (menuElement && !masterDataState.menuWasOpenOnOpen) {
+            menuElement.classList.remove('open');
+            applyMenuState(menuElement, false);
+        }
+    }
+    masterDataState.menuWasOpenOnOpen = false;
     masterDataOverlayTriggerElement = null;
 }
 
@@ -6241,6 +7184,7 @@ function openTripDetail(tripId, triggerElement) {
     if (!tripListState.initialised) { initTripsPanel(); }
     initTripDetailPanel();
     exitTripPhotoSelectionMode({ preserveSelection: false, silent: true });
+    setActiveMenuPanel('menuPanelTrips');
 
     const requestId = tripDetailState.requestId + 1;
     tripDetailState.requestId = requestId;
@@ -6345,6 +7289,7 @@ function closeTripDetail(options = {}) {
     }
     setTripDetailLoading(false);
     hideTripDetailView();
+    setActiveMenuPanel('menuPanelControls');
 
     if (tripDetailTitleElement) {
         const defaultTitle = tripDetailTitleElement.dataset.defaultText || 'Trip details';
@@ -6431,6 +7376,10 @@ function showTripDetailView() {
         tripDetailContainer.hidden = false;
         tripDetailContainer.setAttribute('aria-hidden', 'false');
     }
+    const menuContainer = document.querySelector('.menu-container');
+    if (menuContainer) {
+        menuContainer.classList.add('trip-detail-open');
+    }
     if (tripProfileOverlay) {
         tripProfileOverlay.hidden = false;
         tripProfileOverlay.setAttribute('aria-hidden', 'false');
@@ -6465,6 +7414,10 @@ function hideTripDetailView() {
     if (tripDetailContainer) {
         tripDetailContainer.hidden = true;
         tripDetailContainer.setAttribute('aria-hidden', 'true');
+    }
+    const menuContainer = document.querySelector('.menu-container');
+    if (menuContainer) {
+        menuContainer.classList.remove('trip-detail-open');
     }
     if (tripProfileOverlay) {
         tripProfileOverlay.classList.remove('open');
@@ -7834,8 +8787,14 @@ async function initMap() {
         map.setProjection({ name: 'globe' });
     }
 
+    const fullscreenContainer = document.getElementById('map-container');
     map.addControl(new mapboxgl.NavigationControl({ showCompass: true, showZoom: true, visualizePitch: true }), 'top-left');
-    map.addControl(new mapboxgl.FullscreenControl(), 'top-left');
+    map.addControl(
+        new mapboxgl.FullscreenControl(
+            fullscreenContainer ? { container: fullscreenContainer } : {}
+        ),
+        'top-left'
+    );
     map.on('contextmenu', handleMapContextMenu);
     map.on('click', hideMapContextMenu);
     map.on('movestart', hideMapContextMenu);
@@ -9479,6 +10438,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             toggleMenu();
         });
     }
+    const menuPanelCloseButton = document.getElementById('menuPanelClose');
+    if (menuPanelCloseButton) {
+        menuPanelCloseButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            const menu = document.querySelector('.menu-container');
+            if (!menu || !menu.classList.contains('open')) { return; }
+            toggleMenu();
+            if (menuToggleButton && typeof menuToggleButton.focus === 'function') {
+                menuToggleButton.focus();
+            }
+        });
+    }
     const timelineFileInput = document.getElementById('timelineFile');
     const importTimelineButton = document.getElementById('importTimelineButton');
     if (importTimelineButton && timelineFileInput) {
@@ -9641,7 +10612,38 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     mapThemeToggle = document.getElementById('mapThemeToggle');
     mapReliefToggle = document.getElementById('mapReliefToggle');
+    quickClusterToggleButton = document.getElementById('quickClusterToggle');
+    quickNightToggleButton = document.getElementById('quickNightToggle');
+    quickReliefToggleButton = document.getElementById('quickReliefToggle');
+
+    if (quickClusterToggleButton) {
+        quickClusterToggleButton.addEventListener('click', () => {
+            setClusteringEnabled(!isClusteringEnabled);
+        });
+    }
+    if (quickNightToggleButton) {
+        quickNightToggleButton.addEventListener('click', () => {
+            const nextMode = mapStyleMode === MAP_STYLE_MODE_NIGHT
+                ? MAP_STYLE_MODE_DAY
+                : MAP_STYLE_MODE_NIGHT;
+            setMapStyleMode(nextMode);
+        });
+    }
+    if (quickReliefToggleButton) {
+        quickReliefToggleButton.addEventListener('click', () => {
+            if (mapStyleMode !== MAP_STYLE_MODE_MUIRWAY) {
+                setMapStyleMode(MAP_STYLE_MODE_MUIRWAY);
+            } else {
+                const nextMode = mapThemeToggle && mapThemeToggle.checked
+                    ? MAP_STYLE_MODE_NIGHT
+                    : MAP_STYLE_MODE_DAY;
+                setMapStyleMode(nextMode);
+            }
+        });
+    }
+
     syncMapThemeToggleControl();
+    updateQuickMapToggleButtons();
     if (mapThemeToggle) {
         mapThemeToggle.addEventListener('change', (event) => {
             const nextMode = event.currentTarget.checked ? MAP_STYLE_MODE_NIGHT : MAP_STYLE_MODE_DAY;
@@ -9769,6 +10771,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 function toggleMenu() {
     const menu = document.querySelector('.menu-container');
     if (!menu) { return; }
+    if (
+        document.documentElement.classList.contains('master-data-open')
+        && menu.classList.contains('open')
+    ) {
+        closeMasterDataOverlay({ restoreFocus: false, restoreMenu: false });
+    }
     const isOpen = menu.classList.toggle('open');
     applyMenuState(menu, isOpen);
     if (isOpen && typeof googleAuthRefreshHandler === 'function') {
@@ -9776,8 +10784,31 @@ function toggleMenu() {
     }
 }
 
+function setActiveMenuPanel(panelId) {
+    const menuControls = document.getElementById('menuControls');
+    if (!menuControls || !panelId) { return; }
+    const tabs = Array.from(menuControls.querySelectorAll('[role="tab"]'));
+    const panels = Array.from(menuControls.querySelectorAll('[role="tabpanel"]'));
+    const nextPanel = panels.find((panel) => panel && panel.id === panelId) || null;
+    if (!nextPanel) { return; }
+    const nextTab = tabs.find((tab) => tab && tab.getAttribute('aria-controls') === panelId) || null;
+
+    tabs.forEach((tab) => {
+        const isActive = tab === nextTab;
+        tab.setAttribute('aria-selected', String(isActive));
+        tab.setAttribute('tabindex', isActive ? '0' : '-1');
+    });
+
+    panels.forEach((panel) => {
+        panel.hidden = panel !== nextPanel;
+    });
+
+    menuControls.dataset.activePanel = nextPanel.id;
+}
+
 function applyMenuState(menu, isOpen, options = {}) {
     const skipPersistence = options && options.skipPersistence;
+    const rootElement = document.documentElement;
     const trigger = menu.querySelector('.menu-toggle');
     const icon = trigger ? trigger.querySelector('.menu-toggle-icon img') : null;
     const label = trigger ? trigger.querySelector('.menu-toggle-text') : null;
@@ -9787,8 +10818,8 @@ function applyMenuState(menu, isOpen, options = {}) {
         trigger.setAttribute('aria-expanded', String(isOpen));
         trigger.setAttribute('aria-label', isOpen ? 'Close menu' : 'Open menu');
     }
-    if (icon) { icon.setAttribute('src', isOpen ? CLOSE_ICON_PATH : MENU_ICON_PATH); }
-    if (label) { label.textContent = isOpen ? 'Close' : 'Menu'; }
+    if (icon) { icon.setAttribute('src', MENU_ICON_PATH); }
+    if (label) { label.textContent = 'Menu'; }
     if (controls) {
         controls.setAttribute('aria-hidden', String(!isOpen));
         if (isOpen) { controls.removeAttribute('inert'); }
@@ -9815,6 +10846,9 @@ function applyMenuState(menu, isOpen, options = {}) {
                 element.setAttribute('tabindex', '-1');
             }
         });
+    }
+    if (rootElement) {
+        rootElement.classList.toggle('menu-open', Boolean(isOpen));
     }
 
     if (!skipPersistence) {
